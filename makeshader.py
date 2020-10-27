@@ -30,8 +30,10 @@ if len(sys.argv) != 2:
     sys.exit(0)
 
 infile = open(sys.argv[1], 'r')
-
-
+two_pi = 2*np.pi
+lower_bound = np.array([-1.0, -1.0, 0.0,    0.0,    0.0, 0.0, 0.0, 0.0])
+upper_bound = np.array([ 1.0,  1.0, two_pi, two_pi, 4.0, 4.0, 2.0, 2.0])
+ranges = upper_bound-lower_bound
 
 var_names = 'uvrpltsh'
 tol = 1e-4
@@ -43,8 +45,22 @@ for line in infile:
         break
     linemap = map(float,line.split(','))
     nums = np.array(list(linemap))
+    nums[2] = wrap_twopi(nums[2])
+    nums[3] = wrap_twopi(nums[3])    
+    nums = np.clip(nums, lower_bound, upper_bound)
+    assert(np.all(nums >= lower_bound) and np.all(nums <= upper_bound))
+    u = np.round(511*(nums - lower_bound)/ranges).astype(int)
+
+    outputs = []
+    
+    for j in range(4):
+        na = u[2*j + 0]
+        nb = u[2*j + 1]
+        n = 512*na + nb
+        #assert(n % 512 == nb)
+        #assert(n / 512 == na)
+        outputs.append(n)
 
     uvrp = 'vec4({},{},{},{})'.format(*nums[:4])
     ltsh = 'vec4({},{},{},{})'.format(*nums[4:])
-        
-    print ('    k += gabor(p, {}, {});'.format(uvrp, ltsh))
+    print ('    k += gabor(p, vec4({:}.,{:}.,{:}.,{:}.));'.format(*outputs))
