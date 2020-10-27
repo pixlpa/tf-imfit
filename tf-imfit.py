@@ -73,7 +73,7 @@ def get_options():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('image', type=argparse.FileType('r'),
+    parser.add_argument('image', type=argparse.FileType('rb'),
                         metavar='IMAGE.png',
                         help='image to approximate')
 
@@ -85,7 +85,7 @@ def get_options():
                         default=0,
                         help='size of large preview image (0 to disable)')
     
-    parser.add_argument('-w', '--weights', type=argparse.FileType('r'),
+    parser.add_argument('-w', '--weights', type=argparse.FileType('rb'),
                         metavar='WEIGHTS.png',
                         help='load weights from file',
                         default=None)
