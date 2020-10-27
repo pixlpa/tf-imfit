@@ -455,7 +455,8 @@ def snapshot(cur_gabor, cur_approx,
         err_image = err_image.resize((pw, ph), resample=Image.NEAREST)
         err_image = np.array(err_image)
 
-        out_img = np.hstack((preview_image, err_image))
+        # out_img = np.hstack((preview_image, err_image))
+        out_img = preview_image
     
     out_img = Image.fromarray(out_img, 'RGB')
 
