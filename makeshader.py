@@ -26,7 +26,7 @@ def wrap_twopi(f):
     return f
 
 if len(sys.argv) != 2:
-    print 'usage:', sys.argv[0], 'params.txt'
+    print ('usage:', sys.argv[0], 'params.txt')
     sys.exit(0)
 
 infile = open(sys.argv[1], 'r')
@@ -47,4 +47,4 @@ for line in infile:
     uvrp = 'vec4({},{},{},{})'.format(*nums[:4])
     ltsh = 'vec4({},{},{},{})'.format(*nums[4:])
         
-    print '    k += gabor(p, {}, {});'.format(uvrp, ltsh)
+    print ( '    k += gabor(p, {}, {});'.format(uvrp, ltsh) )
