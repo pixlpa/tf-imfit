@@ -41,10 +41,11 @@ for line in infile:
     line = line.rstrip()
     if not line:
         break
-    
-    nums = np.array(map(float, line.split(',')))
+    linemap = map(float,line.split(','))
+    nums = np.array(list(linemap))
+    print(nums)
 
     uvrp = 'vec4({},{},{},{})'.format(*nums[:4])
     ltsh = 'vec4({},{},{},{})'.format(*nums[4:])
         
-    print ( '    k += gabor(p, {}, {});'.format(uvrp, ltsh) )
+    print ('    k += gabor(p, {}, {});'.format(uvrp, ltsh))
