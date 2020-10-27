@@ -43,7 +43,6 @@ for line in infile:
         break
     linemap = map(float,line.split(','))
     nums = np.array(list(linemap))
-    print(nums)
 
     uvrp = 'vec4({},{},{},{})'.format(*nums[:4])
     ltsh = 'vec4({},{},{},{})'.format(*nums[4:])
