@@ -38,7 +38,6 @@ ranges = upper_bound-lower_bound
 var_names = 'uvrpltsh'
 tol = 1e-4
 
-print ('"data": {')
 print ('"gabor-list": [')
 for line in infile:
 
@@ -68,4 +67,5 @@ for line in infile:
     # print ('    k += gabor(p, vec4({:}.,{:}.,{:}.,{:}.));'.format(*outputs))
     # simpler space separated print output for Max
     print ('{}., {}., {}., {}.,'.format(*outputs))
-    print (']}')
+
+print (']')
