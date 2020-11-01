@@ -71,6 +71,6 @@ for line in infile:
         outputs2.append(cu[j])
 
     # simpler space separated print output for Max
-    print ('{}. {}. {}. {}.'.format(*outputs))
-    print ('{}. {}. {}. {}.'.format(*outputs2))
+    print ('{}., {}., {}., {}.,'.format(*outputs))
+    print ('{}., {}., {}., {}.,'.format(*outputs2))
 print (']')
