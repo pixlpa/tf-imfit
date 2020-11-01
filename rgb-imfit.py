@@ -82,7 +82,7 @@ def get_options():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('image', type=argparse.FileType('r'),
+    parser.add_argument('image', type=argparse.FileType('rb'),
                         metavar='IMAGE.png',
                         help='image to approximate')
     
@@ -94,7 +94,7 @@ def get_options():
                         default=0,
                         help='size of large preview image (0 to disable)')
     
-    parser.add_argument('-w', '--weights', type=argparse.FileType('r'),
+    parser.add_argument('-w', '--weights', type=argparse.FileType('rb'),
                         metavar='WEIGHTS.png',
                         help='load weights from file',
                         default=None)
@@ -228,7 +228,9 @@ def open_image(handle, max_size, grayscale):
             print('converting {} to grayscale'.format(handle.name))
             image = image.convert('L')
     else:
-        assert image.mode == 'RGB'
+      if image.mode != 'RGB':
+          image = image.convert('RGB')
+      assert image.mode=='RGB'
 
     w, h = image.size
     
@@ -251,7 +253,7 @@ def setup_inputs(opts):
     print('  {} {} {}'.format(opts.image.name, input_image.shape, input_image.dtype))
 
     if opts.weights is not None:
-        weight_image = open_image(opts.weights, opts.max_size, grayscale=True)
+        weight_image = open_image(opts.weights, opts.max_size, grayscale=False)
         assert weight_image.size == input_image.size
     else:
         weight_image = 1.0
