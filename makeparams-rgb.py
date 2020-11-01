@@ -15,10 +15,7 @@ and format them for use in the shader. The order emitted by imfit is:
 The eight numbers are rescaled and quantized into the range [0, 511]
 and encoded into four floating-point numbers (uv, rp, lt, sh).
 
-'''
-
-'''
-# Indexes of Gabor function parameters
+Indexes of Gabor function parameters
 
 GABOR_PARAM_U  = 0  # [-1, 1]
 GABOR_PARAM_V  = 1  # [-1, 1]
@@ -53,17 +50,19 @@ GABOR_RANGE = np.array([
 
 import sys
 import numpy as np
+import json
 
 def wrap_twopi(f):
     while f < 0: f += 2*np.pi
     while f > 2*np.pi: f -= 2*np.pi
     return f
 
-if len(sys.argv) != 2:
-    print ('usage:', sys.argv[0], 'params.txt')
+if len(sys.argv) != 3:
+    print ('usage:', sys.argv[0], 'params.txt', 'outparams.txt')
     sys.exit(0)
 
 infile = open(sys.argv[1], 'r')
+outfilename = sys.argv[2]
 two_pi = 2*np.pi
 lower_bound = np.array([-1.0, -1.0, 0.0,    0.0,   0.0,    0.0,    0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 upper_bound = np.array([ 1.0,  1.0, two_pi, two_pi,two_pi, two_pi, 4.0, 4.0, 2.0, 2.0, 2.0, 2.0])
@@ -71,6 +70,7 @@ ranges = upper_bound-lower_bound
 
 var_names = 'uvrpltsh'
 tol = 1e-4
+outfile = np.array();
 
 for line in infile:
 
@@ -90,8 +90,8 @@ for line in infile:
     gu = np.array([u[0],u[1],u[2],u[3],u[6],u[7],u[8],u[9]])
     cu = np.array([u[4],u[5],u[10],u[11]])
 
-    outputs = []
-    outputs2 = []
+    outputs = np.array()
+    outputs2 = np.array()
     
     for j in range(4):
         na = gu[2*j + 0]
@@ -99,12 +99,8 @@ for line in infile:
         n = 512*na + nb
         #assert(n % 512 == nb)
         #assert(n / 512 == na)
-        outputs.append(n)
-        outputs2.append(cu[j])
+        outputs = np.append(outputs,n)
+    outfile = np.concatenate((outfile,outputs,cu))
 
-    uvrp = 'vec4({},{},{},{})'.format(*nums[:4])
-    ltsh = 'vec4({},{},{},{})'.format(*nums[4:])
-    # print ('    k += gabor(p, vec4({:}.,{:}.,{:}.,{:}.));'.format(*outputs))
-    # simpler space separated print output for Max
-    print ('{}. {}. {}. {}.'.format(*outputs))
-    print ('{}. {}. {}. {}.'.format(*outputs2))
+with open(outfilename, "w") as txt_file:
+    json.dump(outfile.tolist(),txt_file,separators=', ')
