@@ -70,7 +70,7 @@ ranges = upper_bound-lower_bound
 
 var_names = 'uvrpltsh'
 tol = 1e-4
-outfile = np.array();
+outfile = np.array([]);
 
 for line in infile:
 
@@ -90,8 +90,7 @@ for line in infile:
     gu = np.array([u[0],u[1],u[2],u[3],u[6],u[7],u[8],u[9]])
     cu = np.array([u[4],u[5],u[10],u[11]])
 
-    outputs = np.array()
-    outputs2 = np.array()
+    outputs = np.array([])
     
     for j in range(4):
         na = gu[2*j + 0]
