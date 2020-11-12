@@ -267,11 +267,11 @@ def setup_inputs(opts):
     GABOR_RANGE[GABOR_PARAM_T, 0] = px
     GABOR_RANGE[GABOR_PARAM_S, 0] = px
     
-    target_tensor = tf.placeholder(tf.float32,
+    target_tensor = tf.compat.v1.placeholder(tf.float32,
                                    shape=input_image.shape,
                                    name='target')
 
-    max_row = tf.placeholder(tf.int32, shape=(),
+    max_row = tf.compat.v1.placeholder(tf.int32, shape=(),
                              name='max_row')
 
     return InputsTuple(input_image, weight_image,
@@ -318,7 +318,7 @@ class GaborModel(object):
                                                             dtype=tf.float32)
 
             # n x 12 x e
-            self.params = tf.get_variable(
+            self.params = tf.compat.v1.get_variable(
                 'params',
                 shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
                 dtype=tf.float32,
@@ -456,8 +456,8 @@ class GaborModel(object):
         self.con_loss = tf.reduce_mean(self.con_loss_per_fit, name='con_loss')
         self.loss = self.err_loss + self.con_loss
 
-        with tf.variable_scope('imfit_optimizer'):
-            self.opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        with tf.compat.v1.variable_scope('imfit_optimizer'):
+            self.opt = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
             self.train_op = self.opt.minimize(self.loss)
 
 ######################################################################
@@ -471,7 +471,7 @@ def setup_models(opts, inputs):
     x_tensor = tf.constant(inputs.x.reshape(1,1,-1,1,1))
     y_tensor = tf.constant(inputs.y.reshape(1,-1,1,1,1))
 
-    with tf.variable_scope('full'):
+    with tf.compat.v1.variable_scope('full'):
 
         full = GaborModel(1, opts.num_models,
                           x_tensor, y_tensor,
@@ -480,7 +480,7 @@ def setup_models(opts, inputs):
                           max_row = inputs.max_row,
                           initializer=tf.zeros_initializer())
     
-    with tf.variable_scope('local'):
+    with tf.compat.v1.variable_scope('local'):
         
         local = GaborModel(opts.num_local, 1,
                            x_tensor, y_tensor,
@@ -495,7 +495,7 @@ def setup_models(opts, inputs):
 
         _, x_preview, y_preview = normalized_grid(preview_shape[:2])
         
-        with tf.variable_scope('preview'):
+        with tf.compat.v1.variable_scope('preview'):
             preview = GaborModel(1, opts.num_models,
                                  x_preview.reshape(1,1,-1,1,1),
                                  y_preview.reshape(1,-1,1,1,1),
@@ -768,7 +768,7 @@ def local_optimize(opts, inputs, models, state, sess,
                    model_start_idx, prev_best_loss):
 
     if prev_best_loss is not None:
-        print('  loss before local fit is', prev_best_loss)
+        # print('  loss before local fit is', prev_best_loss)
         
     # Params have already been randomly initialized, but we
     # need to replace some of them here
@@ -810,7 +810,7 @@ def local_optimize(opts, inputs, models, state, sess,
     new_params = results['params'][fidx]
     new_con_loss = results['con_losses'][fidx]
     
-    print('  after local fit, loss is', new_loss)
+    # print('  after local fit, loss is', new_loss)
 
     assert(new_params.shape == (12, 1))
 
@@ -889,9 +889,9 @@ def main():
     # tensorflow graph in a loop (which ends up costing O(n^2) over
     # the entire loop).
 
-    ginit = tf.global_variables_initializer()
+    ginit = tf.compat.v1.global_variables_initializer()
 
-    tf.get_default_graph().finalize()
+    tf.compat.v1.get_default_graph().finalize()
 
     # Tell tf not to blather on console
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -899,7 +899,7 @@ def main():
     ############################################################
     # Now start a tensorflow session and get to work!
     
-    with tf.Session() as sess:
+    with tf.compat.v1.Session() as sess:
 
         # Initialize all global vars (including optimizer-internal vars)
         sess.run(ginit)
@@ -957,7 +957,7 @@ def main():
             # Establish starting index for models and whether to replace or not
             is_replace = (model_start_idx >= opts.num_models)
 
-            print('at loop iteration {}, '.format(loop_count+1), end='')
+            print('iteration #{}, '.format(loop_count+1), end='')
             
             # Figure out which model(s) to replace or newly train
             if is_replace:
@@ -968,7 +968,7 @@ def main():
                 model_idx = idx[-1]
                 rest_idx = idx[:-1]
                 
-                print('replacing models', model_idx)
+                #print('replacing models', model_idx)
                 
             else:
                 

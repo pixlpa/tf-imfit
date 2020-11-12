@@ -7,13 +7,13 @@ rm -f results/lores/*.png && \
 time python tf-imfit/rgb-imfit.py $SOURCEIMG -w source_weights/$NAME-wt.png \
      -s 64 -T 256 -a 0.01 \
      -o results/weights_lores.txt \
-     -p 512 -S -x results/lores/out -n 128
+     -p 256 -S -x results/lores/out -n 128
 
-rm -f results/lores/*.png && \
+rm -f results/midres/*.png && \
 time python tf-imfit/rgb-imfit.py $SOURCEIMG -w source_weights/$NAME-wt.png \
      -s 96 -T 256 -a 0.04 \
      -i results/weights_lores.txt -o results/weights_midres.txt \
-     -p 512 -S -x results/midres/out
+     -p 256 -S -x results/midres/out
 
 rm -f results/hires/*.png && \
 time python tf-imfit/rgb-imfit.py $SOURCEIMG -w source_weights/$NAME-wt.png \
@@ -28,5 +28,7 @@ time python tf-imfit/rgb-imfit.py $SOURCEIMG -w source_weights/$NAME-wt.png \
      -p 512 -S -x results/final/out -n 128
 
 python tf-imfit/makeparams-rgb.py results/weights_final.txt results/$NAME.txt
+python tf-imfit/makeparams-rgb-alt.py results/weights_final.txt results/$NAME-alt.txt
 
+cp results/$NAME-alt.txt /content/drive/My\ Drive/Arca/results/
 cp results/$NAME.txt /content/drive/My\ Drive/Arca/results/

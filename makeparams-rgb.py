@@ -70,7 +70,7 @@ ranges = upper_bound-lower_bound
 
 var_names = 'uvrpltsh'
 tol = 1e-4
-outfile = np.array([]);
+outfile = np.array([])
 
 for line in infile:
 
