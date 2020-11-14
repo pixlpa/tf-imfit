@@ -768,7 +768,7 @@ def local_optimize(opts, inputs, models, state, sess,
                    model_start_idx, prev_best_loss):
 
     if prev_best_loss is not None:
-        # print('  loss before local fit is', prev_best_loss)
+        print('  loss before local fit is', prev_best_loss)
         
     # Params have already been randomly initialized, but we
     # need to replace some of them here
