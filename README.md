@@ -1,24 +1,12 @@
 # tf-imfit
+Adaptation of the TensorFlow-based rewrite of <https://github.com/mzucker/imfit>
+by mzucker.
 
-TensorFlow-based rewrite of <https://github.com/mzucker/imfit>
+This version is optimized to work with Google Colab, which was not working with the original repo.
+Some effort has been put in to fix deprecated tensorflow functions, but I've been using Tensorflow 1.15 in Colab without issues.
 
-You will need:
+Because this was used to run in a shader in Max, the "makeparams" scripts format the outputs into a json array style that's easy to copy into a dictionary in Max. See the example patcher in the Max folder for details.
 
-  - TensorFlow (I used v1.3 and 1.7, should work with versions in between as well)
-  - PIL or Pillow (for Image loading/saving)
- 
-To do a full fit, just run [`fitme.sh`](fitme.sh). See that file for
-example runtimes and objective function values collected with my
-NVidia GTX 1080 GPU. Your runtimes and objective function values may
-vary due to hardware differences.
+I recommend using the Google Colab document for testing this out, and check the original repo for more details.
 
-If you just want to check the accuracy of an existing fit or visualize
-its output, you can run something like:
 
-    python ./tf-imfit.py -w images/zz_rect_weights.png images/zz_rect.png \
-           -s256 -i params/zz_rect_weighted_256px.txt -p512 -T 0
-    
-It wil create an `out.png` visualization that shows the approximated
-image as well as the per-pixel error. Although you will want a fancy
-GPU to do the error minimization, visualization/verification like the
-command above should run in reasonable time on a CPU.

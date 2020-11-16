@@ -1,4 +1,5 @@
 SOURCEIMG=$1
+RESULTSPATH =$2
 NAME=$(basename $SOURCEIMG .png)
 
 echo $SOURCEIMG $NAME $NAME-wt.png $NAME.txt
@@ -30,5 +31,5 @@ time python tf-imfit/rgb-imfit.py $SOURCEIMG -w source_weights/$NAME-wt.png \
 python tf-imfit/makeparams-rgb.py results/weights_final.txt results/$NAME.txt
 python tf-imfit/makeparams-rgb-alt.py results/weights_final.txt results/$NAME-alt.txt
 
-cp results/$NAME-alt.txt /content/drive/My\ Drive/Arca/results/
-cp results/$NAME.txt /content/drive/My\ Drive/Arca/results/
+cp results/$NAME-alt.txt $RESULTSPATH
+cp results/$NAME.txt $RESULTSPATH
