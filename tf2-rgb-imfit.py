@@ -478,6 +478,11 @@ class GaborModel:
         # Sum all components to get final image
         image = tf.reduce_sum(components, axis=0)
         
+        # Reshape to match input dimensions if needed
+        if hasattr(self, 'target_tensor') and self.target_tensor is not None:
+            target_shape = self.target_tensor.shape
+            image = tf.reshape(image, target_shape)
+        
         return components, image
 
 ######################################################################
