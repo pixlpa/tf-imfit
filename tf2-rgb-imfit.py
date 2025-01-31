@@ -721,19 +721,25 @@ class GaborOptimizer:
         
         return loss, approx
 
-def optimize_model(input_image, opts, weights=None, scale=None):
+def optimize_model(input_image, opts, weights=None, scale=None, initial_state=None):
     """Simple optimization loop that strictly respects iteration count"""
     model = GaborModel('gabor', count=opts.num_gabors, 
                       image_shape=input_image.shape)
+    
+    # Initialize from previous state if provided
+    if initial_state is not None:
+        try:
+            model.set_variable_values(initial_state)
+            print("Successfully initialized from previous scale")
+        except Exception as e:
+            print(f"Warning: Failed to initialize from previous scale: {e}")
+    
     optimizer = GaborOptimizer(model, input_image, 
                              learning_rate=opts.learning_rate,
                              weights=weights)
     
     iterations_completed = 0
     best_loss = float('inf')
-    
-    # Create scale suffix for snapshots
-    scale_suffix = f"_scale{scale:.2f}" if scale is not None else ""
     
     try:
         with tqdm(total=opts.total_iterations, desc="Optimizing") as pbar:
@@ -746,7 +752,7 @@ def optimize_model(input_image, opts, weights=None, scale=None):
                 loss, approx = optimizer.optimization_step()
                 iterations_completed += 1
                 
-                # Save snapshot at each iteration with scale in filename
+                # Save snapshot at each iteration
                 if opts.snapshot_prefix:
                     snapshot(approx, input_image, opts, iterations_completed, 
                             extra_info=f"scale_{scale:.2f}")
@@ -768,6 +774,7 @@ def optimize_multi_scale(input_path, weight_path, opts):
     gabor_scales = [0.25, 0.5, 0.75, 1.0]
     
     best_model = None
+    best_state = None
     final_loss = float('inf')
     total_iterations = opts.total_iterations
     iterations_used = 0
@@ -797,15 +804,35 @@ def optimize_multi_scale(input_path, weight_path, opts):
             scale_opts.total_iterations = scale_iterations
             print(f"Allocated {scale_iterations} iterations for scale {scale:.2f}")
         
-        # Run optimization at this scale, passing the current scale
-        model, loss, iters_this_scale = optimize_model(input_image, scale_opts, weights, scale=scale)
+        # Initialize from previous scale if available
+        initial_state = None
+        if best_state is not None:
+            print("Initializing from previous scale...")
+            # Scale the position variables according to the scale change
+            scale_factor = scale / scales[i-1]
+            scaled_state = {}
+            for name, value in best_state.items():
+                if name == 'pos_x' or name == 'pos_y':
+                    scaled_state[name] = value * scale_factor
+                else:
+                    scaled_state[name] = value
+            initial_state = scaled_state
+        
+        # Run optimization at this scale
+        model, loss, iters_this_scale = optimize_model(
+            input_image, scale_opts, weights, 
+            scale=scale, 
+            initial_state=initial_state
+        )
         iterations_used += iters_this_scale
+        
+        # Save the model state for the next scale
+        best_state = model.get_variable_values()
+        best_model = model
+        final_loss = loss
         
         print(f"Used {iters_this_scale} iterations at scale {scale:.2f}")
         print(f"Total iterations used: {iterations_used}/{total_iterations if total_iterations else 'unlimited'}")
-        
-        best_model = model
-        final_loss = loss
         
         if opts.save_best:
             scale_path = f"{opts.save_best}.scale_{scale:.2f}.txt"
