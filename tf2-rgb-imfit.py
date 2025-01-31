@@ -360,7 +360,17 @@ class GaborModel(tf.keras.Model):
             target = self.target
             
         if target is not None:
-            diff = self.approx - target
+            # Ensure target has the right shape [batch, height, width, channels]
+            if len(target.shape) == 3:
+                target = target[None, ...]  # Add batch dimension if missing
+                
+            # Ensure approx has the right shape
+            approx = self.approx
+            if len(approx.shape) > 4:
+                # If approx has extra dimensions, reduce them
+                approx = tf.reduce_sum(approx, axis=-1)
+            
+            diff = approx - target
             if self.weight is not None:
                 diff = diff * self.weight
             return tf.reduce_mean(diff * diff, axis=[1,2,3])
@@ -373,7 +383,7 @@ class GaborModel(tf.keras.Model):
         # Calculate Gabor functions
         self.gabor = compute_gabor(self.cparams, self.x, self.y)
         
-        # Calculate approximation
+        # Calculate approximation (sum over models dimension)
         self.approx = tf.reduce_sum(self.gabor, axis=-1)
         
         # Calculate constraint losses
