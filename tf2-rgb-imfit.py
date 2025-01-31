@@ -596,7 +596,7 @@ def snapshot(current_image, input_image, opts, iteration, extra_info=None):
             os.makedirs(outdir, exist_ok=True)
 
         # Generate output filename
-        outfile = f'{opts.snapshot_prefix}-{iteration:06d}.png'
+        outfile = f'{opts.snapshot_prefix}-{int(iteration):06d}.png'
         print(f"Saving snapshot to: {outfile}")
         
         # Convert to numpy if needed
