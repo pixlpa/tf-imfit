@@ -299,13 +299,13 @@ class GaborModel(tf.keras.Model):
 
         # Allow evaluating less than ensemble_size models (i.e. while
         # building up full model).
-        self.ensemble_size = ensemble_size
-        self.max_row = ensemble_size if max_row is None else max_row
+        self.ensemble_size = tf.constant(ensemble_size, dtype=tf.int32)
+        self.max_row = tf.constant(max_row if max_row is not None else ensemble_size, dtype=tf.int32)
 
         gmin = GABOR_RANGE[:,0].reshape(1,GABOR_NUM_PARAMS,1).copy()
         gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1).copy()
-        self.gmin = gmin
-        self.gmax = gmax
+        self.gmin = tf.constant(gmin, dtype=tf.float32)
+        self.gmax = tf.constant(gmax, dtype=tf.float32)
             
         # Create the params variable as a trainable weight
         self.params = self.add_weight(
@@ -323,7 +323,7 @@ class GaborModel(tf.keras.Model):
                 shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
                 minval=0.0,
                 maxval=1.0)
-            initial_value = gmin + (gmax - gmin) * random_values
+            initial_value = self.gmin + (self.gmax - self.gmin) * random_values
             self.params.assign(initial_value)
 
         self.weight = weight
@@ -333,10 +333,12 @@ class GaborModel(tf.keras.Model):
         
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
     def call(self, inputs):
-        # Convert max_row to tensor constant
-        max_row = tf.constant(self.max_row, dtype=tf.int32)
-        max_row = tf.minimum(max_row, self.ensemble_size)
+        # Use tf.minimum with tensor versions
+        max_row = tf.minimum(self.max_row, self.ensemble_size)
         
         # n x 12 x e
         self.cparams = tf.clip_by_value(
