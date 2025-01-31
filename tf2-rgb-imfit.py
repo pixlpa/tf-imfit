@@ -687,115 +687,38 @@ class GaborOptimizer:
         self.model = model
         self.input_image = input_image
         self.weights = weights
-        if weights is not None:
-            self.weights = weights[..., np.newaxis]
-        
-        # Use a more sophisticated learning rate schedule
-        self.initial_learning_rate = learning_rate
-        self.current_learning_rate = learning_rate
-        self.optimizer = tf.keras.optimizers.Adam(
-            learning_rate=learning_rate,
-            beta_1=0.9,  # Momentum term
-            beta_2=0.999,  # RMSprop term
-            epsilon=1e-7,  # Numerical stability
-            amsgrad=True  # Use AMSGrad variant
-        )
-        
-        # Early stopping parameters
-        self.best_loss = float('inf')
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+        self.loss_history = []
+        self.best_loss = float('inf')  # Initialize best_loss
         self.best_state = None
-        self.loss_history = []
-        self.steps_without_improvement = 0
-        self.patience = 1000
-        self.min_delta = 1e-6
         
-        # Learning rate scheduling
-        self.lr_patience = 200
-        self.lr_factor = 0.5
-        self.lr_min_delta = 1e-5
-        self.min_learning_rate = learning_rate * 0.0001
-
-    def prepare_for_stage(self, stage: int, max_sigma: float, max_frequency: float):
-        """Prepare optimizer for new curriculum stage"""
-        # Reset optimizer state while keeping best model
-        self.optimizer.learning_rate.assign(self.initial_learning_rate)
-        self.current_learning_rate = self.initial_learning_rate
-        self.steps_without_improvement = 0
-        self.loss_history = []
-        
-        # Update model constraints
-        self.model.update_constraints(max_sigma=max_sigma, max_frequency=max_frequency)
-        
-        # Restore best state if available
-        if self.best_state is not None:
-            self.model.set_variable_values(self.best_state)
-            print(f"Restored best model state for stage {stage}")
-        
-        print(f"Stage {stage}: Learning rate reset to {self.current_learning_rate:.2e}")
-
-    def should_stop_early(self, loss):
-        """Check if optimization should stop early"""
-        self.loss_history.append(loss)
-        
-        if loss + self.min_delta < self.best_loss:
-            self.best_loss = loss
-            self.steps_without_improvement = 0
-            self.best_state = self.model.get_variable_values()
-            return False
-        
-        self.steps_without_improvement += 1
-        return self.steps_without_improvement >= self.patience
-
-    def adjust_learning_rate(self, loss):
-        """Adjust learning rate based on loss progression"""
-        if len(self.loss_history) < self.lr_patience:
-            return
-        
-        recent_losses = self.loss_history[-self.lr_patience:]
-        if min(recent_losses) > (min(self.loss_history) - self.lr_min_delta):
-            current_lr = self.optimizer.learning_rate.numpy()
-            new_lr = max(current_lr * self.lr_factor, self.min_learning_rate)
-            
-            if new_lr < current_lr:
-                print(f"\nReducing learning rate: {current_lr:.2e} -> {new_lr:.2e}")
-                self.optimizer.learning_rate.assign(new_lr)
-                self.current_learning_rate = new_lr
-                
-                # Optionally restore best state when reducing learning rate
-                if self.best_state is not None:
-                    self.model.set_variable_values(self.best_state)
-                    print("Restored best model state")
-                
-                # Clear loss history after LR change
-                self.loss_history = []
-
     def optimization_step(self):
         """Perform one optimization step"""
         with tf.GradientTape() as tape:
             # Forward pass
-            components = self.model()
+            components = self.model.call()
             image = tf.reduce_sum(components, axis=0)
             
             # Calculate loss
-            loss = self.calculate_loss(image)
+            loss = self.calculate_loss(image)  # Changed from loss_fn to calculate_loss
             
-        # Backward pass
-        gradients = tape.gradient(loss, self.model.trainable_variables)
-        self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
-        
-        # Update best state if needed
-        if self.best_loss is None or loss < self.best_loss:
-            self.best_loss = loss
-            self.best_state = self.model.get_variable_values()
-            self.steps_without_improvement = 0
-        else:
-            self.steps_without_improvement += 1
+            # Compute gradients
+            gradients = tape.gradient(loss, self.model.trainable_variables)
             
-        # Store loss history
-        self.loss_history.append(loss)
-        
-        return loss, components, image
-        
+            # Apply gradients
+            self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+            
+            # Track best state
+            current_loss = loss.numpy()  # Convert to numpy for comparison
+            if self.best_state is None or current_loss < self.best_loss:
+                self.best_loss = current_loss
+                self.best_state = [v.numpy() for v in self.model.trainable_variables]
+            
+            # Track loss history
+            self.loss_history.append(current_loss)
+            
+            return current_loss, components, image
+
     def calculate_loss(self, predicted_image):
         """Calculate loss between predicted and target images"""
         # MSE loss
