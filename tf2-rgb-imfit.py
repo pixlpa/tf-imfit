@@ -361,8 +361,8 @@ class GaborModel(tf.keras.Model):
             
         if target is not None:
             # Print shapes for debugging
-            print("Target shape:", target.shape)
-            print("Approx shape:", self.approx.shape)
+            #print("Target shape:", target.shape)
+            #print("Approx shape:", self.approx.shape)
             
             # Ensure target has the right shape [batch, height, width, channels]
             if len(target.shape) == 3:
