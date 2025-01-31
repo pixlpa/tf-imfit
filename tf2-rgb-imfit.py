@@ -1054,6 +1054,10 @@ def local_optimize(opts, inputs, models, state,
     new_params = results['params'][fidx]
     new_con_loss = results['con_losses'][fidx]
 
+    # Print shapes for debugging
+    print("new_gabor shape:", new_gabor.shape)
+    print("state.gabor shape:", state.gabor.shape)
+    
     if prev_best_loss is None or new_loss < prev_best_loss:
         do_update = True
     else:
@@ -1071,8 +1075,15 @@ def local_optimize(opts, inputs, models, state,
     
     if do_update:
         prev_best_loss = new_loss
-        state.params[:,model_idx] = new_params[:,0]        
-        state.gabor[:,:,:,model_idx] = new_gabor[:,:,:,0]
+        state.params[:,model_idx] = new_params[:,0]
+        
+        # Reshape new_gabor to match state.gabor's expected shape
+        reshaped_gabor = new_gabor.squeeze()  # Remove extra dimensions
+        if len(reshaped_gabor.shape) == 3:  # If [H,W,C]
+            state.gabor[:,:,:,model_idx] = reshaped_gabor
+        else:
+            print(f"Warning: unexpected gabor shape: {new_gabor.shape}")
+            
         state.con_loss[model_idx] = new_con_loss
 
     print()
