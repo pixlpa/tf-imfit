@@ -334,8 +334,9 @@ class GaborModel(tf.keras.Model):
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
     def call(self, inputs):
-        # Use static max_row value instead of tensor
-        max_row = tf.minimum(self.max_row, self.ensemble_size)
+        # Convert max_row to tensor constant
+        max_row = tf.constant(self.max_row, dtype=tf.int32)
+        max_row = tf.minimum(max_row, self.ensemble_size)
         
         # n x 12 x e
         self.cparams = tf.clip_by_value(
