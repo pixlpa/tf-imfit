@@ -813,93 +813,35 @@ def optimize_model(input_image, opts, weights=None):
                              learning_rate=opts.learning_rate,
                              weights=weights)
     
-    # Initialize progress tracker
+    # Initialize progress tracker with explicit step limit
     progress = ProgressTracker(
         total_iterations=opts.total_iterations,
         time_limit=opts.time_limit,
-        steps_per_iteration=opts.steps_per_iteration
+        steps_per_iteration=1  # Set to 1 to count actual steps
     )
     
     print(f"\nStarting optimization with {opts.num_gabors} Gabors")
+    print(f"Target steps for this optimization: {opts.total_iterations}")
     
+    steps_completed = 0
     best_loss = float('inf')
-    best_state = None
-    plateau_count = 0
-    loss_window = []
-    window_size = 50  # For moving average
     
     try:
         while progress.should_continue():
-            epoch_loss = 0
+            loss, approx = optimizer.optimization_step()
+            steps_completed += 1
             
-            # Run optimization steps with warm-up
-            for step in progress.start_iteration():
-                loss, approx = optimizer.optimization_step()
-                current_loss = loss.numpy()
-                epoch_loss += current_loss
+            if steps_completed >= opts.total_iterations:
+                print(f"Completed target steps: {steps_completed}")
+                break
                 
-                # Track moving average of loss
-                loss_window.append(current_loss)
-                if len(loss_window) > window_size:
-                    loss_window.pop(0)
-                moving_avg = np.mean(loss_window)
-                
-                if step % 100 == 0:
-                    print(f"\rIteration {progress.iteration}, "
-                          f"Step {step}/{opts.steps_per_iteration}, "
-                          f"Loss: {current_loss:.6f}, "
-                          f"Avg: {moving_avg:.6f}, "
-                          f"LR: {optimizer.current_learning_rate:.2e}", 
-                          end="", flush=True)
-            
-            epoch_loss /= opts.steps_per_iteration
-            
-            # Adaptive improvement threshold
-            rel_improvement = (best_loss - epoch_loss) / (best_loss + 1e-10)
-            
-            if rel_improvement > 1e-4:  # 0.01% improvement
-                best_loss = epoch_loss
-                best_state = model.get_variable_values()
-                plateau_count = 0
-                print(f"\n🌟 New best loss: {best_loss:.6f}")
-            else:
-                plateau_count += 1
-            
-            # Dynamic annealing based on plateau detection
-            if plateau_count >= opts.anneal_patience:
-                current_lr = optimizer.current_learning_rate
-                new_lr = current_lr * opts.anneal_factor
-                
-                if new_lr < opts.min_learning_rate:
-                    print(f"\n⚡ Reached minimum learning rate. Stopping.")
-                    break
-                
-                optimizer.current_learning_rate = new_lr
-                optimizer.optimizer.learning_rate.assign(new_lr)
-                print(f"\n📉 Annealing learning rate: {current_lr:.2e} -> {new_lr:.2e}")
-                plateau_count = 0
-                loss_window.clear()  # Reset moving average
-            
-            # Take snapshot with progress info
-            if opts.snapshot_prefix and progress.iteration % opts.snapshot_frequency == 0:
-                try:
-                    snapshot(approx, input_image, opts, progress.iteration,
-                            extra_info={
-                                'loss': best_loss,
-                                'learning_rate': optimizer.current_learning_rate,
-                                'plateau_count': plateau_count
-                            })
-                except Exception as e:
-                    print(f"\n⚠️  Warning: Failed to save snapshot: {e}")
+            if steps_completed % 100 == 0:
+                print(f"Steps completed: {steps_completed}/{opts.total_iterations}")
     
     finally:
         progress.close()
     
-    # Restore best state
-    if best_state is not None:
-        model.set_variable_values(best_state)
-    
-    return model, best_loss
+    return model, best_loss, steps_completed
 
 def add_optimization_arguments(parser):
     """Add optimization-related command line arguments"""
@@ -1192,20 +1134,24 @@ def optimize_multi_scale(input_path, weight_path, opts):
     """Progressive multi-scale optimization"""
     # Define scale progression (from small to full size)
     scales = [0.25, 0.5, 0.75, 1.0]
-    
-    # Start with small number of Gabors and increase
     gabor_scales = [0.25, 0.5, 0.75, 1.0]
     
     best_model = None
     final_loss = float('inf')
     
-    # Track total iterations across all scales
-    remaining_iterations = opts.total_iterations
+    # If total_iterations is set, divide them among scales
+    if opts.total_iterations is not None:
+        # Convert total_iterations to total steps
+        total_steps = opts.total_iterations
+        print(f"Total steps to distribute across scales: {total_steps}")
+    else:
+        total_steps = None
+    
+    steps_used = 0
     
     for i, (scale, gabor_scale) in enumerate(zip(scales, gabor_scales)):
         print(f"\n=== Scale {i+1}/{len(scales)} ===")
         print(f"Image scale: {scale:.2f}")
-        print(f"Gabor count: {int(opts.num_gabors * gabor_scale)}")
         
         # Load scaled image
         input_image, weights = load_input_image(input_path, weight_path, scale=scale)
@@ -1213,27 +1159,27 @@ def optimize_multi_scale(input_path, weight_path, opts):
         # Adjust optimization parameters for this scale
         scale_opts = copy.deepcopy(opts)
         scale_opts.num_gabors = int(opts.num_gabors * gabor_scale)
-        scale_opts.learning_rate *= scale  # Adjust learning rate for scale
+        scale_opts.learning_rate *= scale
         
-        # Allocate remaining iterations for this scale
-        if remaining_iterations is not None:
-            # Use proportionally more iterations for larger scales
-            scale_iterations = int(remaining_iterations * scale / sum(scales[i:]))
-            scale_opts.total_iterations = scale_iterations
-            remaining_iterations -= scale_iterations
-            print(f"Allocated iterations for this scale: {scale_iterations}")
-        
-        # Initialize from previous scale if available
-        if best_model is not None:
-            print("Initializing from previous scale...")
-            model = GaborModel('gabor', count=scale_opts.num_gabors,
-                             image_shape=input_image.shape)
-            # Upsample previous model's parameters
-            prev_state = best_model.get_variable_values()
-            model.set_variable_values(prev_state)
+        # Calculate steps for this scale
+        if total_steps is not None:
+            remaining_steps = total_steps - steps_used
+            if remaining_steps <= 0:
+                print("No steps remaining for this scale")
+                break
+                
+            # Allocate steps proportionally based on scale
+            scale_weight = scale / sum(scales[i:])
+            scale_steps = int(remaining_steps * scale_weight)
+            scale_opts.total_iterations = scale_steps
+            print(f"Allocated {scale_steps} steps for scale {scale:.2f}")
         
         # Run optimization at this scale
-        model, loss = optimize_model(input_image, scale_opts, weights)
+        model, loss, steps_this_scale = optimize_model(input_image, scale_opts, weights)
+        steps_used += steps_this_scale
+        
+        if total_steps is not None:
+            print(f"Used {steps_this_scale} steps at this scale. Total steps used: {steps_used}/{total_steps}")
         
         # Update best model
         best_model = model
@@ -1243,10 +1189,9 @@ def optimize_multi_scale(input_path, weight_path, opts):
         if opts.save_best:
             scale_path = f"{opts.save_best}.scale_{scale:.2f}.txt"
             save_model_state(model, scale_path)
-            
-        # Check if we've used all iterations
-        if remaining_iterations is not None and remaining_iterations <= 0:
-            print("\nReached total iteration limit")
+        
+        if steps_used >= total_steps:
+            print("\nReached total step limit")
             break
     
     return best_model, final_loss
