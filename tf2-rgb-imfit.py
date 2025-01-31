@@ -455,6 +455,31 @@ class GaborModel:
             
         print(f"Applied constraints: max_sigma={max_sigma}, max_frequency={max_frequency}")
 
+    def call(self):
+        """Forward pass of the model"""
+        # Generate all Gabor components
+        components = []
+        for i in range(self.count):
+            x = self.pos_x[i]
+            y = self.pos_y[i]
+            sigma = self.sigma[i]
+            theta = self.theta[i]
+            frequency = self.frequency[i]
+            phase = self.phase[i]
+            amplitude = self.amplitude[i]
+            
+            # Generate Gabor component
+            component = self.generate_gabor(x, y)
+            components.append(component)
+            
+        # Stack all components
+        components = tf.stack(components)
+        
+        # Sum all components to get final image
+        image = tf.reduce_sum(components, axis=0)
+        
+        return components, image
+
 ######################################################################
 # Set up tensorflow models themselves. We need a separate model for
 # each combination of inputs/dimensions to optimize.
@@ -726,8 +751,7 @@ class GaborOptimizer:
         """Perform one optimization step"""
         with tf.GradientTape() as tape:
             # Forward pass
-            components = self.model.call()
-            image = tf.reduce_sum(components, axis=0)
+            components, image = self.model.call()
             
             # Calculate loss
             loss = self.calculate_loss(image)
