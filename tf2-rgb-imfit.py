@@ -721,6 +721,47 @@ class GaborOptimizer:
         
         return loss, approx
 
+def optimize_model(input_image, opts, weights=None, scale=None):
+    """Simple optimization loop that strictly respects iteration count"""
+    model = GaborModel('gabor', count=opts.num_gabors, 
+                      image_shape=input_image.shape)
+    optimizer = GaborOptimizer(model, input_image, 
+                             learning_rate=opts.learning_rate,
+                             weights=weights)
+    
+    iterations_completed = 0
+    best_loss = float('inf')
+    
+    # Create scale suffix for snapshots
+    scale_suffix = f"_scale{scale:.2f}" if scale is not None else ""
+    
+    try:
+        with tqdm(total=opts.total_iterations, desc="Optimizing") as pbar:
+            while True:
+                # Check iteration limit
+                if opts.total_iterations is not None and iterations_completed >= opts.total_iterations:
+                    break
+                
+                # Single optimization step
+                loss, approx = optimizer.optimization_step()
+                iterations_completed += 1
+                
+                # Save snapshot at each iteration with scale in filename
+                if opts.snapshot_prefix:
+                    snapshot_name = f"{opts.snapshot_prefix}{scale_suffix}-{iterations_completed:06d}.png"
+                    snapshot(approx, input_image, opts, iterations_completed, output_path=snapshot_name)
+                
+                # Update progress
+                if loss < best_loss:
+                    best_loss = loss
+                pbar.update(1)
+                pbar.set_postfix(loss=f"{loss:.6f}", best=f"{best_loss:.6f}")
+                
+    except KeyboardInterrupt:
+        print("\nOptimization interrupted by user")
+    
+    return model, best_loss, iterations_completed
+
 def optimize_multi_scale(input_path, weight_path, opts):
     """Progressive multi-scale optimization"""
     scales = [0.25, 0.5, 0.75, 1.0]
@@ -756,8 +797,8 @@ def optimize_multi_scale(input_path, weight_path, opts):
             scale_opts.total_iterations = scale_iterations
             print(f"Allocated {scale_iterations} iterations for scale {scale:.2f}")
         
-        # Run optimization at this scale
-        model, loss, iters_this_scale = optimize_model(input_image, scale_opts, weights)
+        # Run optimization at this scale, passing the current scale
+        model, loss, iters_this_scale = optimize_model(input_image, scale_opts, weights, scale=scale)
         iterations_used += iters_this_scale
         
         print(f"Used {iters_this_scale} iterations at scale {scale:.2f}")
@@ -775,43 +816,6 @@ def optimize_multi_scale(input_path, weight_path, opts):
             break
     
     return best_model, final_loss
-
-def optimize_model(input_image, opts, weights=None):
-    """Simple optimization loop that strictly respects iteration count"""
-    model = GaborModel('gabor', count=opts.num_gabors, 
-                      image_shape=input_image.shape)
-    optimizer = GaborOptimizer(model, input_image, 
-                             learning_rate=opts.learning_rate,
-                             weights=weights)
-    
-    iterations_completed = 0
-    best_loss = float('inf')
-    
-    try:
-        with tqdm(total=opts.total_iterations, desc="Optimizing") as pbar:
-            while True:
-                # Check iteration limit
-                if opts.total_iterations is not None and iterations_completed >= opts.total_iterations:
-                    break
-                
-                # Single optimization step
-                loss, approx = optimizer.optimization_step()
-                iterations_completed += 1
-                
-                # Save snapshot at each iteration
-                if opts.snapshot_prefix:
-                    snapshot(approx, input_image, opts, iterations_completed)
-                
-                # Update progress
-                if loss < best_loss:
-                    best_loss = loss
-                pbar.update(1)
-                pbar.set_postfix(loss=f"{loss:.6f}", best=f"{best_loss:.6f}")
-                
-    except KeyboardInterrupt:
-        print("\nOptimization interrupted by user")
-    
-    return model, best_loss, iterations_completed
 
 def add_optimization_arguments(parser):
     """Add optimization-related command line arguments"""
