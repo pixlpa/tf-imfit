@@ -314,6 +314,8 @@ class GaborModel:
         self.count = count
         self.image_shape = image_shape
         self.variables = {}
+        self.max_sigma = None
+        self.max_frequency = None
 
         # Create variables with proper bounds
         h, w = image_shape[:2]
@@ -438,6 +440,20 @@ class GaborModel:
         if max_frequency is not None:
             self.variables['frequency'].assign(
                 tf.clip_by_value(self.variables['frequency'], 0.02, max_frequency))
+
+    def set_parameter_constraints(self, max_sigma=None, max_frequency=None):
+        """Set constraints on Gabor parameters"""
+        self.max_sigma = max_sigma
+        self.max_frequency = max_frequency
+        
+        # Apply constraints to current parameters
+        if max_sigma is not None:
+            self.sigma.assign(tf.clip_by_value(self.sigma, 0.1, max_sigma))
+            
+        if max_frequency is not None:
+            self.frequency.assign(tf.clip_by_value(self.frequency, 0.001, max_frequency))
+            
+        print(f"Applied constraints: max_sigma={max_sigma}, max_frequency={max_frequency}")
 
 ######################################################################
 # Set up tensorflow models themselves. We need a separate model for
@@ -692,6 +708,20 @@ class GaborOptimizer:
         self.best_loss = float('inf')  # Initialize best_loss
         self.best_state = None
         
+    def prepare_for_stage(self, stage, max_sigma, max_freq):
+        """Prepare optimizer for a new curriculum learning stage"""
+        # Update model constraints for this stage
+        self.model.set_parameter_constraints(
+            max_sigma=max_sigma,
+            max_frequency=max_freq
+        )
+        
+        # Reset best state tracking for new stage
+        self.best_loss = float('inf')
+        self.best_state = None
+        
+        print(f"Stage {stage}: max_sigma={max_sigma:.1f}, max_freq={max_freq:.3f}")
+    
     def optimization_step(self):
         """Perform one optimization step"""
         with tf.GradientTape() as tape:
