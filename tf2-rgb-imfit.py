@@ -988,3 +988,59 @@ def main():
 
 if __name__ == '__main__':
     exit(main())
+
+def validate_options(opts):
+    """Validate command line options"""
+    if not os.path.exists(opts.input):
+        raise ValueError(f"Input file not found: {opts.input}")
+    
+    if opts.num_gabors < 1:
+        raise ValueError("Number of Gabors must be positive")
+    
+    if opts.learning_rate <= 0:
+        raise ValueError("Learning rate must be positive")
+    
+    if opts.time_limit is not None and opts.time_limit <= 0:
+        raise ValueError("Time limit must be positive")
+    
+    if opts.total_iterations is not None and opts.total_iterations < 1:
+        raise ValueError("Total iterations must be positive")
+
+def create_output_directories(opts):
+    """Create necessary output directories"""
+    directories = []
+    if opts.snapshot_prefix:
+        directories.append(os.path.dirname(opts.snapshot_prefix))
+    if opts.output_dir:
+        directories.append(opts.output_dir)
+    
+    for directory in directories:
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+            print(f"Created directory: {directory}")
+
+def load_input_image(path):
+    """Load and preprocess input image"""
+    try:
+        # Load image and normalize to [0, 1]
+        image = imageio.imread(path).astype(np.float32) / 255.0
+        # Ensure 3 channels (RGB)
+        if len(image.shape) == 2:
+            image = np.stack([image] * 3, axis=-1)
+        elif image.shape[-1] == 4:  # RGBA
+            image = image[..., :3]
+        return image
+    except Exception as e:
+        raise RuntimeError(f"Failed to load image {path}: {e}")
+
+def format_time(seconds):
+    """Format time in seconds to human readable string"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = int(seconds % 60)
+    if hours > 0:
+        return f"{hours}h {minutes}m {seconds}s"
+    elif minutes > 0:
+        return f"{minutes}m {seconds}s"
+    else:
+        return f"{seconds}s"
