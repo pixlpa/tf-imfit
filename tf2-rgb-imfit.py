@@ -932,6 +932,39 @@ def format_time(seconds):
     else:
         return f"{seconds}s"
 
+def setup_gpu(opts):
+    """Configure GPU based on command line options"""
+    if opts.force_cpu:
+        print("Forcing CPU usage as requested.")
+        return False
+        
+    try:
+        # Check for GPU availability
+        gpus = tf.config.list_physical_devices('GPU')
+        if not gpus:
+            print("No GPU devices found. Running on CPU.")
+            return False
+
+        # Configure memory growth if requested (default: True)
+        if opts.memory_growth:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            
+        # Enable mixed precision if requested (default: True)
+        if opts.mixed_precision:
+            policy = tf.keras.mixed_precision.Policy('mixed_float16')
+            tf.keras.mixed_precision.set_global_policy(policy)
+        
+        print(f"GPU(s) configured successfully:")
+        print(f"- Found {len(gpus)} GPU(s)")
+        print(f"- Mixed precision: {'enabled' if opts.mixed_precision else 'disabled'}")
+        print(f"- Memory growth: {'enabled' if opts.memory_growth else 'disabled'}")
+        return True
+        
+    except Exception as e:
+        print(f"Warning: GPU configuration failed: {e}")
+        print("Falling back to CPU.")
+        return False
 
 def main():
     # Setup argument parser
