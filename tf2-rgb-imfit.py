@@ -360,19 +360,30 @@ class GaborModel(tf.keras.Model):
             target = self.target
             
         if target is not None:
+            # Print shapes for debugging
+            print("Target shape:", target.shape)
+            print("Approx shape:", self.approx.shape)
+            
             # Ensure target has the right shape [batch, height, width, channels]
             if len(target.shape) == 3:
-                target = target[None, ...]  # Add batch dimension if missing
-                
-            # Ensure approx has the right shape
+                target = tf.expand_dims(target, axis=0)  # Add batch dimension
+            
+            # Ensure approx has matching shape
             approx = self.approx
-            if len(approx.shape) > 4:
-                # If approx has extra dimensions, reduce them
-                approx = tf.reduce_sum(approx, axis=-1)
+            if len(approx.shape) == 3:
+                approx = tf.expand_dims(approx, axis=0)
+                
+            # Ensure shapes match
+            target = tf.broadcast_to(target, approx.shape)
+            
+            print("After reshape:")
+            print("Target shape:", target.shape)
+            print("Approx shape:", approx.shape)
             
             diff = approx - target
             if self.weight is not None:
-                diff = diff * self.weight
+                weight = tf.broadcast_to(self.weight, diff.shape)
+                diff = diff * weight
             return tf.reduce_mean(diff * diff, axis=[1,2,3])
         return tf.zeros([self.params.shape[0]])
 
