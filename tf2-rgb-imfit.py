@@ -312,11 +312,17 @@ class ProgressTracker:
         self.best_loss = float('inf')
         self.last_improvement = 0
         self.iteration = 0
+        self.total_steps = 0  # Add tracking of total steps
+        
+        # Calculate max steps if total_iterations is set
+        self.max_steps = (total_iterations * steps_per_iteration 
+                         if total_iterations is not None else None)
         
         try:
             from tqdm import tqdm
-            self.progress_bar = tqdm(total=total_iterations if total_iterations else None,
-                                   desc="Optimizing")
+            self.progress_bar = tqdm(
+                total=self.max_steps if self.max_steps else None,
+                desc="Optimizing")
             self.use_progress_bar = True
         except ImportError:
             self.progress_bar = None
@@ -327,29 +333,40 @@ class ProgressTracker:
         """Start a new iteration and return step range with optional progress bar"""
         self.iteration += 1
         
+        # Calculate remaining steps
+        if self.max_steps is not None:
+            remaining_steps = self.max_steps - self.total_steps
+            if remaining_steps <= 0:
+                return range(0)  # No steps left
+            # Use minimum of remaining steps and steps_per_iteration
+            current_steps = min(remaining_steps, self.steps_per_iteration)
+        else:
+            current_steps = self.steps_per_iteration
+        
         if self.use_progress_bar:
-            return tqdm(range(self.steps_per_iteration),
+            return tqdm(range(current_steps),
                        desc=f"Iteration {self.iteration}",
-                       leave=False)  # Don't keep all iteration bars
-        return range(self.steps_per_iteration)
+                       leave=False)
+        return range(current_steps)
     
     def should_continue(self):
         """Check if optimization should continue"""
+        if self.max_steps is not None and self.total_steps >= self.max_steps:
+            print(f'\nReached maximum steps: {self.max_steps}')
+            return False
+            
         if self.time_limit is not None:
             elapsed = (datetime.now() - self.start_time).total_seconds()
             if elapsed > self.time_limit:
                 print(f'\nExceeded time limit of {self.time_limit}s')
                 return False
         
-        if (self.total_iterations is not None and 
-            self.iteration >= self.total_iterations):
-            print(f'\nReached {self.total_iterations} iterations')
-            return False
-        
         return True
     
     def update_loss(self, current_loss):
         """Update best loss tracking and return True if improved"""
+        self.total_steps += 1  # Increment total steps counter
+        
         improved = False
         if current_loss < self.best_loss:
             self.best_loss = current_loss
