@@ -748,8 +748,8 @@ def optimize_model(input_image, opts, weights=None, scale=None):
                 
                 # Save snapshot at each iteration with scale in filename
                 if opts.snapshot_prefix:
-                    snapshot_name = f"{opts.snapshot_prefix}{scale_suffix}-{iterations_completed:06d}.png"
-                    snapshot(approx, input_image, opts, iterations_completed, output_path=snapshot_name)
+                    snapshot(approx, input_image, opts, iterations_completed, 
+                            extra_info=f"scale_{scale:.2f}")
                 
                 # Update progress
                 if loss < best_loss:
