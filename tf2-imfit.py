@@ -245,17 +245,18 @@ class GaborModel(tf.keras.Model):
             
         # Parameter tensor could be passed in or created here
         if params is not None:
-            self.params = tf.Variable(params, trainable=True)
+            self.params = tf.Variable(params, trainable=True, name='gabor_params')
         else:
             if initializer is None:
                 initializer = tf.random_uniform_initializer(minval=gmin,
                                                           maxval=gmax,
                                                           dtype=tf.float32)
             
-            self.params = tf.Variable(
-                initializer(shape=(num_parallel, ensemble_size, GABOR_NUM_PARAMS),
-                           dtype=tf.float32),
-                trainable=True)
+            initial_value = initializer(shape=(num_parallel, ensemble_size, GABOR_NUM_PARAMS),
+                                      dtype=tf.float32)
+            self.params = tf.Variable(initial_value, 
+                                    trainable=True,
+                                    name='gabor_params')
 
         self.max_row = max_row
         self.weight = weight

@@ -316,7 +316,7 @@ class GaborModel(tf.keras.Model):
 
             # n x 12 x e
             self.params = self.add_weight(
-                'params',
+                name='params',
                 shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
                 dtype=tf.float32,
                 initializer=initializer)
@@ -760,7 +760,7 @@ _magma_data = [[0.001462, 0.000466, 0.013866],
                [0.463508, 0.129893, 0.507652],
                [0.469640, 0.132245, 0.507809],
                [0.475780, 0.134577, 0.507921],
-               [0.481929, 0.136891, 0.507989],
+               [0.481929, 0.136891, 0.508011],
                [0.488088, 0.139186, 0.508011],
                [0.494258, 0.141462, 0.507988],
                [0.500438, 0.143719, 0.507920],
