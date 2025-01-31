@@ -715,6 +715,24 @@ class GaborOptimizer:
         self.lr_min_delta = 1e-5
         self.min_learning_rate = learning_rate * 0.0001
 
+    def prepare_for_stage(self, stage: int, max_sigma: float, max_frequency: float):
+        """Prepare optimizer for new curriculum stage"""
+        # Reset optimizer state while keeping best model
+        self.optimizer.learning_rate.assign(self.initial_learning_rate)
+        self.current_learning_rate = self.initial_learning_rate
+        self.steps_without_improvement = 0
+        self.loss_history = []
+        
+        # Update model constraints
+        self.model.update_constraints(max_sigma=max_sigma, max_frequency=max_frequency)
+        
+        # Restore best state if available
+        if self.best_state is not None:
+            self.model.set_variable_values(self.best_state)
+            print(f"Restored best model state for stage {stage}")
+        
+        print(f"Stage {stage}: Learning rate reset to {self.current_learning_rate:.2e}")
+
     def should_stop_early(self, loss):
         """Check if optimization should stop early"""
         self.loss_history.append(loss)
