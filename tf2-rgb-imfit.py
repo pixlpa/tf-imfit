@@ -779,12 +779,19 @@ def optimize_multi_scale(input_path, weight_path, opts):
     total_iterations = opts.total_iterations
     iterations_used = 0
     
+    # Load full-size image to get reference dimensions
+    full_image, _ = load_input_image(input_path, weight_path, scale=1.0)
+    full_height, full_width = full_image.shape[:2]
+    print(f"Full image size: {full_width}x{full_height}")
+    
     for i, (scale, gabor_scale) in enumerate(zip(scales, gabor_scales)):
         print(f"\n=== Scale {i+1}/{len(scales)} ===")
         print(f"Image scale: {scale:.2f}")
         
         # Load scaled image
         input_image, weights = load_input_image(input_path, weight_path, scale=scale)
+        current_height, current_width = input_image.shape[:2]
+        print(f"Current image size: {current_width}x{current_height}")
         
         # Adjust optimization parameters for this scale
         scale_opts = copy.deepcopy(opts)
@@ -808,14 +815,34 @@ def optimize_multi_scale(input_path, weight_path, opts):
         initial_state = None
         if best_state is not None:
             print("Initializing from previous scale...")
-            # Scale the position variables according to the scale change
-            scale_factor = scale / scales[i-1]
+            # Get previous dimensions
+            prev_scale = scales[i-1]
+            prev_height = int(full_height * prev_scale)
+            prev_width = int(full_width * prev_scale)
+            print(f"Previous image size: {prev_width}x{prev_height}")
+            
+            # Calculate scale factors for width and height
+            width_scale = current_width / prev_width
+            height_scale = current_height / prev_height
+            print(f"Scale factors: width={width_scale:.3f}, height={height_scale:.3f}")
+            
+            # Scale the state variables
             scaled_state = {}
             for name, value in best_state.items():
-                if name == 'pos_x' or name == 'pos_y':
-                    scaled_state[name] = value * scale_factor
+                if name == 'pos_x':
+                    scaled_state[name] = value * width_scale
+                    print(f"Scaled pos_x: min={scaled_state[name].min():.1f}, max={scaled_state[name].max():.1f}")
+                elif name == 'pos_y':
+                    scaled_state[name] = value * height_scale
+                    print(f"Scaled pos_y: min={scaled_state[name].min():.1f}, max={scaled_state[name].max():.1f}")
+                elif name == 'sigma':
+                    # Scale sigma with the average of width and height scaling
+                    avg_scale = (width_scale + height_scale) / 2
+                    scaled_state[name] = value * avg_scale
+                    print(f"Scaled sigma: min={scaled_state[name].min():.1f}, max={scaled_state[name].max():.1f}")
                 else:
                     scaled_state[name] = value
+                    
             initial_state = scaled_state
         
         # Run optimization at this scale
@@ -831,7 +858,12 @@ def optimize_multi_scale(input_path, weight_path, opts):
         best_model = model
         final_loss = loss
         
-        print(f"Used {iters_this_scale} iterations at scale {scale:.2f}")
+        # Print state statistics
+        print("\nCurrent model state:")
+        for name, value in best_state.items():
+            print(f"{name}: min={value.min():.1f}, max={value.max():.1f}, mean={value.mean():.1f}")
+        
+        print(f"\nUsed {iters_this_scale} iterations at scale {scale:.2f}")
         print(f"Total iterations used: {iterations_used}/{total_iterations if total_iterations else 'unlimited'}")
         
         if opts.save_best:
