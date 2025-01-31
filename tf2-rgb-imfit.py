@@ -1065,12 +1065,8 @@ def load_input_image(path, weight_path=None, scale=1.0):
     except Exception as e:
         raise RuntimeError(f"Failed to load image {path}: {e}")
 
-def setup_gpu(opts):
-    """Configure GPU based on command line options"""
-    if opts.force_cpu:
-        print("Forcing CPU usage as requested.")
-        return False
-        
+def setup_gpu():
+    """Configure GPU and return True if GPU is available and configured"""
     try:
         # Check for GPU availability
         gpus = tf.config.list_physical_devices('GPU')
@@ -1078,20 +1074,24 @@ def setup_gpu(opts):
             print("No GPU devices found. Running on CPU.")
             return False
 
-        # Configure memory growth if requested (default: True)
-        if opts.memory_growth:
-            for gpu in gpus:
+        # Configure memory growth to prevent TF from taking all GPU memory
+        for gpu in gpus:
+            try:
                 tf.config.experimental.set_memory_growth(gpu, True)
-            
-        # Enable mixed precision if requested (default: True)
-        if opts.mixed_precision:
+            except RuntimeError as e:
+                print(f"Warning: Could not set memory growth for {gpu}: {e}")
+        
+        # Enable mixed precision for better GPU performance
+        try:
             policy = tf.keras.mixed_precision.Policy('mixed_float16')
             tf.keras.mixed_precision.set_global_policy(policy)
+            print("Mixed precision enabled")
+        except Exception as e:
+            print(f"Warning: Could not enable mixed precision: {e}")
         
         print(f"GPU(s) configured successfully:")
         print(f"- Found {len(gpus)} GPU(s)")
-        print(f"- Mixed precision: {'enabled' if opts.mixed_precision else 'disabled'}")
-        print(f"- Memory growth: {'enabled' if opts.memory_growth else 'disabled'}")
+        print(f"- Memory growth enabled")
         return True
         
     except Exception as e:
@@ -1220,12 +1220,12 @@ def optimize_multi_scale(input_path, weight_path, opts):
 
 def main():
     """Main entry point with multi-scale support"""
-    # Configure GPU
-    using_gpu = setup_gpu()
-    
-    # Parse and validate arguments
+    # Parse arguments first
     parser = setup_argument_parser()
     opts = parser.parse_args()
+    
+    # Configure GPU with parsed options
+    using_gpu = setup_gpu()
     
     try:
         # Validate options
