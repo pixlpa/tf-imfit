@@ -457,6 +457,9 @@ class GaborModel:
 
     def call(self):
         """Forward pass of the model"""
+        # Get target dimensions from image_shape
+        h, w = self.image_shape[:2]
+        
         # Generate all Gabor components
         components = []
         for i in range(self.count):
@@ -470,7 +473,7 @@ class GaborModel:
             color = self.colors[i]  # RGB color for this Gabor
             
             # Generate Gabor component
-            component = self.generate_gabor(x, y)  # Shape: [height, width]
+            component = self.generate_gabor(self.x_grid, self.y_grid)  # Shape: [height, width]
             
             # Apply color to component
             colored_component = tf.expand_dims(component, -1) * color  # Shape: [height, width, 3]
@@ -484,6 +487,10 @@ class GaborModel:
         
         # Add batch dimension
         image = tf.expand_dims(image, axis=0)  # Shape: [1, height, width, 3]
+        
+        # Ensure correct spatial dimensions
+        if image.shape[1:3] != (h, w):
+            image = tf.image.resize(image, [h, w])
         
         return components, image
 
@@ -731,11 +738,13 @@ def add_snapshot_arguments(parser):
 ######################################################################
 
 class GaborOptimizer:
-    def __init__(self, model, input_image, learning_rate=0.01, weights=None):
+    def __init__(self, model, input_image, learning_rate=0.01, **kwargs):
         self.model = model
         self.input_image = input_image
-        self.weights = weights
+        self.initial_learning_rate = learning_rate
+        self.current_learning_rate = learning_rate
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+        self.weights = kwargs.get('weights', None)
         self.loss_history = []
         self.best_loss = float('inf')
         self.best_state = None
