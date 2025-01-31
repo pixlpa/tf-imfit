@@ -872,10 +872,17 @@ def add_output_arguments(parser):
                        help='Add labels to snapshot images')
 
 def setup_argument_parser():
-    """Create and setup argument parser"""
+    """Create and setup argument parser with all relevant arguments"""
     parser = argparse.ArgumentParser(description='TF2 Gabor Image Fitting')
-    add_optimization_arguments(parser)
-    add_output_arguments(parser)
+    
+    # Input/Output arguments
+    io_group = parser.add_argument_group('Input/Output')
+    io_group.add_argument('--input', type=str, required=True,
+                         help='Input image path')
+    io_group.add_argument('--weights', type=str,
+                         help='Optional weight image path (greyscale)')
+    # ... rest of the arguments remain the same ...
+    
     return parser
 
 def validate_options(opts):
@@ -908,15 +915,42 @@ def create_output_directories(opts):
             os.makedirs(directory, exist_ok=True)
             print(f"Created directory: {directory}")
 
-def load_input_image(path):
-    """Load and preprocess input image"""
+def load_input_image(path, weight_path=None):
+    """Load and preprocess input image and optional weights"""
     try:
+        # Load main image and normalize to [0, 1]
         image = imageio.imread(path).astype(np.float32) / 255.0
+        
+        # Ensure 3 channels (RGB)
         if len(image.shape) == 2:
             image = np.stack([image] * 3, axis=-1)
         elif image.shape[-1] == 4:  # RGBA
             image = image[..., :3]
-        return image
+        
+        # Load weights if provided
+        weights = None
+        if weight_path:
+            try:
+                weights = imageio.imread(weight_path).astype(np.float32) / 255.0
+                if len(weights.shape) > 2:  # Convert to greyscale if needed
+                    weights = np.mean(weights, axis=-1)
+                
+                # Verify weights shape matches image
+                if weights.shape != image.shape[:2]:
+                    raise ValueError(
+                        f"Weight image shape {weights.shape} doesn't match "
+                        f"input image shape {image.shape[:2]}"
+                    )
+                
+                print(f"Loaded weight image from {weight_path}")
+                print(f"Weight range: {weights.min():.3f} to {weights.max():.3f}")
+                
+            except Exception as e:
+                print(f"Warning: Failed to load weights, using uniform weights: {e}")
+                weights = None
+        
+        return image, weights
+        
     except Exception as e:
         raise RuntimeError(f"Failed to load image {path}: {e}")
 
@@ -1039,6 +1073,7 @@ def load_model_state(model, filename):
         raise
 
 def main():
+    """Main entry point with weight support"""
     # Setup argument parser
     parser = setup_argument_parser()
     opts = parser.parse_args()
@@ -1050,10 +1085,15 @@ def main():
         # Create output directories
         create_output_directories(opts)
         
-        # Load input image
-        input_image = load_input_image(opts.input)
+        # Load input image and weights
+        input_image, weights = load_input_image(opts.input, opts.weights)
         
-        # Run optimization
+        print("\nInput Configuration:")
+        print(f"- Input image: {opts.input}")
+        if weights is not None:
+            print(f"- Using weight image: {opts.weights}")
+        
+        # Run optimization with weights
         model, final_loss = optimize_model(input_image, opts)
         
         # Save best model if requested
