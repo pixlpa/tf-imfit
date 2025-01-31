@@ -725,10 +725,17 @@ class GaborOptimizer:
             l2_reg = tf.reduce_mean(tf.square(self.model.amplitude)) * 0.001
             frequency_reg = tf.reduce_mean(tf.square(self.model.frequency)) * 0.001
             
-            loss = reconstruction_loss + l2_reg + frequency_reg
+            total_loss = reconstruction_loss + l2_reg + frequency_reg
+            
+            # Create components dict for monitoring
+            components = {
+                'reconstruction': reconstruction_loss,
+                'l2': l2_reg,
+                'frequency': frequency_reg
+            }
         
         # Get and process gradients
-        gradients = tape.gradient(loss, self.model.trainable_variables)
+        gradients = tape.gradient(total_loss, self.model.trainable_variables)
         
         # Gradient clipping with dynamic norm
         global_norm = tf.linalg.global_norm(gradients)
@@ -742,7 +749,7 @@ class GaborOptimizer:
         # Apply constraints with smoothing
         self.model.apply_constraints()
         
-        return loss, approx
+        return total_loss, components, approx
 
     def save_current_state(self, filename):
         """Save current model state"""
@@ -919,9 +926,12 @@ def optimize_with_curriculum(input_image, opts, weights=None):
                                 state_manager.save_checkpoint(
                                     stage, step, loss)
                             
-                            # Update progress
+                            # Update progress with more detailed loss information
                             if step % 10 == 0:
-                                pbar.set_postfix(loss=f"{loss:.6f}")
+                                pbar.set_postfix(
+                                    loss=f"{loss:.6f}",
+                                    recon=f"{components['reconstruction']:.6f}"
+                                )
                                 pbar.update(10)
                             
                             # Save snapshot
