@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 import traceback
 import json
+import copy
 try:
     from tqdm import tqdm
 except ImportError:
@@ -1021,11 +1022,17 @@ def create_output_directories(opts):
             os.makedirs(directory, exist_ok=True)
             print(f"Created directory: {directory}")
 
-def load_input_image(path, weight_path=None):
-    """Load and preprocess input image and optional weights"""
+def load_input_image(path, weight_path=None, scale=1.0):
+    """Load and preprocess input image and optional weights with scaling"""
     try:
         # Load main image and normalize to [0, 1]
         image = imageio.imread(path).astype(np.float32) / 255.0
+        
+        # Scale image if requested
+        if scale != 1.0:
+            h, w = image.shape[:2]
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = tf.image.resize(image, (new_h, new_w)).numpy()
         
         # Ensure 3 channels (RGB)
         if len(image.shape) == 2:
@@ -1033,7 +1040,7 @@ def load_input_image(path, weight_path=None):
         elif image.shape[-1] == 4:  # RGBA
             image = image[..., :3]
         
-        # Load weights if provided
+        # Load and scale weights if provided
         weights = None
         if weight_path:
             try:
@@ -1041,12 +1048,10 @@ def load_input_image(path, weight_path=None):
                 if len(weights.shape) > 2:  # Convert to greyscale if needed
                     weights = np.mean(weights, axis=-1)
                 
-                # Verify weights shape matches image
-                if weights.shape != image.shape[:2]:
-                    raise ValueError(
-                        f"Weight image shape {weights.shape} doesn't match "
-                        f"input image shape {image.shape[:2]}"
-                    )
+                # Scale weights to match image
+                if scale != 1.0:
+                    weights = tf.image.resize(weights[..., None], 
+                                           (new_h, new_w))[..., 0].numpy()
                 
                 print(f"Loaded weight image from {weight_path}")
                 print(f"Weight range: {weights.min():.3f} to {weights.max():.3f}")
@@ -1059,8 +1064,6 @@ def load_input_image(path, weight_path=None):
         
     except Exception as e:
         raise RuntimeError(f"Failed to load image {path}: {e}")
-
-
 
 def setup_gpu(opts):
     """Configure GPU based on command line options"""
@@ -1168,9 +1171,59 @@ def load_model_state(model, filename):
         traceback.print_exc()
         raise
 
+def optimize_multi_scale(input_path, weight_path, opts):
+    """Progressive multi-scale optimization"""
+    # Define scale progression (from small to full size)
+    scales = [0.25, 0.5, 0.75, 1.0]
+    
+    # Start with small number of Gabors and increase
+    gabor_scales = [0.25, 0.5, 0.75, 1.0]
+    
+    best_model = None
+    final_loss = float('inf')
+    
+    for i, (scale, gabor_scale) in enumerate(zip(scales, gabor_scales)):
+        print(f"\n=== Scale {i+1}/{len(scales)} ===")
+        print(f"Image scale: {scale:.2f}")
+        print(f"Gabor count: {int(opts.num_gabors * gabor_scale)}")
+        
+        # Load scaled image
+        input_image, weights = load_input_image(input_path, weight_path, scale=scale)
+        
+        # Adjust optimization parameters for this scale
+        scale_opts = copy.deepcopy(opts)
+        scale_opts.num_gabors = int(opts.num_gabors * gabor_scale)
+        scale_opts.learning_rate *= scale  # Adjust learning rate for scale
+        
+        # Initialize from previous scale if available
+        if best_model is not None:
+            print("Initializing from previous scale...")
+            model = GaborModel('gabor', count=scale_opts.num_gabors,
+                             image_shape=input_image.shape)
+            # Upsample previous model's parameters
+            prev_state = best_model.get_variable_values()
+            model.set_variable_values(prev_state)
+        
+        # Run optimization at this scale
+        model, loss = optimize_model(input_image, scale_opts, weights)
+        
+        # Update best model
+        best_model = model
+        final_loss = loss
+        
+        # Save intermediate result
+        if opts.save_best:
+            scale_path = f"{opts.save_best}.scale_{scale:.2f}.txt"
+            save_model_state(model, scale_path)
+    
+    return best_model, final_loss
+
 def main():
-    """Main entry point with weight support"""
-    # Setup argument parser
+    """Main entry point with multi-scale support"""
+    # Configure GPU
+    using_gpu = setup_gpu()
+    
+    # Parse and validate arguments
     parser = setup_argument_parser()
     opts = parser.parse_args()
     
@@ -1178,23 +1231,15 @@ def main():
         # Validate options
         validate_options(opts)
         
-        # Create output directories
-        create_output_directories(opts)
+        # Run multi-scale optimization
+        model, final_loss = optimize_multi_scale(opts.input, opts.weights, opts)
         
-        # Load input image and weights
-        input_image, weights = load_input_image(opts.input, opts.weights)
-        
-        print("\nInput Configuration:")
-        print(f"- Input image: {opts.input}")
-        if weights is not None:
-            print(f"- Using weight image: {opts.weights}")
-        
-        # Run optimization with weights
-        model, final_loss = optimize_model(input_image, opts, weights)
-        
-        # Save best model if requested
+        # Save final model
         if opts.save_best:
             save_model_state(model, opts.save_best)
+        
+        print(f"\nOptimization complete!")
+        print(f"Final loss: {final_loss:.6f}")
         
     except Exception as e:
         print(f"Error: {e}")
