@@ -771,7 +771,6 @@ def optimize_model(input_image, opts, weights=None, scale=None, initial_state=No
 def optimize_multi_scale(input_path, weight_path, opts):
     """Progressive multi-scale optimization"""
     scales = [0.25, 0.5, 0.75, 1.0]
-    gabor_scales = [0.25, 0.5, 0.75, 1.0]
     
     best_model = None
     best_state = None
@@ -784,7 +783,11 @@ def optimize_multi_scale(input_path, weight_path, opts):
     full_height, full_width = full_image.shape[:2]
     print(f"Full image size: {full_width}x{full_height}")
     
-    for i, (scale, gabor_scale) in enumerate(zip(scales, gabor_scales)):
+    # Use the same number of Gabors for all scales
+    num_gabors = opts.num_gabors
+    print(f"Using {num_gabors} Gabors across all scales")
+    
+    for i, scale in enumerate(scales):
         print(f"\n=== Scale {i+1}/{len(scales)} ===")
         print(f"Image scale: {scale:.2f}")
         
@@ -795,7 +798,7 @@ def optimize_multi_scale(input_path, weight_path, opts):
         
         # Adjust optimization parameters for this scale
         scale_opts = copy.deepcopy(opts)
-        scale_opts.num_gabors = int(opts.num_gabors * gabor_scale)
+        scale_opts.num_gabors = num_gabors  # Keep constant
         scale_opts.learning_rate *= scale
         
         # Calculate iterations for this scale
@@ -831,18 +834,14 @@ def optimize_multi_scale(input_path, weight_path, opts):
             for name, value in best_state.items():
                 if name == 'pos_x':
                     scaled_state[name] = value * width_scale
-                    print(f"Scaled pos_x: min={scaled_state[name].min():.1f}, max={scaled_state[name].max():.1f}")
                 elif name == 'pos_y':
                     scaled_state[name] = value * height_scale
-                    print(f"Scaled pos_y: min={scaled_state[name].min():.1f}, max={scaled_state[name].max():.1f}")
                 elif name == 'sigma':
                     # Scale sigma with the average of width and height scaling
                     avg_scale = (width_scale + height_scale) / 2
                     scaled_state[name] = value * avg_scale
-                    print(f"Scaled sigma: min={scaled_state[name].min():.1f}, max={scaled_state[name].max():.1f}")
                 else:
                     scaled_state[name] = value
-                    
             initial_state = scaled_state
         
         # Run optimization at this scale
@@ -857,11 +856,6 @@ def optimize_multi_scale(input_path, weight_path, opts):
         best_state = model.get_variable_values()
         best_model = model
         final_loss = loss
-        
-        # Print state statistics
-        print("\nCurrent model state:")
-        for name, value in best_state.items():
-            print(f"{name}: min={value.min():.1f}, max={value.max():.1f}, mean={value.mean():.1f}")
         
         print(f"\nUsed {iters_this_scale} iterations at scale {scale:.2f}")
         print(f"Total iterations used: {iterations_used}/{total_iterations if total_iterations else 'unlimited'}")
