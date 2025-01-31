@@ -473,15 +473,15 @@ class GaborModel:
             components.append(component)
             
         # Stack all components
-        components = tf.stack(components)
+        components = tf.stack(components)  # Shape: [n_components, height, width]
         
         # Sum all components to get final image
-        image = tf.reduce_sum(components, axis=0)
+        image = tf.reduce_sum(components, axis=0)  # Shape: [height, width]
         
-        # Reshape to match input dimensions if needed
-        if hasattr(self, 'target_tensor') and self.target_tensor is not None:
-            target_shape = self.target_tensor.shape
-            image = tf.reshape(image, target_shape)
+        # Add batch and channel dimensions if needed
+        image = tf.expand_dims(image, axis=0)  # Add batch dimension
+        if len(self.target_tensor.shape) == 4:  # If target has channel dimension
+            image = tf.expand_dims(image, axis=-1)  # Add channel dimension
         
         return components, image
 
@@ -780,6 +780,12 @@ class GaborOptimizer:
 
     def calculate_loss(self, predicted_image):
         """Calculate loss between predicted and target images"""
+        # Ensure shapes match
+        if self.input_image.shape != predicted_image.shape:
+            print(f"Shape mismatch - Input: {self.input_image.shape}, Predicted: {predicted_image.shape}")
+            # Reshape input_image if needed
+            self.input_image = tf.reshape(self.input_image, predicted_image.shape)
+        
         # MSE loss
         mse = tf.reduce_mean(tf.square(predicted_image - self.input_image))
         
