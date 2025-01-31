@@ -648,131 +648,74 @@ def add_snapshot_arguments(parser):
 ######################################################################
 
 class GaborOptimizer:
-    def __init__(self, model, input_image, learning_rate=0.01):
+    def __init__(self, model, input_image, learning_rate=0.01, weights=None):
         self.model = model
         self.input_image = input_image
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+        self.weights = weights
+        if weights is not None:
+            self.weights = weights[..., np.newaxis]
+        
+        # Use a more sophisticated learning rate schedule
+        self.initial_learning_rate = learning_rate
+        self.current_learning_rate = learning_rate
+        self.optimizer = tf.keras.optimizers.Adam(
+            learning_rate=learning_rate,
+            beta_1=0.9,  # Momentum term
+            beta_2=0.999,  # RMSprop term
+            epsilon=1e-7,  # Numerical stability
+            amsgrad=True  # Use AMSGrad variant
+        )
+        
         self.best_loss = float('inf')
         self.best_state = None
+        self.loss_history = []
+        self.plateau_threshold = 1e-6
 
     @tf.function
     def optimization_step(self):
-        """Single optimization step using gradient tape"""
+        """Improved optimization step with gradient accumulation"""
         with tf.GradientTape() as tape:
             # Generate current approximation
             approx = self.model.generate_image()
-            # Calculate loss (mean squared error)
-            loss = tf.reduce_mean(tf.square(approx - self.input_image))
+            
+            # Calculate loss with regularization
+            if self.weights is not None:
+                diff = approx - self.input_image
+                weighted_diff = diff * self.weights
+                reconstruction_loss = tf.reduce_mean(tf.square(weighted_diff))
+            else:
+                reconstruction_loss = tf.reduce_mean(tf.square(approx - self.input_image))
+            
+            # Add regularization to prevent extreme values
+            l2_reg = tf.reduce_mean(tf.square(self.model.amplitude)) * 0.001
+            frequency_reg = tf.reduce_mean(tf.square(self.model.frequency)) * 0.001
+            
+            loss = reconstruction_loss + l2_reg + frequency_reg
         
-        # Get gradients using model's trainable_variables property
+        # Get and process gradients
         gradients = tape.gradient(loss, self.model.trainable_variables)
         
-        # Clip gradients
-        clipped_gradients = [tf.clip_by_norm(g, 1.0) if g is not None else None 
-                           for g in gradients]
+        # Gradient clipping with dynamic norm
+        global_norm = tf.linalg.global_norm(gradients)
+        clip_norm = tf.maximum(1.0, global_norm / 100.0)
+        clipped_gradients, _ = tf.clip_by_global_norm(gradients, clip_norm)
         
-        # Apply gradients
+        # Apply processed gradients
         self.optimizer.apply_gradients(zip(clipped_gradients, 
                                          self.model.trainable_variables))
         
-        # Apply constraints
+        # Apply constraints with smoothing
         self.model.apply_constraints()
         
         return loss, approx
 
-class ProgressTracker:
-    def __init__(self, total_iterations=None, time_limit=None, steps_per_iteration=1000):
-        self.start_time = datetime.now()
-        self.total_iterations = total_iterations
-        self.time_limit = time_limit
-        self.steps_per_iteration = steps_per_iteration
-        self.best_loss = float('inf')
-        self.last_improvement = 0
-        self.iteration = 0
-        
-        try:
-            from tqdm import tqdm
-            self.progress_bar = tqdm(total=total_iterations if total_iterations else None,
-                                   desc="Optimizing")
-            self.use_progress_bar = True
-        except ImportError:
-            self.progress_bar = None
-            self.use_progress_bar = False
-            print("Note: Install 'tqdm' for progress bar support")
-    
-    def start_iteration(self):
-        """Start a new iteration and return step range with optional progress bar"""
-        self.iteration += 1
-        
-        if self.use_progress_bar:
-            return tqdm(range(self.steps_per_iteration),
-                       desc=f"Iteration {self.iteration}",
-                       leave=False)  # Don't keep all iteration bars
-        return range(self.steps_per_iteration)
-    
-    def update_loss(self, current_loss):
-        """Update best loss tracking and return True if improved"""
-        improved = False
-        if current_loss < self.best_loss:
-            self.best_loss = current_loss
-            self.last_improvement = self.iteration
-            improved = True
-            
-        if self.use_progress_bar:
-            self.progress_bar.set_postfix(
-                loss=f"{current_loss:.6f}",
-                best=f"{self.best_loss:.6f}"
-            )
-            self.progress_bar.update(1)
-            
-        return improved
-    
-    def should_continue(self):
-        """Check if optimization should continue"""
-        # Check time limit
-        if self.time_limit is not None:
-            elapsed = (datetime.now() - self.start_time).total_seconds()
-            if elapsed > self.time_limit:
-                print(f'\nExceeded time limit of {self.time_limit}s')
-                return False
-        
-        # Check iteration limit
-        if (self.total_iterations is not None and 
-            self.iteration >= self.total_iterations):
-            print(f'\nReached {self.total_iterations} iterations')
-            return False
-        
-        return True
-    
-    def print_status(self, current_loss):
-        """Print current optimization status"""
-        elapsed = (datetime.now() - self.start_time).total_seconds()
-        iterations_since_improvement = self.iteration - self.last_improvement
-        
-        print(f"\nIteration {self.iteration}:")
-        print(f"  Current loss: {current_loss:.6f}")
-        print(f"  Best loss: {self.best_loss:.6f}")
-        print(f"  Time elapsed: {elapsed:.1f}s")
-        print(f"  Iterations since improvement: {iterations_since_improvement}")
-        
-        if self.total_iterations:
-            progress = self.iteration / self.total_iterations * 100
-            print(f"  Progress: {progress:.1f}%")
-
-    def close(self):
-        """Clean up progress bar"""
-        if self.progress_bar:
-            self.progress_bar.close()
-
-def optimize_model(input_image, opts):
-    """Main optimization function with improved progress tracking"""
-    # Create model with proper image shape
+def optimize_model(input_image, opts, weights=None):
+    """Enhanced optimization loop with adaptive strategies"""
     model = GaborModel('gabor', count=opts.num_gabors, 
                       image_shape=input_image.shape)
-    
-    # Create optimizer
     optimizer = GaborOptimizer(model, input_image, 
-                             learning_rate=opts.learning_rate)
+                             learning_rate=opts.learning_rate,
+                             weights=weights)
     
     # Initialize progress tracker
     progress = ProgressTracker(
@@ -782,60 +725,85 @@ def optimize_model(input_image, opts):
     )
     
     print(f"\nStarting optimization with {opts.num_gabors} Gabors")
-    print(f"Steps per iteration: {opts.steps_per_iteration}")
+    
+    best_loss = float('inf')
+    best_state = None
+    plateau_count = 0
+    loss_window = []
+    window_size = 50  # For moving average
     
     try:
         while progress.should_continue():
-            # Run optimization steps with progress bar
+            epoch_loss = 0
+            
+            # Run optimization steps with warm-up
             for step in progress.start_iteration():
                 loss, approx = optimizer.optimization_step()
                 current_loss = loss.numpy()
+                epoch_loss += current_loss
                 
-                # Print detailed progress every 100 steps
+                # Track moving average of loss
+                loss_window.append(current_loss)
+                if len(loss_window) > window_size:
+                    loss_window.pop(0)
+                moving_avg = np.mean(loss_window)
+                
                 if step % 100 == 0:
-                    elapsed = (datetime.now() - progress.start_time).total_seconds()
                     print(f"\rIteration {progress.iteration}, "
                           f"Step {step}/{opts.steps_per_iteration}, "
                           f"Loss: {current_loss:.6f}, "
-                          f"Time: {format_time(elapsed)}", 
+                          f"Avg: {moving_avg:.6f}, "
+                          f"LR: {optimizer.current_learning_rate:.2e}", 
                           end="", flush=True)
             
-            # Update tracking
-            improved = progress.update_loss(current_loss)
-            if improved:
-                print(f"\n🌟 New best loss: {current_loss:.6f}")
-                # Save best state
-                best_state = model.get_variable_values()
+            epoch_loss /= opts.steps_per_iteration
             
-            # Take snapshot if needed
-            if opts.snapshot_prefix:
+            # Adaptive improvement threshold
+            rel_improvement = (best_loss - epoch_loss) / (best_loss + 1e-10)
+            
+            if rel_improvement > 1e-4:  # 0.01% improvement
+                best_loss = epoch_loss
+                best_state = model.get_variable_values()
+                plateau_count = 0
+                print(f"\n🌟 New best loss: {best_loss:.6f}")
+            else:
+                plateau_count += 1
+            
+            # Dynamic annealing based on plateau detection
+            if plateau_count >= opts.anneal_patience:
+                current_lr = optimizer.current_learning_rate
+                new_lr = current_lr * opts.anneal_factor
+                
+                if new_lr < opts.min_learning_rate:
+                    print(f"\n⚡ Reached minimum learning rate. Stopping.")
+                    break
+                
+                optimizer.current_learning_rate = new_lr
+                optimizer.optimizer.learning_rate.assign(new_lr)
+                print(f"\n📉 Annealing learning rate: {current_lr:.2e} -> {new_lr:.2e}")
+                plateau_count = 0
+                loss_window.clear()  # Reset moving average
+            
+            # Take snapshot with progress info
+            if opts.snapshot_prefix and progress.iteration % opts.snapshot_frequency == 0:
                 try:
-                    snapshot(model.generate_image(), input_image, opts, 
-                            progress.iteration)
+                    snapshot(approx, input_image, opts, progress.iteration,
+                            extra_info={
+                                'loss': best_loss,
+                                'learning_rate': optimizer.current_learning_rate,
+                                'plateau_count': plateau_count
+                            })
                 except Exception as e:
                     print(f"\n⚠️  Warning: Failed to save snapshot: {e}")
-                    # Save best model if requested
-            if opts.save_best:
-                save_model_state(model, opts.save_best)
-                
-            # Check for early stopping
-            if (opts.early_stop and 
-                progress.iteration - progress.last_improvement > opts.patience):
-                print(f"\n⚡ Early stopping: No improvement for "
-                      f"{progress.iteration - progress.last_improvement} iterations")
-                break
-            
-            print()  # New line after iteration
     
     finally:
-        # Clean up progress bar
         progress.close()
     
     # Restore best state
     if best_state is not None:
         model.set_variable_values(best_state)
     
-    return model, progress.best_loss
+    return model, best_loss
 
 def add_optimization_arguments(parser):
     """Add optimization-related command line arguments"""
@@ -1128,7 +1096,7 @@ def main():
             print(f"- Using weight image: {opts.weights}")
         
         # Run optimization with weights
-        model, final_loss = optimize_model(input_image, opts)
+        model, final_loss = optimize_model(input_image, opts, weights)
         
         # Save best model if requested
         if opts.save_best:
