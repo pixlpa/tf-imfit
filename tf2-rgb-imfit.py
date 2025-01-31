@@ -966,6 +966,78 @@ def setup_gpu(opts):
         print("Falling back to CPU.")
         return False
 
+def save_model_state(model, filename):
+    """Save model variables to text file in original format"""
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        
+        # Get model state and flatten variables into a single array
+        state = model.get_variable_values()
+        flattened = []
+        for name in ['pos_x', 'pos_y', 'sigma', 'theta', 'frequency', 
+                    'phase', 'colors', 'amplitude', 'scale']:
+            value = state[name]
+            if len(value.shape) > 1:  # For colors array
+                value = value.reshape(-1)
+            flattened.extend(value)
+        
+        # Convert to numpy array and save
+        params = np.array(flattened)
+        np.savetxt(filename, params)
+        print(f"✓ Saved model state to {filename}")
+        
+    except Exception as e:
+        print(f"⚠️ Failed to save model state: {e}")
+        traceback.print_exc()
+
+def load_model_state(model, filename):
+    """Load model variables from text file in original format"""
+    try:
+        # Load the flattened parameters
+        params = np.loadtxt(filename)
+        
+        # Calculate sizes for each variable
+        num_gabors = model.count
+        sizes = {
+            'pos_x': num_gabors,
+            'pos_y': num_gabors,
+            'sigma': num_gabors,
+            'theta': num_gabors,
+            'frequency': num_gabors,
+            'phase': num_gabors,
+            'colors': num_gabors * 3,  # RGB values
+            'amplitude': num_gabors,
+            'scale': num_gabors
+        }
+        
+        # Split the parameters into variables
+        state = {}
+        start = 0
+        for name, size in sizes.items():
+            end = start + size
+            value = params[start:end]
+            
+            # Reshape colors back to 2D
+            if name == 'colors':
+                value = value.reshape(num_gabors, 3)
+                
+            state[name] = value
+            start = end
+        
+        # Verify we used all parameters
+        if start != len(params):
+            raise ValueError(f"Parameter count mismatch: expected {start}, got {len(params)}")
+        
+        # Set the variables
+        model.set_variable_values(state)
+        print(f"✓ Loaded model state from {filename}")
+        
+    except Exception as e:
+        print(f"⚠️ Failed to load model state: {e}")
+        traceback.print_exc()
+        raise
+
 def main():
     # Setup argument parser
     parser = setup_argument_parser()
