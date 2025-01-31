@@ -1056,6 +1056,83 @@ def local_optimize(opts, inputs, models, state,
 
 ######################################################################
 
+def compute_gabor(params, x, y):
+    """
+    Compute Gabor functions for given parameters and coordinates.
+    
+    Args:
+        params: tensor of shape [batch, n_params, n_models]
+        x: tensor of shape [height, width]
+        y: tensor of shape [height, width]
+        
+    Returns:
+        tensor of shape [batch, height, width, channels, n_models]
+    """
+    # Extract parameters
+    amplitude = params[:,0:1]  # [batch, 1, n_models]
+    x0 = params[:,1:2]
+    y0 = params[:,2:3]
+    sigma_x = params[:,3:4]
+    sigma_y = params[:,4:5]
+    theta = params[:,5:6]
+    frequency = params[:,6:7]
+    phase = params[:,7:8]
+    offset = params[:,8:9]
+    r = params[:,9:10]
+    g = params[:,10:11]
+    b = params[:,11:12]
+
+    # Compute rotated coordinates
+    cos_theta = tf.cos(theta)
+    sin_theta = tf.sin(theta)
+    
+    x_rot = (x[...,None] - x0) * cos_theta + (y[...,None] - y0) * sin_theta
+    y_rot = -(x[...,None] - x0) * sin_theta + (y[...,None] - y0) * cos_theta
+
+    # Compute Gaussian envelope
+    gauss = tf.exp(-0.5 * (
+        (x_rot / sigma_x) ** 2 + 
+        (y_rot / sigma_y) ** 2
+    ))
+
+    # Compute sinusoidal carrier
+    carrier = tf.cos(2 * np.pi * frequency * x_rot + phase)
+
+    # Combine envelope and carrier
+    gabor = amplitude * gauss * carrier + offset
+
+    # Stack RGB channels
+    gabor = tf.stack([
+        gabor * r,
+        gabor * g,
+        gabor * b
+    ], axis=3)
+
+    return gabor
+
+def compute_constraints(params):
+    """
+    Compute constraint losses for Gabor parameters.
+    
+    Args:
+        params: tensor of shape [batch, n_params, n_models]
+        
+    Returns:
+        tensor of shape [batch, n_models]
+    """
+    # Extract parameters
+    sigma_x = params[:,3:4]
+    sigma_y = params[:,4:5]
+    r = params[:,9:10]
+    g = params[:,10:11]
+    b = params[:,11:12]
+
+    # Compute constraints
+    size_constraint = tf.reduce_mean(tf.abs(sigma_x - sigma_y), axis=1)
+    color_constraint = tf.reduce_mean(tf.abs(r + g + b - 1.0), axis=1)
+
+    return size_constraint + color_constraint
+
 def main():
 
     ############################################################
