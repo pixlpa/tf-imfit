@@ -336,6 +336,11 @@ class GaborModel:
             
         print(f"Initialized GaborModel with {count} Gabors for image shape {image_shape}")
 
+    @property
+    def trainable_variables(self):
+        """Return list of all trainable variables"""
+        return list(self.variables.values())
+
     def generate_gabor(self, x, y):
         """Generate Gabor function values for given coordinates"""
         # Reshape coordinates for broadcasting
@@ -652,13 +657,18 @@ class GaborOptimizer:
             # Calculate loss (mean squared error)
             loss = tf.reduce_mean(tf.square(approx - self.input_image))
         
-        # Get gradients
+        # Get gradients using model's trainable_variables property
         gradients = tape.gradient(loss, self.model.trainable_variables)
         
-        # Apply gradients
-        self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+        # Clip gradients
+        clipped_gradients = [tf.clip_by_norm(g, 1.0) if g is not None else None 
+                           for g in gradients]
         
-        # Apply constraints after optimization step
+        # Apply gradients
+        self.optimizer.apply_gradients(zip(clipped_gradients, 
+                                         self.model.trainable_variables))
+        
+        # Apply constraints
         self.model.apply_constraints()
         
         return loss, approx
