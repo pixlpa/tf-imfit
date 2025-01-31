@@ -806,7 +806,7 @@ class StateManager:
         
         checkpoint = {
             'model_state': self.model.get_variable_values(),
-            'optimizer_state': self.optimizer.get_weights(),
+            'optimizer_learning_rate': self.optimizer.current_learning_rate,
             'stage': stage,
             'step': step,
             'loss': loss,
@@ -830,16 +830,17 @@ class StateManager:
             # Restore model state
             self.model.set_variable_values(checkpoint['model_state'].item())
             
-            # Restore optimizer state
-            self.optimizer.set_weights(checkpoint['optimizer_state'].item())
+            # Restore optimizer learning rate
+            self.optimizer.current_learning_rate = float(checkpoint['optimizer_learning_rate'])
+            self.optimizer.optimizer.learning_rate.assign(self.optimizer.current_learning_rate)
             
             # Restore other state variables
-            self.best_loss = checkpoint['best_loss'].item()
+            self.best_loss = float(checkpoint['best_loss'])
             
             print(f"Loaded checkpoint from {checkpoint_path}")
-            return (checkpoint['stage'].item(), 
-                   checkpoint['step'].item(),
-                   checkpoint['loss'].item())
+            return (int(checkpoint['stage']), 
+                   int(checkpoint['step']),
+                   float(checkpoint['loss']))
             
         except Exception as e:
             print(f"Failed to load checkpoint: {e}")
