@@ -556,60 +556,62 @@ def rescale(idata, imin, imax, cmap=None):
 ######################################################################
 # Save a snapshot of the current state to a PNG file
 
-def snapshot(cur_gabor, cur_approx,
-             opts, inputs, models, sess,
-             loop_count, model_start_idx,
-             full_iteration):
-
-    if not opts.label_snapshot:
-        outfile = '{}.png'.format(opts.snapshot_prefix)
-    elif isinstance(full_iteration, int):
-        outfile = '{}{:04d}_{:06d}.png'.format(
-            opts.snapshot_prefix, loop_count+1, full_iteration+1)
-    else:
-        outfile = '{}{:04d}{}.png'.format(
-            opts.snapshot_prefix, loop_count+1, full_iteration)
-
-    if cur_gabor is None:
-        cur_gabor = np.zeros_like(cur_approx)
-        
-    cur_abserr = np.abs(cur_approx - inputs.input_image)
-    cur_abserr = cur_abserr * inputs.weight_image
-    cur_abserr = np.power(cur_abserr, 0.5) # boost low end to aid visualization
-
-    global COLORMAP
+def snapshot(cur_gabor, cur_approx, opts, inputs, models, sess,
+            loop_count, model_start_idx, iter_count, full_iteration):
+    print(f"Debug: Taking snapshot at iteration {iter_count}")
+    print(f"Debug: cur_approx type: {type(cur_approx)}")
     
-    if COLORMAP is None:
-        COLORMAP = get_colormap()
+    # Skip if we don't have a valid approximation yet
+    if cur_approx is None:
+        print("Warning: Skipping snapshot - no valid approximation yet")
+        return
+        
+    outfile = '{}-{:03d}-{:06d}.png'.format(
+        opts.snapshot_prefix, loop_count, iter_count)
+    
+    try:
+        cur_abserr = np.abs(cur_approx - inputs.input_image)
+        cur_abserr = cur_abserr * inputs.weight_image
+        cur_abserr = np.power(cur_abserr, 0.5) # boost low end to aid visualization
+
+        global COLORMAP
+        
+        if COLORMAP is None:
+            COLORMAP = get_colormap()
 
         
-    if not opts.preview_size:
-        
-        out_img = np.hstack(( rescale(inputs.input_image, -1, 1),
-                              rescale(cur_approx, -1, 1),
-                              rescale(cur_gabor, -1, 1),
-                              rescale(cur_abserr, 0, 1.0, COLORMAP) ))
-
-    else:
-        
-        max_rowval = min(model_start_idx, opts.num_models)
-
-        preview_image = models.preview(inputs.target_tensor)[0]
-
-        ph, pw = preview_image.shape[:2]
+        if not opts.preview_size:
             
-        preview_image = rescale(preview_image, -1, 1)
+            out_img = np.hstack(( rescale(inputs.input_image, -1, 1),
+                                  rescale(cur_approx, -1, 1),
+                                  rescale(cur_gabor, -1, 1),
+                                  rescale(cur_abserr, 0, 1.0, COLORMAP) ))
 
-        err_image = rescale(cur_abserr, 0, 1.0, COLORMAP)
-        err_image = Image.fromarray(err_image, 'RGB')
-        err_image = err_image.resize((pw, ph), resample=Image.NEAREST)
-        err_image = np.array(err_image)
+        else:
+            
+            max_rowval = min(model_start_idx, opts.num_models)
 
-        out_img = np.hstack((preview_image, err_image))
-    
-    out_img = Image.fromarray(out_img, 'RGB')
+            preview_image = models.preview(inputs.target_tensor)[0]
 
-    out_img.save(outfile)
+            ph, pw = preview_image.shape[:2]
+                
+            preview_image = rescale(preview_image, -1, 1)
+
+            err_image = rescale(cur_abserr, 0, 1.0, COLORMAP)
+            err_image = Image.fromarray(err_image, 'RGB')
+            err_image = err_image.resize((pw, ph), resample=Image.NEAREST)
+            err_image = np.array(err_image)
+
+            out_img = np.hstack((preview_image, err_image))
+        
+        out_img = Image.fromarray(out_img, 'RGB')
+
+        out_img.save(outfile)
+    except Exception as e:
+        print(f"Error in snapshot: {e}")
+        print(f"cur_approx shape: {cur_approx.shape if hasattr(cur_approx, 'shape') else 'No shape'}")
+        print(f"input_image shape: {inputs.input_image.shape}")
+        return
 
 ######################################################################
 
@@ -936,7 +938,7 @@ def full_optimize(opts, inputs, models, state, sess,
             snapshot(None,
                      approx,
                      opts, inputs, models, sess,
-                     loop_count, model_start_idx, i)
+                     loop_count, model_start_idx, i, i)
 
     # Get final results
     results = {
@@ -952,7 +954,7 @@ def full_optimize(opts, inputs, models, state, sess,
     snapshot(None,
              results['approx'],
              opts, inputs, models, sess,
-             loop_count, model_start_idx, opts.full_iter-1)
+             loop_count, model_start_idx, opts.full_iter-1, opts.full_iter-1)
 
     if results['loss'] < prev_best_loss:
 
@@ -1220,7 +1222,7 @@ def main():
     while True:
         # Add snapshot at start of each iteration
         snapshot(None, models.full.approx, opts, inputs, models,
-                loop_count, model_start_idx, loop_count, full_iteration=loop_count)
+                loop_count, model_start_idx, loop_count, loop_count)
         
         if opts.time_limit is not None:
             elapsed = (datetime.now() - start_time).total_seconds()
