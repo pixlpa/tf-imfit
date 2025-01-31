@@ -1022,9 +1022,7 @@ def create_output_directories(opts):
 def load_input_image(path):
     """Load and preprocess input image"""
     try:
-        # Load image and normalize to [0, 1]
         image = imageio.imread(path).astype(np.float32) / 255.0
-        # Ensure 3 channels (RGB)
         if len(image.shape) == 2:
             image = np.stack([image] * 3, axis=-1)
         elif image.shape[-1] == 4:  # RGBA
