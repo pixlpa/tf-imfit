@@ -918,6 +918,12 @@ def optimize_model(input_image, opts):
 
 def add_optimization_arguments(parser):
     """Add optimization-related command line arguments"""
+    parser.add_argument('--input', type=str, required=True,
+                       help='Input image path')
+    parser.add_argument('--num-gabors', type=int, default=100,
+                       help='Number of Gabor functions')
+    parser.add_argument('--learning-rate', type=float, default=0.01,
+                       help='Learning rate for optimization')
     parser.add_argument('--early-stop', action='store_true',
                        help='Enable early stopping')
     parser.add_argument('--patience', type=int, default=1000,
@@ -928,27 +934,32 @@ def add_optimization_arguments(parser):
                        help='Time limit in seconds')
     parser.add_argument('--steps-per-iteration', type=int, default=1000,
                        help='Optimization steps per iteration')
+    parser.add_argument('--max-gradient-norm', type=float, default=1.0,
+                       help='Maximum gradient norm for clipping')
 
-######################################################################
+def add_output_arguments(parser):
+    """Add output-related command line arguments"""
+    parser.add_argument('--output-dir', type=str,
+                       help='Directory for output files')
+    parser.add_argument('--save-best', type=str,
+                       help='Save best model state to file')
+    parser.add_argument('--load-state', type=str,
+                       help='Load initial model state from file')
+    parser.add_argument('--snapshot-prefix', type=str,
+                       help='Prefix for snapshot filenames')
+    parser.add_argument('--label-snapshot', action='store_true',
+                       help='Add labels to snapshot images')
 
-def load_input_image(path):
-    """Load and preprocess input image"""
-    try:
-        # Load image and normalize to [0, 1]
-        image = imageio.imread(path).astype(np.float32) / 255.0
-        # Ensure 3 channels (RGB)
-        if len(image.shape) == 2:
-            image = np.stack([image] * 3, axis=-1)
-        elif image.shape[-1] == 4:  # RGBA
-            image = image[..., :3]
-        return image
-    except Exception as e:
-        raise RuntimeError(f"Failed to load image {path}: {e}")
+def setup_argument_parser():
+    """Create and setup argument parser"""
+    parser = argparse.ArgumentParser(description='TF2 Gabor Image Fitting')
+    add_optimization_arguments(parser)
+    add_output_arguments(parser)
+    return parser
 
 def main():
     # Setup argument parser
-    parser = argparse.ArgumentParser()
-    update_command_line_arguments(parser)
+    parser = setup_argument_parser()
     opts = parser.parse_args()
     
     try:
