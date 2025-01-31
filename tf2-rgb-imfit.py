@@ -376,9 +376,9 @@ class GaborModel(tf.keras.Model):
             if len(approx.shape) == 3:
                 approx = tf.expand_dims(approx, axis=0)
                 
-            print("After reshape:")
-            print("Target shape:", target.shape)
-            print("Approx shape:", approx.shape)
+            #print("After reshape:")
+            #print("Target shape:", target.shape)
+            #print("Approx shape:", approx.shape)
             
             diff = approx - target
             if self.weight is not None:
