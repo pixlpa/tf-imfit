@@ -330,6 +330,11 @@ class GaborModel(tf.keras.Model):
         self.x = x
         self.y = y
         
+        # Initialize gabor attribute
+        self.gabor = None
+        self.approx = None
+        self.con_losses = None
+        
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
     def compute_output_shape(self, input_shape):
@@ -348,124 +353,14 @@ class GaborModel(tf.keras.Model):
             self.gmax,
             name='cparams')
 
-        ############################################################
-        # Now compute the Gabor function for each fit/model
-
-        # n x h x w x c x e
+        # Calculate Gabor functions
+        self.gabor = compute_gabor(self.cparams, self.x, self.y)
         
-        # n x 1 x 1 x 1 x e
-        u = self.cparams[:,None,None,None,GABOR_PARAM_U,:]
-        v = self.cparams[:,None,None,None,GABOR_PARAM_V,:]
-        r = self.cparams[:,None,None,None,GABOR_PARAM_R,:]
-        l = self.cparams[:,None,None,None,GABOR_PARAM_L,:]
-        t = self.cparams[:,None,None,None,GABOR_PARAM_T,:]
-        s = self.cparams[:,None,None,None,GABOR_PARAM_S,:]
+        # Calculate approximation
+        self.approx = tf.reduce_sum(self.gabor, axis=-1)
         
-        p = self.cparams[:,None,None,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
-        h = self.cparams[:,None,None,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
-
-        cr = tf.cos(r)
-        sr = tf.sin(r)
-
-        f = tf.constant(2*np.pi, dtype=tf.float32) / l
-
-        s2 = s*s
-        t2 = t*t
-
-        # n x 1 x w x 1 x e
-        xp = self.x-u
-
-        # n x h x 1 x 1 x e
-        yp = self.y-v
-
-        # n x h x w x 1 x e
-        b1 =  cr*xp + sr*yp
-        b2 = -sr*xp + cr*yp
-
-        b12 = b1*b1
-        b22 = b2*b2
-
-        w = tf.exp(-b12/(2*s2) - b22/(2*t2))
-
-        k = f*b1 +  p
-        ck = tf.cos(k)
-
-        # n x h x w x c x e
-        self.gabor = tf.identity(h * w * ck, name='gabor')
-
-        ############################################################
-        # Compute the ensemble sum of all models for each fit        
-        
-        # n x h x w x c
-        self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
-
-        ############################################################
-        # Everything below here is for optimizing, if we just want
-        # to visualize, stop now.
-        
-        if self.target is None:
-            return self.approx
-
-        ############################################################
-        # Compute loss for soft constraints
-        #
-        # All constraint losses are of the form min(c, 0)**2, where c
-        # is an individual constraint function. So we only get a
-        # penalty if the constraint function c is less than zero.
-        
-        # Pair-wise constraints on l, s, t:
-
-        # n x e 
-        l = self.cparams[:,GABOR_PARAM_L,:]
-        s = self.cparams[:,GABOR_PARAM_S,:]
-        t = self.cparams[:,GABOR_PARAM_T,:]
-
-        pairwise_constraints = [
-            s - l/32,
-            l/2 - s,
-            t - s,
-            8*s - t
-        ]
-                
-        # n x e x k
-        self.constraints = tf.stack(pairwise_constraints,
-                                  axis=2, name='constraints')
-
-        # n x e x k
-        con_sqr = tf.minimum(self.constraints, 0)**2
-
-        # n x e
-        self.con_losses = tf.reduce_sum(con_sqr, axis=2, name='con_losses')
-
-        # n (sum across mini-batch)
-        self.con_loss_per_fit = tf.reduce_sum(self.con_losses, axis=1,
-                                            name='con_loss_per_fit')
-
-        ############################################################
-        # Compute loss for approximation error
-        
-        # n x h x w x c
-        self.err = tf.multiply((self.target - self.approx),
-                             self.weight, name='err')
-
-        err_sqr = 0.5*self.err**2
-
-        # n (average across h/w/c)
-        self.err_loss_per_fit = tf.reduce_mean(err_sqr, axis=(1,2,3),
-                                             name='err_loss_per_fit')
-
-        ############################################################
-        # Compute various sums/means of above losses:
-
-        # n
-        self.loss_per_fit = tf.add(self.con_loss_per_fit,
-                                 self.err_loss_per_fit,
-                                 name='loss_per_fit')
-
-        # scalars
-        self.err_loss = tf.reduce_mean(self.err_loss_per_fit, name='err_loss')
-        self.con_loss = tf.reduce_mean(self.con_loss_per_fit, name='con_loss')
-        self.total_loss = self.err_loss + self.con_loss
+        # Calculate constraint losses
+        self.con_losses = compute_constraints(self.cparams)
 
         return self.approx
 
