@@ -496,6 +496,79 @@ class GaborModel:
             self.opt = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
             self.train_op = self.opt.minimize(self.loss)
 
+    def generate_gabor(self, x, y):
+        """Generate Gabor function values for given coordinates"""
+        # Reshape coordinates for broadcasting
+        x = tf.expand_dims(x, -1)  # [..., 1]
+        y = tf.expand_dims(y, -1)  # [..., 1]
+        
+        # Center coordinates on Gabor positions
+        x_c = x - self.pos_x  # [..., count]
+        y_c = y - self.pos_y  # [..., count]
+        
+        # Rotate coordinates
+        cos_theta = tf.cos(self.theta)
+        sin_theta = tf.sin(self.theta)
+        x_r = x_c * cos_theta + y_c * sin_theta
+        y_r = -x_c * sin_theta + y_c * cos_theta
+        
+        # Calculate Gabor function
+        gaussian = tf.exp(-(x_r**2 + y_r**2) / (2 * self.sigma**2))
+        sinusoid = tf.cos(2 * np.pi * self.frequency * x_r + self.phase)
+        
+        return gaussian * sinusoid * self.amplitude * self.scale
+
+    def generate_image(self):
+        """Generate full image from all Gabor functions"""
+        h, w = self.image_shape[:2]
+        
+        # Create coordinate grid
+        x_coords = tf.cast(tf.range(w), tf.float32)
+        y_coords = tf.cast(tf.range(h), tf.float32)
+        x, y = tf.meshgrid(x_coords, y_coords)
+        
+        # Generate Gabor values
+        gabor_values = self.generate_gabor(x, y)  # [h, w, count]
+        
+        # Multiply by colors and sum
+        colored_gabors = tf.expand_dims(gabor_values, -1) * self.colors  # [h, w, count, 3]
+        image = tf.reduce_sum(colored_gabors, axis=2)  # [h, w, 3]
+        
+        # Clip to valid range
+        return tf.clip_by_value(image, 0.0, 1.0)
+
+    def apply_constraints(self):
+        """Apply constraints to keep variables in valid ranges"""
+        h, w = self.image_shape[:2]
+        constraints = {
+            'pos_x': (0, w),
+            'pos_y': (0, h),
+            'sigma': (1, 20),
+            'theta': (0, np.pi),
+            'frequency': (0.02, 0.5),
+            'phase': (0, 2*np.pi),
+            'colors': (0, 1),
+            'amplitude': (0, 1),
+            'scale': (0, None)
+        }
+        
+        for name, (min_val, max_val) in constraints.items():
+            var = self.variables[name]
+            if min_val is not None:
+                var.assign(tf.maximum(var, min_val))
+            if max_val is not None:
+                var.assign(tf.minimum(var, max_val))
+
+    def get_variable_values(self):
+        """Get current values of all variables"""
+        return {name: var.numpy() for name, var in self.variables.items()}
+
+    def set_variable_values(self, values):
+        """Set values for all variables"""
+        for name, value in values.items():
+            if name in self.variables:
+                self.variables[name].assign(value)
+
 ######################################################################
 # Set up tensorflow models themselves. We need a separate model for
 # each combination of inputs/dimensions to optimize.
