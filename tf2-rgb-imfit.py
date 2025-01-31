@@ -916,33 +916,25 @@ def optimize_with_curriculum(input_image, opts, weights=None):
         if opts.load_state and os.path.exists(opts.load_state):
             state_manager.load_checkpoint(opts.load_state)
         
-        # Ensure we have valid schedules
-        if not hasattr(opts, 'sigma_schedules'):
-            # Default curriculum learning stages
-            sigma_schedules = [20.0, 10.0, 5.0, 2.0]
-            frequency_schedules = [0.02, 0.05, 0.1, 0.2]
-        else:
-            sigma_schedules = opts.sigma_schedules
-            frequency_schedules = opts.frequency_schedules
+        # Default curriculum learning stages
+        opts.sigma_schedules = [20.0, 10.0, 5.0, 2.0]
+        opts.frequency_schedules = [0.02, 0.05, 0.1, 0.2]
         
-        if not sigma_schedules or len(sigma_schedules) == 0:
-            raise ValueError("No sigma schedules defined for curriculum learning")
-            
         total_steps = 0
         start_time = datetime.now()
         
         try:
             for stage, (max_sigma, max_freq) in enumerate(zip(
-                sigma_schedules, frequency_schedules)):
+                opts.sigma_schedules, opts.frequency_schedules)):
                 
-                print(f"\nStage {stage + 1}/{len(sigma_schedules)}")
+                print(f"\nStage {stage + 1}/{len(opts.sigma_schedules)}")
                 print(f"Max sigma: {max_sigma:.1f}, Max frequency: {max_freq:.3f}")
                 
                 # Prepare optimizer for new stage
                 optimizer.prepare_for_stage(stage + 1, max_sigma, max_freq)
                 
                 # Calculate iterations for this stage
-                stage_iterations = opts.total_iterations // len(sigma_schedules)
+                stage_iterations = opts.total_iterations // len(opts.sigma_schedules)
                 
                 with tqdm(total=stage_iterations, 
                          desc=f"Stage {stage + 1}") as pbar:
