@@ -934,7 +934,7 @@ def full_optimize(opts, inputs, models, state, sess,
                 i+1, loss))
 
             snapshot(None,
-                     approx[0],
+                     approx,
                      opts, inputs, models, sess,
                      loop_count, model_start_idx, i)
 
@@ -950,7 +950,7 @@ def full_optimize(opts, inputs, models, state, sess,
     print('  new final loss is now  {}'.format(results['loss']))
 
     snapshot(None,
-             results['approx'][0],
+             results['approx'],
              opts, inputs, models, sess,
              loop_count, model_start_idx, opts.full_iter-1)
 
@@ -1219,7 +1219,7 @@ def main():
     # Optimization loop (hit Ctrl+C to quit)
     while True:
         # Add snapshot at start of each iteration
-        snapshot(None, models.full.approx[0], opts, inputs, models,
+        snapshot(None, models.full.approx, opts, inputs, models,
                 loop_count, model_start_idx, loop_count)
         
         if opts.time_limit is not None:
