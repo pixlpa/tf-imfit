@@ -701,91 +701,55 @@ class GaborOptimizer:
             amsgrad=True  # Use AMSGrad variant
         )
         
+        # Early stopping parameters
         self.best_loss = float('inf')
         self.best_state = None
         self.loss_history = []
-        self.plateau_threshold = 1e-6
-
-    @tf.function
-    def optimization_step(self):
-        """Improved optimization step with gradient accumulation"""
-        with tf.GradientTape() as tape:
-            # Generate current approximation
-            approx = self.model.generate_image()
-            
-            # Calculate loss with regularization
-            if self.weights is not None:
-                diff = approx - self.input_image
-                weighted_diff = diff * self.weights
-                reconstruction_loss = tf.reduce_mean(tf.square(weighted_diff))
-            else:
-                reconstruction_loss = tf.reduce_mean(tf.square(approx - self.input_image))
-            
-            # Add regularization to prevent extreme values
-            l2_reg = tf.reduce_mean(tf.square(self.model.amplitude)) * 0.001
-            frequency_reg = tf.reduce_mean(tf.square(self.model.frequency)) * 0.001
-            
-            total_loss = reconstruction_loss + l2_reg + frequency_reg
-            
-            # Create components dict for monitoring
-            components = {
-                'reconstruction': reconstruction_loss,
-                'l2': l2_reg,
-                'frequency': frequency_reg
-            }
-        
-        # Get and process gradients
-        gradients = tape.gradient(total_loss, self.model.trainable_variables)
-        
-        # Gradient clipping with dynamic norm
-        global_norm = tf.linalg.global_norm(gradients)
-        clip_norm = tf.maximum(1.0, global_norm / 100.0)
-        clipped_gradients, _ = tf.clip_by_global_norm(gradients, clip_norm)
-        
-        # Apply processed gradients
-        self.optimizer.apply_gradients(zip(clipped_gradients, 
-                                         self.model.trainable_variables))
-        
-        # Apply constraints with smoothing
-        self.model.apply_constraints()
-        
-        return total_loss, components, approx
-
-    def save_current_state(self, filename):
-        """Save current model state"""
-        try:
-            # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(filename), exist_ok=True)
-            
-            # Get current state
-            state = self.model.get_variable_values()
-            
-            # Save state
-            np.savez(filename, 
-                     **state,
-                     loss=self.best_loss,
-                     learning_rate=self.optimizer.learning_rate.numpy())
-            
-            print(f"Saved optimizer state to {filename}")
-            return True
-        except Exception as e:
-            print(f"Failed to save optimizer state: {e}")
-            return False
-
-    def prepare_for_stage(self, stage: int, max_sigma: float, max_frequency: float):
-        """Prepare optimizer for new curriculum stage"""
-        # Reset optimizer state while keeping best model
-        self.optimizer.learning_rate.assign(self.initial_learning_rate)
         self.steps_without_improvement = 0
-        self.loss_history = []
+        self.patience = 1000
+        self.min_delta = 1e-6
         
-        # Update model constraints
-        self.model.update_constraints(max_sigma=max_sigma, max_frequency=max_frequency)
+        # Learning rate scheduling
+        self.lr_patience = 200
+        self.lr_factor = 0.5
+        self.lr_min_delta = 1e-5
+        self.min_learning_rate = learning_rate * 0.0001
+
+    def should_stop_early(self, loss):
+        """Check if optimization should stop early"""
+        self.loss_history.append(loss)
         
-        # Restore best state if available
-        if self.best_state is not None:
-            self.model.set_variable_values(self.best_state)
-            print(f"Restored best model state for stage {stage}")
+        if loss + self.min_delta < self.best_loss:
+            self.best_loss = loss
+            self.steps_without_improvement = 0
+            self.best_state = self.model.get_variable_values()
+            return False
+        
+        self.steps_without_improvement += 1
+        return self.steps_without_improvement >= self.patience
+
+    def adjust_learning_rate(self, loss):
+        """Adjust learning rate based on loss progression"""
+        if len(self.loss_history) < self.lr_patience:
+            return
+        
+        recent_losses = self.loss_history[-self.lr_patience:]
+        if min(recent_losses) > (min(self.loss_history) - self.lr_min_delta):
+            current_lr = self.optimizer.learning_rate.numpy()
+            new_lr = max(current_lr * self.lr_factor, self.min_learning_rate)
+            
+            if new_lr < current_lr:
+                print(f"\nReducing learning rate: {current_lr:.2e} -> {new_lr:.2e}")
+                self.optimizer.learning_rate.assign(new_lr)
+                self.current_learning_rate = new_lr
+                
+                # Optionally restore best state when reducing learning rate
+                if self.best_state is not None:
+                    self.model.set_variable_values(self.best_state)
+                    print("Restored best model state")
+                
+                # Clear loss history after LR change
+                self.loss_history = []
 
 class StateManager:
     """Manages optimization state and recovery"""
