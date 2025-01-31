@@ -881,7 +881,41 @@ def setup_argument_parser():
                          help='Input image path')
     io_group.add_argument('--weights', type=str,
                          help='Optional weight image path (greyscale)')
-    # ... rest of the arguments remain the same ...
+    io_group.add_argument('--output-dir', type=str, default='results',
+                         help='Directory for output files')
+    io_group.add_argument('--snapshot-prefix', type=str,
+                         help='Prefix for snapshot filenames (e.g., results/output)')
+    io_group.add_argument('--save-best', type=str,
+                         help='Save best model state to file')
+    io_group.add_argument('--load-state', type=str,
+                         help='Load initial model state from file')
+    
+    # Model arguments
+    model_group = parser.add_argument_group('Model Configuration')
+    model_group.add_argument('--num-gabors', type=int, default=100,
+                           help='Number of Gabor functions')
+    
+    # Optimization arguments
+    optim_group = parser.add_argument_group('Optimization')
+    optim_group.add_argument('--learning-rate', type=float, default=0.01,
+                            help='Learning rate for optimization')
+    optim_group.add_argument('--steps-per-iteration', type=int, default=1000,
+                            help='Optimization steps per iteration')
+    optim_group.add_argument('--total-iterations', type=int, default=None,
+                            help='Maximum number of iterations (None for unlimited)')
+    optim_group.add_argument('--time-limit', type=float, default=None,
+                            help='Time limit in seconds (None for unlimited)')
+    optim_group.add_argument('--early-stop', action='store_true',
+                            help='Enable early stopping')
+    optim_group.add_argument('--patience', type=int, default=1000,
+                            help='Number of iterations without improvement before early stopping')
+    
+    # Visualization arguments
+    vis_group = parser.add_argument_group('Visualization')
+    vis_group.add_argument('--label-snapshot', action='store_true',
+                          help='Add labels to snapshot images')
+    vis_group.add_argument('--snapshot-frequency', type=int, default=1,
+                          help='Save snapshot every N iterations')
     
     return parser
 
