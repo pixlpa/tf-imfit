@@ -307,30 +307,30 @@ class GaborModel(tf.keras.Model):
             
         # Parameter tensor could be passed in or created here
         if params is not None:
-            self.params = tf.Variable(params, trainable=True, name='gabor_params')
+            self.params = params
         else:
             if initializer is None:
-                # Create random values between 0 and 1
-                random_values = tf.random.uniform(
-                    shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
-                    minval=0.0,
-                    maxval=1.0)
-                # Scale to the desired range
-                initial_value = gmin + (gmax - gmin) * random_values
-            else:
-                # If initializer is provided, create tensor with proper shape
-                initial_value = tf.zeros((num_parallel, GABOR_NUM_PARAMS, ensemble_size))
-            
-            self.params = tf.Variable(initial_value, 
-                                    trainable=True,
-                                    name='gabor_params')
+                initializer = tf.random_uniform_initializer(minval=gmin,
+                                                          maxval=gmax,
+                                                          dtype=tf.float32)
 
+            # n x 12 x e
+            self.params = self.add_weight(
+                name='params',
+                shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
+                dtype=tf.float32,
+                initializer=initializer)
+
+        gmin[:,:GABOR_PARAM_L,:] = -np.inf
+        gmax[:,:GABOR_PARAM_L,:] =  np.inf
+
+        self.gmin = gmin
+        self.gmax = gmax
         self.max_row = max_row
-        self.weight = weight
-        self.target = target
         self.x = x
         self.y = y
-        
+        self.weight = weight
+        self.target = target
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
     def call(self, inputs):
@@ -494,7 +494,8 @@ def setup_models(opts, inputs):
                       learning_rate=opts.local_learning_rate)
 
     if opts.preview_size:
-        preview_shape = scale_shape(list(map(int, inputs.target_tensor.shape[:2])),
+        # Use input_image shape instead of target_tensor shape
+        preview_shape = scale_shape(inputs.input_image.shape[:2],
                                   opts.preview_size)
 
         _, x_preview, y_preview = normalized_grid(preview_shape[:2])
