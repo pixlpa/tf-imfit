@@ -248,13 +248,12 @@ class GaborModel(tf.keras.Model):
             self.params = tf.Variable(params, trainable=True, name='gabor_params')
         else:
             if initializer is None:
-                initializer = tf.random_uniform_initializer(minval=gmin,
-                                                          maxval=gmax,
-                                                          dtype=tf.float32)
+                initializer = tf.random.uniform(
+                    shape=(num_parallel, ensemble_size, GABOR_NUM_PARAMS),
+                    minval=gmin,
+                    maxval=gmax)
             
-            initial_value = initializer(shape=(num_parallel, ensemble_size, GABOR_NUM_PARAMS),
-                                      dtype=tf.float32)
-            self.params = tf.Variable(initial_value, 
+            self.params = tf.Variable(initializer, 
                                     trainable=True,
                                     name='gabor_params')
 

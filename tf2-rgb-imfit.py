@@ -307,30 +307,27 @@ class GaborModel(tf.keras.Model):
             
         # Parameter tensor could be passed in or created here
         if params is not None:
-            self.params = params
+            self.params = tf.Variable(params, trainable=True, name='gabor_params')
         else:
             if initializer is None:
-                initializer = tf.random_uniform_initializer(minval=gmin,
-                                                          maxval=gmax,
-                                                          dtype=tf.float32)
+                # Create random values between 0 and 1
+                random_values = tf.random.uniform(
+                    shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
+                    minval=0.0,
+                    maxval=1.0)
+                # Scale to the desired range
+                initializer = gmin + (gmax - gmin) * random_values
+            
+            self.params = tf.Variable(initializer, 
+                                    trainable=True,
+                                    name='gabor_params')
 
-            # n x 12 x e
-            self.params = self.add_weight(
-                name='params',
-                shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
-                dtype=tf.float32,
-                initializer=initializer)
-
-        gmin[:,:GABOR_PARAM_L,:] = -np.inf
-        gmax[:,:GABOR_PARAM_L,:] =  np.inf
-
-        self.gmin = gmin
-        self.gmax = gmax
         self.max_row = max_row
-        self.x = x
-        self.y = y
         self.weight = weight
         self.target = target
+        self.x = x
+        self.y = y
+        
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
     def call(self, inputs):
