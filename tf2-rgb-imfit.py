@@ -478,10 +478,12 @@ class GaborModel:
         # Sum all components to get final image
         image = tf.reduce_sum(components, axis=0)  # Shape: [height, width]
         
-        # Add batch and channel dimensions if needed
-        image = tf.expand_dims(image, axis=0)  # Add batch dimension
-        if len(self.target_tensor.shape) == 4:  # If target has channel dimension
-            image = tf.expand_dims(image, axis=-1)  # Add channel dimension
+        # Add batch dimension
+        image = tf.expand_dims(image, axis=0)  # Shape: [1, height, width]
+        
+        # Add channel dimension if the image shape indicates RGB
+        if hasattr(self, 'image_shape') and len(self.image_shape) == 3:
+            image = tf.expand_dims(image, axis=-1)  # Shape: [1, height, width, channels]
         
         return components, image
 
