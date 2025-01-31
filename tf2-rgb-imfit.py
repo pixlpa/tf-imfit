@@ -467,23 +467,23 @@ class GaborModel:
             frequency = self.frequency[i]
             phase = self.phase[i]
             amplitude = self.amplitude[i]
+            color = self.colors[i]  # RGB color for this Gabor
             
             # Generate Gabor component
-            component = self.generate_gabor(x, y)
-            components.append(component)
+            component = self.generate_gabor(x, y)  # Shape: [height, width]
+            
+            # Apply color to component
+            colored_component = tf.expand_dims(component, -1) * color  # Shape: [height, width, 3]
+            components.append(colored_component)
             
         # Stack all components
-        components = tf.stack(components)  # Shape: [n_components, height, width]
+        components = tf.stack(components)  # Shape: [n_components, height, width, 3]
         
         # Sum all components to get final image
-        image = tf.reduce_sum(components, axis=0)  # Shape: [height, width]
+        image = tf.reduce_sum(components, axis=0)  # Shape: [height, width, 3]
         
         # Add batch dimension
-        image = tf.expand_dims(image, axis=0)  # Shape: [1, height, width]
-        
-        # Add channel dimension for RGB
-        image = tf.expand_dims(image, axis=-1)  # Shape: [1, height, width, 1]
-        image = tf.tile(image, [1, 1, 1, 3])   # Shape: [1, height, width, 3]
+        image = tf.expand_dims(image, axis=0)  # Shape: [1, height, width, 3]
         
         return components, image
 
