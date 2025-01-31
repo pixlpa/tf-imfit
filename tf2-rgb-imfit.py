@@ -335,7 +335,7 @@ class GaborModel(tf.keras.Model):
         self.approx = None
         self.con_losses = None
         self.loss_per_fit = None
-        self.cparams = None  # Add cparams initialization
+        self.cparams = None
         
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
@@ -354,7 +354,19 @@ class GaborModel(tf.keras.Model):
             self.gmax,
             name='cparams')
 
-    def call(self, inputs):
+    def compute_loss(self, target=None):
+        # Compute loss using current model state
+        if target is None:
+            target = self.target
+            
+        if target is not None:
+            diff = self.approx - target
+            if self.weight is not None:
+                diff = diff * self.weight
+            return tf.reduce_mean(diff * diff, axis=[1,2,3])
+        return tf.zeros([self.params.shape[0]])
+
+    def call(self, inputs, training=False):
         # Get clipped parameters
         self.cparams = self.get_cparams()
 
@@ -368,25 +380,25 @@ class GaborModel(tf.keras.Model):
         self.con_losses = compute_constraints(self.cparams)
 
         # Calculate loss per fit
-        if self.target is not None:
-            diff = self.approx - self.target
-            if self.weight is not None:
-                diff = diff * self.weight
-            self.loss_per_fit = tf.reduce_mean(diff * diff, axis=[1,2,3])
-        else:
-            self.loss_per_fit = tf.zeros([self.params.shape[0]])
+        self.loss_per_fit = self.compute_loss(inputs)
 
         return self.approx
 
     def train_step(self, data):
         with tf.GradientTape() as tape:
-            _ = self(data)
-            loss = self.total_loss
-            
-        gradients = tape.gradient(loss, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+            # Forward pass
+            self.call(data)
+            # Compute loss
+            loss = self.compute_loss(data)
+
+        # Compute gradients
+        trainable_vars = self.trainable_variables
+        gradients = tape.gradient(loss, trainable_vars)
         
-        return {'loss': loss}
+        # Update weights
+        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+        
+        return {"loss": loss}
 
 ######################################################################
 # Set up tensorflow models themselves. We need a separate model for
