@@ -330,10 +330,11 @@ class GaborModel(tf.keras.Model):
         self.x = x
         self.y = y
         
-        # Initialize gabor attribute
+        # Initialize attributes
         self.gabor = None
         self.approx = None
         self.con_losses = None
+        self.loss_per_fit = None
         
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
@@ -361,6 +362,15 @@ class GaborModel(tf.keras.Model):
         
         # Calculate constraint losses
         self.con_losses = compute_constraints(self.cparams)
+
+        # Calculate loss per fit
+        if self.target is not None:
+            diff = self.approx - self.target
+            if self.weight is not None:
+                diff = diff * self.weight
+            self.loss_per_fit = tf.reduce_mean(diff * diff, axis=[1,2,3])
+        else:
+            self.loss_per_fit = tf.zeros([self.params.shape[0]])
 
         return self.approx
 
