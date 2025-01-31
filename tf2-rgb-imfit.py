@@ -335,24 +335,28 @@ class GaborModel(tf.keras.Model):
         self.approx = None
         self.con_losses = None
         self.loss_per_fit = None
+        self.cparams = None  # Add cparams initialization
         
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
     def compute_output_shape(self, input_shape):
         return input_shape
 
-    def call(self, inputs):
-        # Convert values to tensors during call
+    def get_cparams(self):
+        # Helper method to get clipped parameters
         max_row = tf.constant(self.max_row_val, dtype=tf.int32)
         ensemble_size = tf.constant(self.ensemble_size, dtype=tf.int32)
         max_row = tf.minimum(max_row, ensemble_size)
         
-        # n x 12 x e
-        self.cparams = tf.clip_by_value(
+        return tf.clip_by_value(
             self.params[:,:,:max_row],
             self.gmin, 
             self.gmax,
             name='cparams')
+
+    def call(self, inputs):
+        # Get clipped parameters
+        self.cparams = self.get_cparams()
 
         # Calculate Gabor functions
         self.gabor = compute_gabor(self.cparams, self.x, self.y)
