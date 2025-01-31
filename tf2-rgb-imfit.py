@@ -168,13 +168,6 @@ def get_options():
   
     opts = parser.parse_args()
 
-    # Validate configuration
-    if opts.preview_size and opts.preview_size > opts.max_size:
-        raise ValueError(f"Preview size ({opts.preview_size}) cannot be larger than max size ({opts.max_size})")
-    
-    if opts.num_models < 1:
-        raise ValueError(f"Number of models must be positive, got {opts.num_models}")
-
     if opts.copy_quantity < 0:
         opts.copy_quantity = 0
     elif opts.copy_quantity >= 1:
