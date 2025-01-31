@@ -447,51 +447,41 @@ def copy_state(state):
 
 def load_params(opts, inputs, models, state):
 
-    if opts.input is not None:
-        iparams = np.genfromtxt(opts.input, dtype=np.float32, delimiter=',')
-        nparams = len(iparams)
-    else:
-        iparams = np.empty((0, GABOR_NUM_PARAMS), dtype=np.float32)
-        nparams = 0 
+    if opts.input is None:
+        return None, 0
 
-    print('loaded {} models from {}'.format(
-        nparams, opts.input))
+    print('loading params from', opts.input.name)
+    
+    params = np.loadtxt(opts.input, delimiter=',').transpose()
+    nparams = params.shape[1]
 
-    nparams = min(nparams, opts.num_models)
+    print('  loaded {} models'.format(nparams))
+    
+    if nparams > opts.num_models:
+        print('  warning: truncating to {} models'.format(opts.num_models))
+        nparams = opts.num_models
+        params = params[:,:nparams]
 
-    if nparams < len(iparams):
-        print('warning: truncating input to {} models '
-              'by randomly discarding {} models!'.format(
-                  nparams, len(iparams)-nparams))
-        idx = np.arange(len(iparams))
-        np.random.shuffle(idx)
-        iparams = iparams[idx[:nparams]]
+    state.params[:,:nparams] = params
 
-    state.params[:,:nparams] = iparams.transpose()
+    # Set the model parameters and run a forward pass to compute gabor
+    models.full.params.assign(state.params[None,:])
+    _ = models.full(inputs.target_tensor)  # This will compute gabor
 
-    models.full.set_weights([state.params[None,:,:]])
+    # Now we can access the gabor attribute
+    if models.full.gabor is not None:
+        state.gabor[:,:,:,:nparams] = models.full.gabor[0, :, :, :, :nparams]
+        state.con_loss[:nparams] = models.full.con_losses[0,:nparams]
 
-    results = models.full(inputs.target_tensor)
-
-    state.gabor[:,:,:,:nparams] = models.full.gabor[0, :, :, :, :nparams]
-    state.con_loss[:nparams] = models.full.con_losses[0, :nparams]
-
-    cur_approx = models.full.approx[0]
-
-    prev_best_loss = models.full.err_loss + tf.reduce_sum(state.con_loss[:nparams])
+        results = models.full(inputs.target_tensor)
+        cur_loss = results[0]
         
-    if opts.preview_size:
-        models.full.set_weights([state.params[None,:,:]])
-    
-    snapshot(None, cur_approx,
-             opts, inputs, models, None, -1, nparams, '')
-    
-    print('initial loss is {}'.format(prev_best_loss))
-    print()
+        print('  loaded model loss is', cur_loss)
+        print()
+        
+        return cur_loss, nparams
 
-    model_start_idx = nparams
-
-    return prev_best_loss, model_start_idx
+    return None, 0
 
 ######################################################################
 # Rescale image to map given bounds to [0,255] uint8
