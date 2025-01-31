@@ -334,6 +334,11 @@ class GaborModel:
         for name in self.variables:
             setattr(self, name, self.variables[name])
             
+        # Pre-compute coordinate grid once during initialization
+        x_coords = tf.cast(tf.range(w), tf.float32)
+        y_coords = tf.cast(tf.range(h), tf.float32)
+        self.x_grid, self.y_grid = tf.meshgrid(x_coords, y_coords)
+        
         print(f"Initialized GaborModel with {count} Gabors for image shape {image_shape}")
 
     @property
@@ -341,45 +346,41 @@ class GaborModel:
         """Return list of all trainable variables"""
         return list(self.variables.values())
 
+    @tf.function
     def generate_gabor(self, x, y):
         """Generate Gabor function values for given coordinates"""
-        # Reshape coordinates for broadcasting
+        # Use broadcasting for better performance
         x = tf.expand_dims(x, -1)  # [..., 1]
         y = tf.expand_dims(y, -1)  # [..., 1]
         
-        # Center coordinates on Gabor positions
+        # Center coordinates on Gabor positions (use broadcasting)
         x_c = x - self.pos_x  # [..., count]
         y_c = y - self.pos_y  # [..., count]
         
-        # Rotate coordinates
+        # Pre-compute trig functions once
         cos_theta = tf.cos(self.theta)
         sin_theta = tf.sin(self.theta)
+        
+        # Rotate coordinates (vectorized)
         x_r = x_c * cos_theta + y_c * sin_theta
         y_r = -x_c * sin_theta + y_c * cos_theta
         
-        # Calculate Gabor function
+        # Compute Gabor function (vectorized)
         gaussian = tf.exp(-(x_r**2 + y_r**2) / (2 * self.sigma**2))
         sinusoid = tf.cos(2 * np.pi * self.frequency * x_r + self.phase)
         
         return gaussian * sinusoid * self.amplitude * self.scale
 
+    @tf.function
     def generate_image(self):
-        """Generate full image from all Gabor functions"""
-        h, w = self.image_shape[:2]
+        """Generate full image from all Gabor functions (optimized)"""
+        # Use pre-computed coordinate grid
+        gabor_values = self.generate_gabor(self.x_grid, self.y_grid)  # [h, w, count]
         
-        # Create coordinate grid
-        x_coords = tf.cast(tf.range(w), tf.float32)
-        y_coords = tf.cast(tf.range(h), tf.float32)
-        x, y = tf.meshgrid(x_coords, y_coords)
-        
-        # Generate Gabor values
-        gabor_values = self.generate_gabor(x, y)  # [h, w, count]
-        
-        # Multiply by colors and sum
+        # Multiply by colors and sum (optimized broadcasting)
         colored_gabors = tf.expand_dims(gabor_values, -1) * self.colors  # [h, w, count, 3]
         image = tf.reduce_sum(colored_gabors, axis=2)  # [h, w, 3]
         
-        # Clip to valid range
         return tf.clip_by_value(image, 0.0, 1.0)
 
     def apply_constraints(self):
