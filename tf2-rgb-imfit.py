@@ -1182,6 +1182,9 @@ def optimize_multi_scale(input_path, weight_path, opts):
     best_model = None
     final_loss = float('inf')
     
+    # Track total iterations across all scales
+    remaining_iterations = opts.total_iterations
+    
     for i, (scale, gabor_scale) in enumerate(zip(scales, gabor_scales)):
         print(f"\n=== Scale {i+1}/{len(scales)} ===")
         print(f"Image scale: {scale:.2f}")
@@ -1194,6 +1197,14 @@ def optimize_multi_scale(input_path, weight_path, opts):
         scale_opts = copy.deepcopy(opts)
         scale_opts.num_gabors = int(opts.num_gabors * gabor_scale)
         scale_opts.learning_rate *= scale  # Adjust learning rate for scale
+        
+        # Allocate remaining iterations for this scale
+        if remaining_iterations is not None:
+            # Use proportionally more iterations for larger scales
+            scale_iterations = int(remaining_iterations * scale / sum(scales[i:]))
+            scale_opts.total_iterations = scale_iterations
+            remaining_iterations -= scale_iterations
+            print(f"Allocated iterations for this scale: {scale_iterations}")
         
         # Initialize from previous scale if available
         if best_model is not None:
@@ -1215,6 +1226,11 @@ def optimize_multi_scale(input_path, weight_path, opts):
         if opts.save_best:
             scale_path = f"{opts.save_best}.scale_{scale:.2f}.txt"
             save_model_state(model, scale_path)
+            
+        # Check if we've used all iterations
+        if remaining_iterations is not None and remaining_iterations <= 0:
+            print("\nReached total iteration limit")
+            break
     
     return best_model, final_loss
 
