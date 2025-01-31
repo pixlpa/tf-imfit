@@ -168,6 +168,13 @@ def get_options():
   
     opts = parser.parse_args()
 
+    # Validate configuration
+    if opts.preview_size and opts.preview_size > opts.max_size:
+        raise ValueError(f"Preview size ({opts.preview_size}) cannot be larger than max size ({opts.max_size})")
+    
+    if opts.num_models < 1:
+        raise ValueError(f"Number of models must be positive, got {opts.num_models}")
+
     if opts.copy_quantity < 0:
         opts.copy_quantity = 0
     elif opts.copy_quantity >= 1:
@@ -299,11 +306,13 @@ class GaborModel(tf.keras.Model):
 
         # Allow evaluating less than ensemble_size models (i.e. while
         # building up full model).
-        if max_row is None:
-            max_row = ensemble_size
+        self.ensemble_size = ensemble_size
+        self.max_row = ensemble_size if max_row is None else max_row
 
         gmin = GABOR_RANGE[:,0].reshape(1,GABOR_NUM_PARAMS,1).copy()
         gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1).copy()
+        self.gmin = gmin
+        self.gmax = gmax
             
         # Create the params variable as a trainable weight
         self.params = self.add_weight(
@@ -324,7 +333,6 @@ class GaborModel(tf.keras.Model):
             initial_value = gmin + (gmax - gmin) * random_values
             self.params.assign(initial_value)
 
-        self.max_row = max_row
         self.weight = weight
         self.target = target
         self.x = x
@@ -333,10 +341,15 @@ class GaborModel(tf.keras.Model):
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
     def call(self, inputs):
+        # Use static max_row value instead of tensor
+        max_row = tf.minimum(self.max_row, self.ensemble_size)
+        
         # n x 12 x e
-        self.cparams = tf.clip_by_value(self.params[:,:,:self.max_row],
-                                      self.gmin, self.gmax,
-                                      name='cparams')
+        self.cparams = tf.clip_by_value(
+            self.params[:,:,:max_row],
+            self.gmin, 
+            self.gmax,
+            name='cparams')
 
         ############################################################
         # Now compute the Gabor function for each fit/model
