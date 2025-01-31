@@ -586,39 +586,45 @@ def snapshot(current_image, input_image, opts, iteration):
         outfile = f'{opts.snapshot_prefix}-{iteration:06d}.png'
         print(f"Saving snapshot to: {outfile}")
         
-        # Convert tensors to numpy arrays
-        current_image_np = tf.cast(current_image * 255, tf.uint8).numpy()
-        input_image_np = tf.cast(input_image * 255, tf.uint8).numpy()
+        # Convert to numpy if needed
+        def to_numpy(x):
+            if isinstance(x, tf.Tensor):
+                return x.numpy()
+            return x
+        
+        # Convert tensors to numpy arrays and scale to 0-255
+        current_image_np = to_numpy(current_image)
+        input_image_np = to_numpy(input_image)
         
         # Calculate error
-        error = np.abs(current_image.numpy() - input_image.numpy())
-        error_vis = tf.cast(error * 255, tf.uint8).numpy()
+        error = np.abs(current_image_np - input_image_np)
+        
+        # Convert to uint8
+        current_image_uint8 = (current_image_np * 255).astype(np.uint8)
+        input_image_uint8 = (input_image_np * 255).astype(np.uint8)
+        error_uint8 = (error * 255).astype(np.uint8)
         
         # Create visualization
-        h, w = input_image.shape[:2]
+        h, w = input_image_np.shape[:2]
         canvas = np.zeros((h, w * 3, 3), dtype=np.uint8)
         
         # Original image
-        canvas[:, :w] = input_image_np
+        canvas[:, :w] = input_image_uint8
         # Current approximation
-        canvas[:, w:w*2] = current_image_np
+        canvas[:, w:w*2] = current_image_uint8
         # Error visualization
-        canvas[:, w*2:] = error_vis
+        canvas[:, w*2:] = error_uint8
         
         # Add labels if requested
         if opts.label_snapshot:
             try:
-                cv2.putText(canvas, 'Input', (10, 30),
-                          cv2.FONT_HERSHEY_SIMPLEX, 1,
-                          (255, 255, 255), 2)
-                cv2.putText(canvas, 'Current', (w + 10, 30),
-                          cv2.FONT_HERSHEY_SIMPLEX, 1,
-                          (255, 255, 255), 2)
-                cv2.putText(canvas, 'Error', (w*2 + 10, 30),
-                          cv2.FONT_HERSHEY_SIMPLEX, 1,
-                          (255, 255, 255), 2)
-            except ImportError:
-                print("Warning: cv2 not available, skipping labels")
+                labels = ['Input', 'Current', 'Error']
+                for i, label in enumerate(labels):
+                    cv2.putText(canvas, label, (i*w + 10, 30),
+                              cv2.FONT_HERSHEY_SIMPLEX, 1,
+                              (255, 255, 255), 2)
+            except Exception as e:
+                print(f"Warning: Failed to add labels: {e}")
         
         # Save image
         try:
