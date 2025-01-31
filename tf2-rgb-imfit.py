@@ -814,7 +814,10 @@ def optimize_model(input_image, opts):
                             progress.iteration)
                 except Exception as e:
                     print(f"\n⚠️  Warning: Failed to save snapshot: {e}")
-            
+                    # Save best model if requested
+            if opts.save_best:
+                save_model_state(model, opts.save_best)
+                
             # Check for early stopping
             if (opts.early_stop and 
                 progress.iteration - progress.last_improvement > opts.patience):
@@ -844,13 +847,13 @@ def add_optimization_arguments(parser):
                        help='Learning rate for optimization')
     parser.add_argument('--early-stop', action='store_true',
                        help='Enable early stopping')
-    parser.add_argument('--patience', type=int, default=1000,
+    parser.add_argument('--patience', type=int, default=64,
                        help='Number of iterations without improvement before early stopping')
-    parser.add_argument('--total-iterations', type=int, default=100000,
+    parser.add_argument('--total-iterations', type=int, default=100,
                        help='Maximum number of iterations')
     parser.add_argument('--time-limit', type=float,
                        help='Time limit in seconds')
-    parser.add_argument('--steps-per-iteration', type=int, default=1000,
+    parser.add_argument('--steps-per-iteration', type=int, default=256,
                        help='Optimization steps per iteration')
     parser.add_argument('--max-gradient-norm', type=float, default=1.0,
                        help='Maximum gradient norm for clipping')
