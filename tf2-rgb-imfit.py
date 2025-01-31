@@ -963,25 +963,23 @@ def randomize(params, rstdev, ncopy=None):
 # parallel.
 
 def local_optimize(opts, inputs, models, state,
-                   cur_approx, cur_con_losses, cur_target,
-                   is_replace, model_idx, loop_count,
-                   model_start_idx, prev_best_loss):
+                  cur_approx, cur_con_losses, cur_target,
+                  is_replace, model_idx, loop_count,
+                  model_start_idx, prev_best_loss):
 
     if prev_best_loss is not None:
         print('  loss before local fit is', prev_best_loss)
         
     # Params have already been randomly initialized, but we
     # need to replace some of them here
-
     if is_replace and opts.copy_quantity:
-
         # Get current randomly initialized values
         pvalues = models.local.params.numpy()
 
         # Load in existing model values, slightly perturbed.
         rparams = randomize(state.params[:,model_idx],
-                            opts.perturb_amount,
-                            opts.copy_quantity)
+                          opts.perturb_amount,
+                          opts.copy_quantity)
 
         pvalues[:opts.copy_quantity] = rparams[:,:,None]
             
@@ -998,32 +996,29 @@ def local_optimize(opts, inputs, models, state,
 
     # Training loop
     for i in range(opts.local_iter):
-        
         # Get next batch
         target_batch = next(iter(dataset))
 
         # Gradient tape
         with tf.GradientTape() as tape:
             # Forward pass
+            models.local(target_batch[0], training=True)
             loss_per_fit = models.local.loss_per_fit
-            con_losses = models.local.con_losses
-            approx = models.local.approx
-            gabor = models.local.gabor
-            params = models.local.cparams
 
         # Get gradients
-        grads = tape.gradient(loss_per_fit, models.local.trainable_variables)
-        
-        # Apply gradients
-        optimizer.apply_gradients(zip(grads, models.local.trainable_variables))
+        trainable_vars = models.local.trainable_variables
+        if trainable_vars:  # Check if there are trainable variables
+            grads = tape.gradient(loss_per_fit, trainable_vars)
+            # Apply gradients
+            optimizer.apply_gradients(zip(grads, trainable_vars))
 
     # Get final results
     results = {
-        'loss': loss_per_fit.numpy(),
-        'con_losses': con_losses.numpy(),
-        'approx': approx.numpy(),
-        'gabor': gabor.numpy(),
-        'params': params.numpy()
+        'loss': models.local.loss_per_fit.numpy(),
+        'con_losses': models.local.con_losses.numpy(),
+        'approx': models.local.approx.numpy(),
+        'gabor': models.local.gabor.numpy(),
+        'params': models.local.cparams.numpy()
     }
 
     fidx = results['loss'].argmin()
@@ -1031,41 +1026,13 @@ def local_optimize(opts, inputs, models, state,
     new_loss = results['loss'][fidx] + cur_con_losses
     new_approx = results['approx'][fidx]
     new_gabor = results['gabor'][fidx]
-
     new_params = results['params'][fidx]
     new_con_loss = results['con_losses'][fidx]
-    
-    # print('  after local fit, loss is', new_loss)
-
-    assert(new_params.shape == (12, 1))
-
-    assert(new_con_loss.shape == (1,))
-
-    assert(new_gabor.shape ==
-           inputs.input_image.shape + (1,))
-
-    assert(new_approx.shape == inputs.input_image.shape)
-
-    
-    if opts.preview_size:
-        tmpparams = state.params.copy()
-        print(tmpparams.shape, new_params.shape)
-        tmpparams[:,model_idx] = new_params[:,0]
-        models.full.params.assign(tmpparams[None,:])
-
-    snapshot(new_approx,
-             cur_approx + new_approx,
-             opts, inputs, models, sess,
-             loop_count, model_start_idx+1, '')
 
     if prev_best_loss is None or new_loss < prev_best_loss:
-        
         do_update = True
-        
     else:
-
         rel_change = (prev_best_loss - new_loss) / prev_best_loss
-
         if not opts.anneal_temp:
             print('  not better than', prev_best_loss, 'skipping update')
             do_update = False
@@ -1078,9 +1045,7 @@ def local_optimize(opts, inputs, models, state,
                 action, -rel_change, p_accept))
     
     if do_update:
-
         prev_best_loss = new_loss
-
         state.params[:,model_idx] = new_params[:,0]        
         state.gabor[:,:,:,model_idx] = new_gabor[:,:,:,0]
         state.con_loss[model_idx] = new_con_loss
