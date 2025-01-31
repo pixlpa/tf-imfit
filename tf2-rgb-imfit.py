@@ -705,9 +705,9 @@ class GaborOptimizer:
         self.weights = weights
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
         self.loss_history = []
-        self.best_loss = float('inf')  # Initialize best_loss
+        self.best_loss = float('inf')
         self.best_state = None
-        
+
     def prepare_for_stage(self, stage, max_sigma, max_freq):
         """Prepare optimizer for a new curriculum learning stage"""
         # Update model constraints for this stage
@@ -721,7 +721,7 @@ class GaborOptimizer:
         self.best_state = None
         
         print(f"Stage {stage}: max_sigma={max_sigma:.1f}, max_freq={max_freq:.3f}")
-    
+
     def optimization_step(self):
         """Perform one optimization step"""
         with tf.GradientTape() as tape:
@@ -730,7 +730,7 @@ class GaborOptimizer:
             image = tf.reduce_sum(components, axis=0)
             
             # Calculate loss
-            loss = self.calculate_loss(image)  # Changed from loss_fn to calculate_loss
+            loss = self.calculate_loss(image)
             
             # Compute gradients
             gradients = tape.gradient(loss, self.model.trainable_variables)
@@ -739,7 +739,7 @@ class GaborOptimizer:
             self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
             
             # Track best state
-            current_loss = loss.numpy()  # Convert to numpy for comparison
+            current_loss = loss.numpy()
             if self.best_state is None or current_loss < self.best_loss:
                 self.best_loss = current_loss
                 self.best_state = [v.numpy() for v in self.model.trainable_variables]
