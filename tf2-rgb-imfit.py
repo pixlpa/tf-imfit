@@ -297,10 +297,9 @@ class GaborModel(tf.keras.Model):
                  max_row=None):
         super(GaborModel, self).__init__()
 
-        # Allow evaluating less than ensemble_size models (i.e. while
-        # building up full model).
-        self.ensemble_size = tf.constant(ensemble_size, dtype=tf.int32)
-        self.max_row = tf.constant(max_row if max_row is not None else ensemble_size, dtype=tf.int32)
+        # Store raw values
+        self.ensemble_size = ensemble_size
+        self.max_row_val = max_row if max_row is not None else ensemble_size
 
         gmin = GABOR_RANGE[:,0].reshape(1,GABOR_NUM_PARAMS,1).copy()
         gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1).copy()
@@ -337,8 +336,10 @@ class GaborModel(tf.keras.Model):
         return input_shape
 
     def call(self, inputs):
-        # Use tf.minimum with tensor versions
-        max_row = tf.minimum(self.max_row, self.ensemble_size)
+        # Convert values to tensors during call
+        max_row = tf.constant(self.max_row_val, dtype=tf.int32)
+        ensemble_size = tf.constant(self.ensemble_size, dtype=tf.int32)
+        max_row = tf.minimum(max_row, ensemble_size)
         
         # n x 12 x e
         self.cparams = tf.clip_by_value(
