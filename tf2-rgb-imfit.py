@@ -798,6 +798,10 @@ def optimize_model(input_image, opts, weights=None):
                 loss, approx = optimizer.optimization_step()
                 iterations_completed += 1
                 
+                # Save snapshot at each iteration
+                if opts.snapshot_prefix:
+                    snapshot(approx, input_image, opts, iterations_completed)
+                
                 # Update progress
                 if loss < best_loss:
                     best_loss = loss
