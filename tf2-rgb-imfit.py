@@ -316,9 +316,12 @@ class GaborModel(tf.keras.Model):
                     minval=0.0,
                     maxval=1.0)
                 # Scale to the desired range
-                initializer = gmin + (gmax - gmin) * random_values
+                initial_value = gmin + (gmax - gmin) * random_values
+            else:
+                # If initializer is provided, create tensor with proper shape
+                initial_value = tf.zeros((num_parallel, GABOR_NUM_PARAMS, ensemble_size))
             
-            self.params = tf.Variable(initializer, 
+            self.params = tf.Variable(initial_value, 
                                     trainable=True,
                                     name='gabor_params')
 
