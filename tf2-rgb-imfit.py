@@ -8,10 +8,12 @@ from PIL import Image
 import traceback
 import json
 import copy
+from typing import Dict, Tuple, Optional
 try:
     from tqdm import tqdm
 except ImportError:
-    tqdm = None
+    def tqdm(x, *args, **kwargs):
+        return x
 try:
     import imageio
 except ImportError:
@@ -427,6 +429,16 @@ class GaborModel:
             if name in self.variables:
                 self.variables[name].assign(value)
 
+    def update_constraints(self, max_sigma=None, max_frequency=None):
+        """Update model constraints for curriculum learning"""
+        if max_sigma is not None:
+            self.variables['sigma'].assign(
+                tf.clip_by_value(self.variables['sigma'], 1.0, max_sigma))
+        
+        if max_frequency is not None:
+            self.variables['frequency'].assign(
+                tf.clip_by_value(self.variables['frequency'], 0.02, max_frequency))
+
 ######################################################################
 # Set up tensorflow models themselves. We need a separate model for
 # each combination of inputs/dimensions to optimize.
@@ -595,19 +607,30 @@ def snapshot(current_image, input_image, opts, iteration, extra_info=None):
         if outdir and not os.path.exists(outdir):
             os.makedirs(outdir, exist_ok=True)
 
-        # Generate output filename
-        outfile = f'{opts.snapshot_prefix}-{int(iteration):06d}.png'
-        print(f"Saving snapshot to: {outfile}")
+        # Generate output filename with stage info if provided
+        if extra_info:
+            outfile = f'{opts.snapshot_prefix}-{int(iteration):06d}-{extra_info}.png'
+        else:
+            outfile = f'{opts.snapshot_prefix}-{int(iteration):06d}.png'
         
-        # Convert to numpy if needed
+        # Ensure we have numpy arrays
         def to_numpy(x):
             if isinstance(x, tf.Tensor):
                 return x.numpy()
-            return x
+            if isinstance(x, np.ndarray):
+                return x
+            raise ValueError(f"Unsupported type for image: {type(x)}")
         
-        # Convert tensors to numpy arrays and scale to 0-255
-        current_image_np = to_numpy(current_image)
-        input_image_np = to_numpy(input_image)
+        try:
+            current_image_np = to_numpy(current_image)
+            input_image_np = to_numpy(input_image)
+        except Exception as e:
+            print(f"Error converting images to numpy: {e}")
+            return
+        
+        # Ensure proper value range [0, 1]
+        current_image_np = np.clip(current_image_np, 0, 1)
+        input_image_np = np.clip(input_image_np, 0, 1)
         
         # Calculate error
         error = np.abs(current_image_np - input_image_np)
@@ -642,10 +665,10 @@ def snapshot(current_image, input_image, opts, iteration, extra_info=None):
         # Save image
         try:
             imageio.imwrite(outfile, canvas)
-            print(f"Successfully saved snapshot to {outfile}")
+            print(f"Saved snapshot to {outfile}")
         except Exception as e:
             print(f"Failed to save snapshot: {e}")
-            
+        
     except Exception as e:
         print(f"Error in snapshot function: {e}")
         traceback.print_exc()
@@ -721,155 +744,232 @@ class GaborOptimizer:
         
         return loss, approx
 
-def optimize_model(input_image, opts, weights=None, scale=None, initial_state=None):
-    """Simple optimization loop that strictly respects iteration count"""
-    model = GaborModel('gabor', count=opts.num_gabors, 
-                      image_shape=input_image.shape)
-    
-    # Initialize from previous state if provided
-    if initial_state is not None:
+    def save_current_state(self, filename):
+        """Save current model state"""
         try:
-            model.set_variable_values(initial_state)
-            print("Successfully initialized from previous scale")
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            
+            # Get current state
+            state = self.model.get_variable_values()
+            
+            # Save state
+            np.savez(filename, 
+                     **state,
+                     loss=self.best_loss,
+                     learning_rate=self.optimizer.learning_rate.numpy())
+            
+            print(f"Saved optimizer state to {filename}")
+            return True
         except Exception as e:
-            print(f"Warning: Failed to initialize from previous scale: {e}")
+            print(f"Failed to save optimizer state: {e}")
+            return False
+
+    def prepare_for_stage(self, stage: int, max_sigma: float, max_frequency: float):
+        """Prepare optimizer for new curriculum stage"""
+        # Reset optimizer state while keeping best model
+        self.optimizer.learning_rate.assign(self.initial_learning_rate)
+        self.steps_without_improvement = 0
+        self.loss_history = []
+        
+        # Update model constraints
+        self.model.update_constraints(max_sigma=max_sigma, max_frequency=max_frequency)
+        
+        # Restore best state if available
+        if self.best_state is not None:
+            self.model.set_variable_values(self.best_state)
+            print(f"Restored best model state for stage {stage}")
+
+class StateManager:
+    """Manages optimization state and recovery"""
+    def __init__(self, model, optimizer, save_dir):
+        self.model = model
+        self.optimizer = optimizer
+        self.save_dir = save_dir
+        self.best_state = None
+        self.best_loss = float('inf')
+        
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
     
-    optimizer = GaborOptimizer(model, input_image, 
-                             learning_rate=opts.learning_rate,
-                             weights=weights)
+    def save_checkpoint(self, stage, step, loss):
+        """Save optimization checkpoint"""
+        if not self.save_dir:
+            return
+        
+        checkpoint = {
+            'model_state': self.model.get_variable_values(),
+            'optimizer_state': self.optimizer.get_weights(),
+            'stage': stage,
+            'step': step,
+            'loss': loss,
+            'best_loss': self.best_loss
+        }
+        
+        checkpoint_path = os.path.join(
+            self.save_dir, f'checkpoint_stage{stage}_step{step}.npz')
+        
+        try:
+            np.savez_compressed(checkpoint_path, **checkpoint)
+            print(f"Saved checkpoint to {checkpoint_path}")
+        except Exception as e:
+            print(f"Failed to save checkpoint: {e}")
     
-    iterations_completed = 0
-    best_loss = float('inf')
+    def load_checkpoint(self, checkpoint_path):
+        """Load optimization checkpoint"""
+        try:
+            checkpoint = np.load(checkpoint_path, allow_pickle=True)
+            
+            # Restore model state
+            self.model.set_variable_values(checkpoint['model_state'].item())
+            
+            # Restore optimizer state
+            self.optimizer.set_weights(checkpoint['optimizer_state'].item())
+            
+            # Restore other state variables
+            self.best_loss = checkpoint['best_loss'].item()
+            
+            print(f"Loaded checkpoint from {checkpoint_path}")
+            return (checkpoint['stage'].item(), 
+                   checkpoint['step'].item(),
+                   checkpoint['loss'].item())
+            
+        except Exception as e:
+            print(f"Failed to load checkpoint: {e}")
+            return None
+    
+    def update_best_state(self, loss):
+        """Update best state if current loss is better"""
+        if loss < self.best_loss:
+            self.best_loss = loss
+            self.best_state = self.model.get_variable_values()
+            return True
+        return False
+    
+    def restore_best_state(self):
+        """Restore model to best known state"""
+        if self.best_state is not None:
+            self.model.set_variable_values(self.best_state)
+            print(f"Restored best model state (loss: {self.best_loss:.6f})")
+            return True
+        return False
+
+def optimize_with_curriculum(input_image, opts, weights=None):
+    """Progressive optimization with curriculum learning"""
+    print("\nInitializing optimization...")
+    
+    # Setup GPU if available
+    using_gpu = setup_gpu_memory()
     
     try:
-        with tqdm(total=opts.total_iterations, desc="Optimizing") as pbar:
-            while True:
-                # Check iteration limit
-                if opts.total_iterations is not None and iterations_completed >= opts.total_iterations:
-                    break
+        # Create model and optimizer
+        model = GaborModel('gabor', count=opts.num_gabors, 
+                         image_shape=input_image.shape)
+        optimizer = GaborOptimizer(model, input_image, 
+                                 learning_rate=opts.learning_rate,
+                                 weights=weights)
+        
+        # Create state manager
+        state_manager = StateManager(
+            model, optimizer, 
+            save_dir=os.path.join(opts.output_dir, 'checkpoints'))
+        
+        # Load initial state if provided
+        if opts.load_state and os.path.exists(opts.load_state):
+            state_manager.load_checkpoint(opts.load_state)
+        
+        # Curriculum learning stages
+        sigma_schedules = [20.0, 10.0, 5.0, 2.0]
+        frequency_schedules = [0.02, 0.05, 0.1, 0.2]
+        
+        total_steps = 0
+        start_time = datetime.now()
+        
+        try:
+            for stage, (max_sigma, max_freq) in enumerate(zip(
+                sigma_schedules, frequency_schedules)):
                 
-                # Single optimization step
-                loss, approx = optimizer.optimization_step()
-                iterations_completed += 1
+                print(f"\nStage {stage + 1}/{len(sigma_schedules)}")
+                print(f"Max sigma: {max_sigma:.1f}, Max frequency: {max_freq:.3f}")
                 
-                # Save snapshot at each iteration
-                if opts.snapshot_prefix:
+                # Prepare optimizer for new stage
+                optimizer.prepare_for_stage(stage + 1, max_sigma, max_freq)
+                
+                # Calculate iterations for this stage
+                stage_iterations = opts.total_iterations // len(sigma_schedules)
+                
+                with tqdm(total=stage_iterations, 
+                         desc=f"Stage {stage + 1}") as pbar:
                     
-                    snapshot(approx, input_image, opts, iterations_completed+(scale-0.25)*opts.total_iterations, 
-                            extra_info=f"scale_{scale:.2f}")
-                
-                # Update progress
-                if loss < best_loss:
-                    best_loss = loss
-                pbar.update(1)
-                pbar.set_postfix(loss=f"{loss:.6f}", best=f"{best_loss:.6f}")
-                
-    except KeyboardInterrupt:
-        print("\nOptimization interrupted by user")
-    
-    return model, best_loss, iterations_completed
-
-def optimize_multi_scale(input_path, weight_path, opts):
-    """Progressive multi-scale optimization"""
-    scales = [0.25, 0.5, 0.75, 1.0]
-    
-    best_model = None
-    best_state = None
-    final_loss = float('inf')
-    total_iterations = opts.total_iterations
-    iterations_used = 0
-    
-    # Load full-size image to get reference dimensions
-    full_image, _ = load_input_image(input_path, weight_path, scale=1.0)
-    full_height, full_width = full_image.shape[:2]
-    print(f"Full image size: {full_width}x{full_height}")
-    
-    # Use the same number of Gabors for all scales
-    num_gabors = opts.num_gabors
-    print(f"Using {num_gabors} Gabors across all scales")
-    
-    for i, scale in enumerate(scales):
-        print(f"\n=== Scale {i+1}/{len(scales)} ===")
-        print(f"Image scale: {scale:.2f}")
+                    for step in range(stage_iterations):
+                        try:
+                            # Check time limit
+                            if opts.time_limit is not None:
+                                elapsed = (datetime.now() - start_time).total_seconds()
+                                if elapsed > opts.time_limit:
+                                    print("\nTime limit reached")
+                                    return model, state_manager.best_loss
+                            
+                            # Optimization step
+                            loss, components, image = optimizer.optimization_step()
+                            total_steps += 1
+                            
+                            # Update state manager
+                            if state_manager.update_best_state(loss):
+                                state_manager.save_checkpoint(
+                                    stage, step, loss)
+                            
+                            # Update progress
+                            if step % 10 == 0:
+                                pbar.set_postfix(loss=f"{loss:.6f}")
+                                pbar.update(10)
+                            
+                            # Save snapshot
+                            if opts.snapshot_prefix and step % opts.snapshot_frequency == 0:
+                                snapshot(image, input_image, opts, 
+                                        total_steps, f"stage_{stage+1}")
+                            
+                            # Early stopping check
+                            if optimizer.should_stop_early(loss):
+                                print("\nEarly stopping triggered")
+                                break
+                            
+                            # Learning rate adjustment
+                            optimizer.adjust_learning_rate(loss)
+                            
+                        except tf.errors.ResourceExhaustedError:
+                            print("\nOOM error - attempting recovery...")
+                            cleanup_gpu_memory()
+                            state_manager.restore_best_state()
+                            continue
+                        
+                        except Exception as e:
+                            print(f"\nError during optimization: {e}")
+                            traceback.print_exc()
+                            state_manager.restore_best_state()
+                            continue
         
-        # Load scaled image
-        input_image, weights = load_input_image(input_path, weight_path, scale=scale)
-        current_height, current_width = input_image.shape[:2]
-        print(f"Current image size: {current_width}x{current_height}")
+        except KeyboardInterrupt:
+            print("\nOptimization interrupted by user")
+            state_manager.restore_best_state()
         
-        # Adjust optimization parameters for this scale
-        scale_opts = copy.deepcopy(opts)
-        scale_opts.num_gabors = num_gabors  # Keep constant
-        scale_opts.learning_rate *= scale
+        finally:
+            # Final cleanup
+            if using_gpu:
+                cleanup_gpu_memory()
         
-        # Calculate iterations for this scale
-        if total_iterations is not None:
-            remaining_iterations = total_iterations - iterations_used
-            if remaining_iterations <= 0:
-                print("No iterations remaining for this scale")
-                break
-            
-            # Allocate iterations proportionally based on scale
-            scale_weight = scale / sum(scales[i:])
-            scale_iterations = int(remaining_iterations * scale_weight)
-            scale_opts.total_iterations = scale_iterations
-            print(f"Allocated {scale_iterations} iterations for scale {scale:.2f}")
+        elapsed_time = (datetime.now() - start_time).total_seconds()
+        print(f"\nOptimization completed in {format_time(elapsed_time)}")
+        print(f"Final loss: {state_manager.best_loss:.6f}")
         
-        # Initialize from previous scale if available
-        initial_state = None
-        if best_state is not None:
-            print("Initializing from previous scale...")
-            # Get previous dimensions
-            prev_scale = scales[i-1]
-            prev_height = int(full_height * prev_scale)
-            prev_width = int(full_width * prev_scale)
-            print(f"Previous image size: {prev_width}x{prev_height}")
-            
-            # Calculate scale factors for width and height
-            width_scale = current_width / prev_width
-            height_scale = current_height / prev_height
-            print(f"Scale factors: width={width_scale:.3f}, height={height_scale:.3f}")
-            
-            # Scale the state variables
-            scaled_state = {}
-            for name, value in best_state.items():
-                if name == 'pos_x':
-                    scaled_state[name] = value * width_scale
-                elif name == 'pos_y':
-                    scaled_state[name] = value * height_scale
-                elif name == 'sigma':
-                    # Scale sigma with the average of width and height scaling
-                    avg_scale = (width_scale + height_scale) / 2
-                    scaled_state[name] = value * avg_scale
-                else:
-                    scaled_state[name] = value
-            initial_state = scaled_state
+        return model, state_manager.best_loss
         
-        # Run optimization at this scale
-        model, loss, iters_this_scale = optimize_model(
-            input_image, scale_opts, weights, 
-            scale=scale, 
-            initial_state=initial_state
-        )
-        iterations_used += iters_this_scale
-        
-        # Save the model state for the next scale
-        best_state = model.get_variable_values()
-        best_model = model
-        final_loss = loss
-        
-        print(f"\nUsed {iters_this_scale} iterations at scale {scale:.2f}")
-        print(f"Total iterations used: {iterations_used}/{total_iterations if total_iterations else 'unlimited'}")
-        
-        if opts.save_best:
-            scale_path = f"{opts.save_best}.scale_{scale:.2f}.txt"
-            save_model_state(model, scale_path)
-        
-        if total_iterations is not None and iterations_used >= total_iterations:
-            print("\nReached total iteration limit")
-            break
-    
-    return best_model, final_loss
+    except Exception as e:
+        print(f"\nFatal error: {e}")
+        traceback.print_exc()
+        if using_gpu:
+            cleanup_gpu_memory()
+        raise
 
 def add_optimization_arguments(parser):
     """Add optimization-related command line arguments"""
@@ -1158,21 +1258,58 @@ def load_model_state(model, filename):
         traceback.print_exc()
         raise
 
+def setup_gpu_memory():
+    """Configure GPU memory growth to prevent OOM errors"""
+    try:
+        gpus = tf.config.list_physical_devices('GPU')
+        if not gpus:
+            print("No GPU devices found. Running on CPU.")
+            return False
+
+        # Enable memory growth for all GPUs
+        for gpu in gpus:
+            try:
+                tf.config.experimental.set_memory_growth(gpu, True)
+                print(f"Enabled memory growth for GPU: {gpu}")
+            except RuntimeError as e:
+                print(f"Error setting memory growth for {gpu}: {e}")
+                continue
+
+        # Set mixed precision policy
+        try:
+            policy = tf.keras.mixed_precision.Policy('mixed_float16')
+            tf.keras.mixed_precision.set_global_policy(policy)
+            print("Enabled mixed precision training")
+        except Exception as e:
+            print(f"Warning: Could not enable mixed precision: {e}")
+
+        return True
+    except Exception as e:
+        print(f"GPU setup failed: {e}")
+        return False
+
+def cleanup_gpu_memory():
+    """Clean up GPU memory after optimization"""
+    try:
+        tf.keras.backend.clear_session()
+        print("Cleaned up GPU memory")
+    except Exception as e:
+        print(f"Warning: Memory cleanup failed: {e}")
+
 def main():
-    """Main entry point with multi-scale support"""
-    # Parse arguments first
     parser = setup_argument_parser()
     opts = parser.parse_args()
     
-    # Configure GPU with parsed options
+    # Configure GPU
     using_gpu = setup_gpu()
     
     try:
-        # Validate options
-        validate_options(opts)
+        # Load and preprocess input
+        input_image, weights = load_input_image(opts.input, opts.weights)
         
-        # Run multi-scale optimization
-        model, final_loss = optimize_multi_scale(opts.input, opts.weights, opts)
+        # Run optimization with curriculum learning
+        model, final_loss = optimize_with_curriculum(
+            input_image, opts, weights=weights)
         
         # Save final model
         if opts.save_best:

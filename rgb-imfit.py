@@ -912,13 +912,9 @@ def main():
                                                       models, state,
                                                       sess)
 
-        
         if opts.input is not None:
-
             loop_count = -1
-
             if opts.time_limit != 0 and opts.total_iterations != 0:
-                
                 prev_best_loss = full_optimize(opts, inputs, models, state,
                                                sess,
                                                loop_count,
@@ -926,10 +922,6 @@ def main():
                                                prev_best_loss,
                                                rollback_loss)
 
-                if opts.output is not None:
-                    np.savetxt(opts.output, state.params.transpose(),
-                               fmt='%f', delimiter=',')
-                    
         rollback_state = copy_state(state)
         rollback_loss = prev_best_loss
                     
