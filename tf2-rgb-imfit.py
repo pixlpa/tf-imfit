@@ -916,10 +916,18 @@ def optimize_with_curriculum(input_image, opts, weights=None):
         if opts.load_state and os.path.exists(opts.load_state):
             state_manager.load_checkpoint(opts.load_state)
         
-        # Curriculum learning stages
-        sigma_schedules = [20.0, 10.0, 5.0, 2.0]
-        frequency_schedules = [0.02, 0.05, 0.1, 0.2]
+        # Ensure we have valid schedules
+        if not hasattr(opts, 'sigma_schedules'):
+            # Default curriculum learning stages
+            sigma_schedules = [20.0, 10.0, 5.0, 2.0]
+            frequency_schedules = [0.02, 0.05, 0.1, 0.2]
+        else:
+            sigma_schedules = opts.sigma_schedules
+            frequency_schedules = opts.frequency_schedules
         
+        if not sigma_schedules or len(sigma_schedules) == 0:
+            raise ValueError("No sigma schedules defined for curriculum learning")
+            
         total_steps = 0
         start_time = datetime.now()
         
@@ -1016,7 +1024,7 @@ def add_optimization_arguments(parser):
     """Add optimization-related command line arguments"""
     parser.add_argument('--input', type=str, required=True,
                        help='Input image path')
-    parser.add_argument('--num-gabors', type=int, default=100,
+    parser.add_argument('--num-gabors', type=int, default=256,
                        help='Number of Gabor functions')
     parser.add_argument('--learning-rate', type=float, default=0.01,
                        help='Learning rate for optimization')
