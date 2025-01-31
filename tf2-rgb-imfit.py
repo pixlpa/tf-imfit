@@ -936,7 +936,7 @@ def randomize(params, rstdev, ncopy=None):
 # Optimize a bunch of randomly-initialized small ensembles in
 # parallel.
 
-def local_optimize(opts, inputs, models, state, sess,
+def local_optimize(opts, inputs, models, state,
                    cur_approx, cur_con_losses, cur_target,
                    is_replace, model_idx, loop_count,
                    model_start_idx, prev_best_loss):
@@ -1139,44 +1139,35 @@ def main():
         
         # Figure out which model(s) to replace or newly train
         if is_replace:
-            
             idx = np.arange(opts.num_models)
             np.random.shuffle(idx)
-
             model_idx = idx[-1]
             rest_idx = idx[:-1]
-            
-            #print('replacing models', model_idx)
-            
         else:
-            
             model_idx = model_start_idx
             rest_idx = np.arange(model_start_idx)
-            
             print('training models', model_idx)
 
-        # Get the current approximation (sum of all Gabor functions
-        # from all models except the current ones)
+        # Get the current approximation
         cur_approx = tf.reduce_sum(state.gabor[:,:,:,rest_idx], axis=3)
- 
-        # The function to fit is the difference betw. input image
-        # and current approximation so far.
         cur_target = inputs.input_image - cur_approx
-           
-        # Have to track constraint losses separately from
-        # approximation error losses
         cur_con_losses = tf.reduce_sum(state.con_loss[rest_idx])
 
-        # Do a big parallel optimization for a bunch of random
-        # model initializations
-        prev_best_loss = local_optimize(opts, inputs, models,
-                                        state,
-                                        cur_approx, cur_con_losses,
-                                        cur_target,
-                                        is_replace, model_idx, 
-                                        loop_count,
-                                        model_start_idx,
-                                        prev_best_loss)
+        # Do local optimization with all required arguments
+        prev_best_loss = local_optimize(
+            opts=opts,
+            inputs=inputs, 
+            models=models,
+            state=state,
+            cur_approx=cur_approx,
+            cur_con_losses=cur_con_losses,
+            cur_target=cur_target,
+            is_replace=is_replace,
+            model_idx=model_idx,
+            loop_count=loop_count,
+            model_start_idx=model_start_idx,
+            prev_best_loss=prev_best_loss
+        )
 
         # Done with this mini-ensemble
         model_start_idx += 1
@@ -1209,5 +1200,6 @@ def main():
             
         # Finished with this loop iteration
         loop_count += 1
+
 if __name__ == '__main__':
     main()
