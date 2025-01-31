@@ -333,168 +333,8 @@ class GaborModel:
         # Property accessors
         for name in self.variables:
             setattr(self, name, self.variables[name])
-
-        # Allow evaluating less than ensemble_size models (i.e. while
-        # building up full model).
-        if max_row is None:
-            max_row = ensemble_size
-
-        gmin = GABOR_RANGE[:,0].reshape(1,GABOR_NUM_PARAMS,1).copy()
-        gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1).copy()
             
-        # Parameter tensor could be passed in or created here
-        if params is not None:
-
-            self.params = params
-
-        else:
-
-            if initializer is None:
-                initializer = tf.random_uniform_initializer(minval=gmin,
-                                                            maxval=gmax,
-                                                            dtype=tf.float32)
-
-            # n x 12 x e
-            self.params = tf.Variable(
-                tf.random.uniform([num_parallel, GABOR_NUM_PARAMS, ensemble_size],
-                                  minval=gmin, maxval=gmax, dtype=tf.float32),
-                name='params')
-
-        gmin[:,:GABOR_PARAM_L,:] = -np.inf
-        gmax[:,:GABOR_PARAM_L,:] =  np.inf
-
-        # n x 12 x e
-        self.cparams = tf.clip_by_value(self.params[:,:,:max_row],
-                                        gmin, gmax,
-                                        name='cparams')
-
-
-        ############################################################
-        # Now compute the Gabor function for each fit/model
-
-        # n x h x w x c x e
-        
-        # n x 1 x 1 x 1 x e
-        u = self.cparams[:,None,None,None,GABOR_PARAM_U,:]
-        v = self.cparams[:,None,None,None,GABOR_PARAM_V,:]
-        r = self.cparams[:,None,None,None,GABOR_PARAM_R,:]
-        l = self.cparams[:,None,None,None,GABOR_PARAM_L,:]
-        t = self.cparams[:,None,None,None,GABOR_PARAM_T,:]
-        s = self.cparams[:,None,None,None,GABOR_PARAM_S,:]
-        
-        p = self.cparams[:,None,None,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
-        h = self.cparams[:,None,None,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
-
-
-        cr = tf.cos(r)
-        sr = tf.sin(r)
-
-        f = np.float32(2*np.pi) / l
-
-        s2 = s*s
-        t2 = t*t
-
-        # n x 1 x w x 1 x e
-        xp = x-u
-
-        # n x h x 1 x 1 x e
-        yp = y-v
-
-        # n x h x w x 1 x e
-        b1 =  cr*xp + sr*yp
-        b2 = -sr*xp + cr*yp
-
-        b12 = b1*b1
-        b22 = b2*b2
-
-        w = tf.exp(-b12/(2*s2) - b22/(2*t2))
-
-        k = f*b1 +  p
-        ck = tf.cos(k)
-
-        # n x h x w x c x e
-        self.gabor = tf.identity(h * w * ck, name='gabor')
-
-        ############################################################
-        # Compute the ensemble sum of all models for each fit        
-        
-        # n x h x w x c
-        self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
-
-        ############################################################
-        # Everything below here is for optimizing, if we just want
-        # to visualize, stop now.
-        
-        if target is None:
-            return
-
-        ############################################################
-        # Compute loss for soft constraints
-        #
-        # All constraint losses are of the form min(c, 0)**2, where c
-        # is an individual constraint function. So we only get a
-        # penalty if the constraint function c is less than zero.
-        
-        # Pair-wise constraints on l, s, t:
-
-        # n x e 
-        l = self.cparams[:,GABOR_PARAM_L,:]
-        s = self.cparams[:,GABOR_PARAM_S,:]
-        t = self.cparams[:,GABOR_PARAM_T,:]
-
-        pairwise_constraints = [
-            s - l/32,
-            l/2 - s,
-            t - s,
-            8*s - t
-        ]
-                
-        # n x e x k
-        self.constraints = tf.stack( pairwise_constraints,
-                                     axis=2, name='constraints' )
-
-        # n x e x k
-        con_sqr = tf.minimum(self.constraints, 0)**2
-
-        # n x e
-        self.con_losses = tf.reduce_sum(con_sqr, axis=2, name='con_losses')
-
-        # n (sum across mini-batch)
-        self.con_loss_per_fit = tf.reduce_sum(self.con_losses, axis=1,
-                                              name='con_loss_per_fit')
-
-
-
-        ############################################################
-        # Compute loss for approximation error
-        
-        # n x h x w x c
-        self.err = tf.multiply((target - self.approx),
-                                weight, name='err')
-
-        err_sqr = 0.5*self.err**2
-
-        # n (average across h/w/c)
-        self.err_loss_per_fit = tf.reduce_mean(err_sqr, axis=(1,2,3),
-                                               name='err_loss_per_fit')
-
-
-        ############################################################
-        # Compute various sums/means of above losses:
-
-        # n
-        self.loss_per_fit = tf.add(self.con_loss_per_fit,
-                                   self.err_loss_per_fit,
-                                   name='loss_per_fit')
-
-        # scalars
-        self.err_loss = tf.reduce_mean(self.err_loss_per_fit, name='err_loss')
-        self.con_loss = tf.reduce_mean(self.con_loss_per_fit, name='con_loss')
-        self.loss = self.err_loss + self.con_loss
-
-        with tf.compat.v1.variable_scope('imfit_optimizer'):
-            self.opt = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
-            self.train_op = self.opt.minimize(self.loss)
+        print(f"Initialized GaborModel with {count} Gabors for image shape {image_shape}")
 
     def generate_gabor(self, x, y):
         """Generate Gabor function values for given coordinates"""
@@ -824,38 +664,50 @@ class GaborOptimizer:
         return loss, approx
 
 class ProgressTracker:
-    def __init__(self, total_iterations=None, time_limit=None):
+    def __init__(self, total_iterations=None, time_limit=None, steps_per_iteration=1000):
         self.start_time = datetime.now()
         self.total_iterations = total_iterations
         self.time_limit = time_limit
+        self.steps_per_iteration = steps_per_iteration
         self.best_loss = float('inf')
         self.last_improvement = 0
         self.iteration = 0
         
-        # Try to import tqdm for progress bars
         try:
             from tqdm import tqdm
-            self.tqdm = tqdm
+            self.progress_bar = tqdm(total=total_iterations if total_iterations else None,
+                                   desc="Optimizing")
             self.use_progress_bar = True
         except ImportError:
+            self.progress_bar = None
             self.use_progress_bar = False
             print("Note: Install 'tqdm' for progress bar support")
     
     def start_iteration(self):
-        """Start a new iteration"""
+        """Start a new iteration and return step range with optional progress bar"""
         self.iteration += 1
+        
         if self.use_progress_bar:
-            return self.tqdm(range(opts.steps_per_iteration),
-                           desc=f"Iteration {self.iteration}")
-        return range(opts.steps_per_iteration)
+            return tqdm(range(self.steps_per_iteration),
+                       desc=f"Iteration {self.iteration}",
+                       leave=False)  # Don't keep all iteration bars
+        return range(self.steps_per_iteration)
     
     def update_loss(self, current_loss):
-        """Update best loss tracking"""
+        """Update best loss tracking and return True if improved"""
         improved = False
         if current_loss < self.best_loss:
             self.best_loss = current_loss
             self.last_improvement = self.iteration
             improved = True
+            
+        if self.use_progress_bar:
+            self.progress_bar.set_postfix(
+                loss=f"{current_loss:.6f}",
+                best=f"{self.best_loss:.6f}"
+            )
+            self.progress_bar.update(1)
+            
         return improved
     
     def should_continue(self):
@@ -890,102 +742,78 @@ class ProgressTracker:
             progress = self.iteration / self.total_iterations * 100
             print(f"  Progress: {progress:.1f}%")
 
+    def close(self):
+        """Clean up progress bar"""
+        if self.progress_bar:
+            self.progress_bar.close()
+
 def optimize_model(input_image, opts):
-    """Main optimization function with progress tracking and helpers"""
-    # Initialize model
+    """Main optimization function with improved progress tracking"""
+    # Create model with proper image shape
     model = GaborModel('gabor', count=opts.num_gabors, 
                       image_shape=input_image.shape)
     
-    # Load initial state if provided
-    if opts.load_state:
-        load_model_state(model, opts.load_state)
-    
+    # Create optimizer
     optimizer = GaborOptimizer(model, input_image, 
                              learning_rate=opts.learning_rate)
     
     # Initialize progress tracker
-    progress = ProgressTracker(opts.total_iterations, opts.time_limit)
+    progress = ProgressTracker(
+        total_iterations=opts.total_iterations,
+        time_limit=opts.time_limit,
+        steps_per_iteration=opts.steps_per_iteration
+    )
+    
     print(f"\nStarting optimization with {opts.num_gabors} Gabors")
+    print(f"Steps per iteration: {opts.steps_per_iteration}")
     
-    best_state = None
-    last_save_time = datetime.now()
-    
-    while progress.should_continue():
-        current_loss = None
-        
-        # Run optimization steps with progress bar
-        for step in progress.start_iteration():
-            # Get gradients and loss
-            with tf.GradientTape() as tape:
-                approx = model.generate_image()
-                loss = tf.reduce_mean(tf.square(approx - input_image))
+    try:
+        while progress.should_continue():
+            # Run optimization steps with progress bar
+            for step in progress.start_iteration():
+                loss, approx = optimizer.optimization_step()
+                current_loss = loss.numpy()
+                
+                # Print detailed progress every 100 steps
+                if step % 100 == 0:
+                    elapsed = (datetime.now() - progress.start_time).total_seconds()
+                    print(f"\rIteration {progress.iteration}, "
+                          f"Step {step}/{opts.steps_per_iteration}, "
+                          f"Loss: {current_loss:.6f}, "
+                          f"Time: {format_time(elapsed)}", 
+                          end="", flush=True)
             
-            # Get and clip gradients
-            gradients = tape.gradient(loss, model.trainable_variables)
-            clipped_gradients = clip_gradients(gradients, opts.max_gradient_norm)
+            # Update tracking
+            improved = progress.update_loss(current_loss)
+            if improved:
+                print(f"\n🌟 New best loss: {current_loss:.6f}")
+                # Save best state
+                best_state = model.get_variable_values()
             
-            # Apply gradients
-            optimizer.optimizer.apply_gradients(
-                zip(clipped_gradients, model.trainable_variables))
+            # Take snapshot if needed
+            if opts.snapshot_prefix:
+                try:
+                    snapshot(model.generate_image(), input_image, opts, 
+                            progress.iteration)
+                except Exception as e:
+                    print(f"\n⚠️  Warning: Failed to save snapshot: {e}")
             
-            # Apply constraints
-            model.apply_constraints()
-            
-            current_loss = loss.numpy()
-        
-        # Update tracking and show status
-        improved = progress.update_loss(current_loss)
-        if improved:
-            print("\n🌟 New best loss achieved!")
-            best_state = model.get_variable_values()
-            
-            # Save intermediate best state
-            if opts.save_best:
-                save_model_state(model, 
-                               f"{opts.save_best}.intermediate")
-        
-        # Print detailed status
-        progress.print_status(current_loss)
-        elapsed = (datetime.now() - progress.start_time).total_seconds()
-        print(f"  Time elapsed: {format_time(elapsed)}")
-        
-        # Take snapshot if needed
-        if opts.snapshot_prefix:
-            try:
-                snapshot(model.generate_image(), input_image, 
-                        opts, progress.iteration)
-            except Exception as e:
-                print(f"⚠️  Warning: Failed to save snapshot: {e}")
-        
-        # Periodic state saving (every 10 minutes)
-        if opts.save_best:
-            time_since_save = (datetime.now() - last_save_time).total_seconds()
-            if time_since_save > 600:  # 10 minutes
-                save_model_state(model, 
-                               f"{opts.save_best}.periodic")
-                last_save_time = datetime.now()
-        
-        # Early stopping check
-        if opts.early_stop:
-            iterations_without_improvement = (
-                progress.iteration - progress.last_improvement)
-            if iterations_without_improvement > opts.patience:
+            # Check for early stopping
+            if (opts.early_stop and 
+                progress.iteration - progress.last_improvement > opts.patience):
                 print(f"\n⚡ Early stopping: No improvement for "
-                      f"{iterations_without_improvement} iterations")
+                      f"{progress.iteration - progress.last_improvement} iterations")
                 break
+            
+            print()  # New line after iteration
+    
+    finally:
+        # Clean up progress bar
+        progress.close()
     
     # Restore best state
     if best_state is not None:
         model.set_variable_values(best_state)
-    
-    # Final save
-    if opts.save_best:
-        save_model_state(model, opts.save_best)
-    
-    print("\n✨ Optimization complete!")
-    print(f"Final loss: {current_loss:.6f}")
-    print(f"Best loss: {progress.best_loss:.6f}")
-    print(f"Total time: {format_time(elapsed)}")
     
     return model, progress.best_loss
 
