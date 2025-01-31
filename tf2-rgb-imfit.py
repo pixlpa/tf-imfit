@@ -305,9 +305,16 @@ class GaborModel(tf.keras.Model):
         gmin = GABOR_RANGE[:,0].reshape(1,GABOR_NUM_PARAMS,1).copy()
         gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1).copy()
             
-        # Parameter tensor could be passed in or created here
+        # Create the params variable as a trainable weight
+        self.params = self.add_weight(
+            name='gabor_params',
+            shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
+            trainable=True,
+            initializer='zeros' if params is not None else None)
+        
+        # If params were provided, assign them
         if params is not None:
-            self.params = tf.Variable(params, trainable=True, name='gabor_params')
+            self.params.assign(params)
         else:
             # Create random values between 0 and 1, then scale to desired range
             random_values = tf.random.uniform(
@@ -315,10 +322,7 @@ class GaborModel(tf.keras.Model):
                 minval=0.0,
                 maxval=1.0)
             initial_value = gmin + (gmax - gmin) * random_values
-            
-            self.params = tf.Variable(initial_value, 
-                                    trainable=True,
-                                    name='gabor_params')
+            self.params.assign(initial_value)
 
         self.max_row = max_row
         self.weight = weight
