@@ -368,14 +368,14 @@ class GaborModel(tf.keras.Model):
             if len(target.shape) == 3:
                 target = tf.expand_dims(target, axis=0)  # Add batch dimension
             
-            # Ensure approx has matching shape
+            # Ensure approx has matching shape by reducing extra dimensions
             approx = self.approx
+            while len(approx.shape) > 4:  # Reduce until we have [batch, height, width, channels]
+                approx = tf.reduce_sum(approx, axis=-1)
+            
             if len(approx.shape) == 3:
                 approx = tf.expand_dims(approx, axis=0)
                 
-            # Ensure shapes match
-            target = tf.broadcast_to(target, approx.shape)
-            
             print("After reshape:")
             print("Target shape:", target.shape)
             print("Approx shape:", approx.shape)
@@ -394,8 +394,8 @@ class GaborModel(tf.keras.Model):
         # Calculate Gabor functions
         self.gabor = compute_gabor(self.cparams, self.x, self.y)
         
-        # Calculate approximation (sum over models dimension)
-        self.approx = tf.reduce_sum(self.gabor, axis=-1)
+        # Calculate approximation
+        self.approx = self.gabor  # Store full tensor for now
         
         # Calculate constraint losses
         self.con_losses = compute_constraints(self.cparams)
@@ -403,7 +403,11 @@ class GaborModel(tf.keras.Model):
         # Calculate loss per fit
         self.loss_per_fit = self.compute_loss(inputs)
 
-        return self.approx
+        # Return reduced approximation
+        approx = self.approx
+        while len(approx.shape) > 4:
+            approx = tf.reduce_sum(approx, axis=-1)
+        return approx
 
     def train_step(self, data):
         with tf.GradientTape() as tape:
