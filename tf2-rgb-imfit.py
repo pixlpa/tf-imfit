@@ -862,11 +862,13 @@ def setup_argument_parser():
     model_group = parser.add_argument_group('Model Configuration')
     model_group.add_argument('--num-gabors', type=int, default=100,
                            help='Number of Gabor functions')
+    model_group.add_argument('--regularization', type=float, default=0.001,
+                           help='L2 regularization strength')
     
     # Optimization arguments
     optim_group = parser.add_argument_group('Optimization')
     optim_group.add_argument('--learning-rate', type=float, default=0.01,
-                            help='Learning rate for optimization')
+                            help='Initial learning rate')
     optim_group.add_argument('--steps-per-iteration', type=int, default=1000,
                             help='Optimization steps per iteration')
     optim_group.add_argument('--total-iterations', type=int, default=None,
@@ -876,7 +878,20 @@ def setup_argument_parser():
     optim_group.add_argument('--early-stop', action='store_true',
                             help='Enable early stopping')
     optim_group.add_argument('--patience', type=int, default=1000,
-                            help='Number of iterations without improvement before early stopping')
+                            help='Patience for early stopping')
+    optim_group.add_argument('--batch-size', type=int, default=4,
+                            help='Batch size for optimization')
+    
+    # Annealing arguments
+    anneal_group = parser.add_argument_group('Learning Rate Annealing')
+    anneal_group.add_argument('--anneal-learning-rate', action='store_true',
+                             help='Enable learning rate annealing')
+    anneal_group.add_argument('--anneal-factor', type=float, default=0.7,
+                             help='Factor to reduce learning rate by during annealing')
+    anneal_group.add_argument('--anneal-patience', type=int, default=500,
+                             help='Iterations before annealing')
+    anneal_group.add_argument('--min-learning-rate', type=float, default=1e-6,
+                             help='Minimum learning rate for annealing')
     
     # Visualization arguments
     vis_group = parser.add_argument_group('Visualization')
@@ -884,6 +899,17 @@ def setup_argument_parser():
                           help='Add labels to snapshot images')
     vis_group.add_argument('--snapshot-frequency', type=int, default=1,
                           help='Save snapshot every N iterations')
+    vis_group.add_argument('--progress-frequency', type=int, default=100,
+                          help='Show progress every N steps')
+    
+    # Hardware configuration
+    hw_group = parser.add_argument_group('Hardware')
+    hw_group.add_argument('--force-cpu', action='store_true',
+                         help='Force CPU usage even if GPU is available')
+    hw_group.add_argument('--mixed-precision', action='store_true',
+                         help='Enable mixed precision training')
+    hw_group.add_argument('--memory-growth', action='store_true',
+                         help='Enable GPU memory growth')
     
     return parser
 
