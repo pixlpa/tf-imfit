@@ -754,7 +754,8 @@ def optimize_model(input_image, opts, weights=None, scale=None, initial_state=No
                 
                 # Save snapshot at each iteration
                 if opts.snapshot_prefix:
-                    snapshot(approx, input_image, opts, iterations_completed+scale*opts.total_iterations, 
+                    
+                    snapshot(approx, input_image, opts, iterations_completed+(scale-0.25)*opts.total_iterations, 
                             extra_info=f"scale_{scale:.2f}")
                 
                 # Update progress
