@@ -6,6 +6,7 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 import traceback
+import json
 try:
     from tqdm import tqdm
 except ImportError:
@@ -290,10 +291,87 @@ def setup_inputs(opts):
     return InputsTuple(input_image, weight_image,
                        x, y, target_tensor, max_row)
 
+
+def format_time(seconds):
+    """Format time in seconds to human readable string"""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes = seconds / 60
+    if minutes < 60:
+        return f"{minutes:.1f}m"
+    hours = minutes / 60
+    return f"{hours:.1f}h"
+
+class ProgressTracker:
+    def __init__(self, total_iterations=None, time_limit=None, steps_per_iteration=1000):
+        self.start_time = datetime.now()
+        self.total_iterations = total_iterations
+        self.time_limit = time_limit
+        self.steps_per_iteration = steps_per_iteration
+        self.best_loss = float('inf')
+        self.last_improvement = 0
+        self.iteration = 0
+        
+        try:
+            from tqdm import tqdm
+            self.progress_bar = tqdm(total=total_iterations if total_iterations else None,
+                                   desc="Optimizing")
+            self.use_progress_bar = True
+        except ImportError:
+            self.progress_bar = None
+            self.use_progress_bar = False
+            print("Note: Install 'tqdm' for progress bar support")
+    
+    def start_iteration(self):
+        """Start a new iteration and return step range with optional progress bar"""
+        self.iteration += 1
+        
+        if self.use_progress_bar:
+            return tqdm(range(self.steps_per_iteration),
+                       desc=f"Iteration {self.iteration}",
+                       leave=False)  # Don't keep all iteration bars
+        return range(self.steps_per_iteration)
+    
+    def should_continue(self):
+        """Check if optimization should continue"""
+        if self.time_limit is not None:
+            elapsed = (datetime.now() - self.start_time).total_seconds()
+            if elapsed > self.time_limit:
+                print(f'\nExceeded time limit of {self.time_limit}s')
+                return False
+        
+        if (self.total_iterations is not None and 
+            self.iteration >= self.total_iterations):
+            print(f'\nReached {self.total_iterations} iterations')
+            return False
+        
+        return True
+    
+    def update_loss(self, current_loss):
+        """Update best loss tracking and return True if improved"""
+        improved = False
+        if current_loss < self.best_loss:
+            self.best_loss = current_loss
+            self.last_improvement = self.iteration
+            improved = True
+            
+        if self.use_progress_bar:
+            self.progress_bar.set_postfix(
+                loss=f"{current_loss:.6f}",
+                best=f"{self.best_loss:.6f}"
+            )
+            self.progress_bar.update(1)
+            
+        return improved
+    
+    def close(self):
+        """Clean up progress bar"""
+        if self.progress_bar:
+            self.progress_bar.close()
+
 ######################################################################
 # Encapsulate the tensorflow objects we need to run our fit.
 # Note we will create several of these (see main function below).
-
 class GaborModel:
     def __init__(self, name, count, image_shape):
         self.name = name
@@ -572,7 +650,7 @@ def rescale(idata, imin, imax, cmap=None):
 ######################################################################
 # Save a snapshot of the current state to a PNG file
 
-def snapshot(current_image, input_image, opts, iteration):
+def snapshot(current_image, input_image, opts, iteration, extra_info=None):
     """Save a snapshot of the current optimization state"""
     if not opts.snapshot_prefix:
         return
@@ -982,15 +1060,7 @@ def load_input_image(path, weight_path=None):
     except Exception as e:
         raise RuntimeError(f"Failed to load image {path}: {e}")
 
-def format_time(seconds):
-    """Format time in seconds to human readable string"""
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    minutes = seconds / 60
-    if minutes < 60:
-        return f"{minutes:.1f}m"
-    hours = minutes / 60
-    return f"{hours:.1f}h"
+
 
 def setup_gpu(opts):
     """Configure GPU based on command line options"""
