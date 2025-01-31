@@ -1220,7 +1220,7 @@ def main():
     while True:
         # Add snapshot at start of each iteration
         snapshot(None, models.full.approx, opts, inputs, models,
-                loop_count, model_start_idx, loop_count)
+                loop_count, model_start_idx, loop_count, full_iteration=loop_count)
         
         if opts.time_limit is not None:
             elapsed = (datetime.now() - start_time).total_seconds()
