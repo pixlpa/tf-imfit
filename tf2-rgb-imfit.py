@@ -769,6 +769,48 @@ class GaborOptimizer:
                 # Clear loss history after LR change
                 self.loss_history = []
 
+    def optimization_step(self):
+        """Perform one optimization step"""
+        with tf.GradientTape() as tape:
+            # Forward pass
+            components = self.model()
+            image = tf.reduce_sum(components, axis=0)
+            
+            # Calculate loss
+            loss = self.calculate_loss(image)
+            
+        # Backward pass
+        gradients = tape.gradient(loss, self.model.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+        
+        # Update best state if needed
+        if self.best_loss is None or loss < self.best_loss:
+            self.best_loss = loss
+            self.best_state = self.model.get_variable_values()
+            self.steps_without_improvement = 0
+        else:
+            self.steps_without_improvement += 1
+            
+        # Store loss history
+        self.loss_history.append(loss)
+        
+        return loss, components, image
+        
+    def calculate_loss(self, predicted_image):
+        """Calculate loss between predicted and target images"""
+        # MSE loss
+        mse = tf.reduce_mean(tf.square(predicted_image - self.input_image))
+        
+        # Add regularization if weights provided
+        if self.weights is not None:
+            reg_loss = tf.reduce_sum([
+                w * tf.reduce_sum(tf.abs(v)) 
+                for w, v in zip(self.weights, self.model.trainable_variables)
+            ])
+            return mse + reg_loss
+            
+        return mse
+
 class StateManager:
     """Manages optimization state and recovery"""
     def __init__(self, model, optimizer, save_dir):
