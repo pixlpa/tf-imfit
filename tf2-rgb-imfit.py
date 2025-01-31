@@ -481,9 +481,9 @@ class GaborModel:
         # Add batch dimension
         image = tf.expand_dims(image, axis=0)  # Shape: [1, height, width]
         
-        # Add channel dimension if the image shape indicates RGB
-        if hasattr(self, 'image_shape') and len(self.image_shape) == 3:
-            image = tf.expand_dims(image, axis=-1)  # Shape: [1, height, width, channels]
+        # Add channel dimension for RGB
+        image = tf.expand_dims(image, axis=-1)  # Shape: [1, height, width, 1]
+        image = tf.tile(image, [1, 1, 1, 3])   # Shape: [1, height, width, 3]
         
         return components, image
 
@@ -782,14 +782,21 @@ class GaborOptimizer:
 
     def calculate_loss(self, predicted_image):
         """Calculate loss between predicted and target images"""
-        # Ensure shapes match
-        if self.input_image.shape != predicted_image.shape:
-            print(f"Shape mismatch - Input: {self.input_image.shape}, Predicted: {predicted_image.shape}")
-            # Reshape input_image if needed
-            self.input_image = tf.reshape(self.input_image, predicted_image.shape)
+        # Ensure input_image has batch dimension
+        if len(self.input_image.shape) == 3:
+            input_image = tf.expand_dims(self.input_image, axis=0)
+        else:
+            input_image = self.input_image
+        
+        # Print shapes for debugging
+        print(f"Input shape: {input_image.shape}, Predicted shape: {predicted_image.shape}")
+        
+        # Ensure same spatial dimensions
+        h, w = input_image.shape[1:3]
+        predicted_image = tf.image.resize(predicted_image, [h, w])
         
         # MSE loss
-        mse = tf.reduce_mean(tf.square(predicted_image - self.input_image))
+        mse = tf.reduce_mean(tf.square(predicted_image - input_image))
         
         # Add regularization if weights provided
         if self.weights is not None:
