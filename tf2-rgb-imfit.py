@@ -594,7 +594,7 @@ def snapshot(current_image, input_image, opts, iteration, extra_info=None):
         outdir = os.path.dirname(opts.snapshot_prefix)
         if outdir and not os.path.exists(outdir):
             os.makedirs(outdir, exist_ok=True)
-        
+
         # Generate output filename
         outfile = f'{opts.snapshot_prefix}-{iteration:06d}.png'
         print(f"Saving snapshot to: {outfile}")
@@ -754,7 +754,7 @@ def optimize_model(input_image, opts, weights=None, scale=None, initial_state=No
                 
                 # Save snapshot at each iteration
                 if opts.snapshot_prefix:
-                    snapshot(approx, input_image, opts, iterations_completed, 
+                    snapshot(approx, input_image, opts, iterations_completed+scale*opts.total_iterations, 
                             extra_info=f"scale_{scale:.2f}")
                 
                 # Update progress
