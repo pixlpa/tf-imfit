@@ -957,38 +957,6 @@ def setup_argument_parser():
     add_output_arguments(parser)
     return parser
 
-def main():
-    # Setup argument parser
-    parser = setup_argument_parser()
-    opts = parser.parse_args()
-    
-    try:
-        # Validate options
-        validate_options(opts)
-        
-        # Create output directories
-        create_output_directories(opts)
-        
-        # Load input image
-        input_image = load_input_image(opts.input)
-        
-        # Run optimization
-        model, final_loss = optimize_model(input_image, opts)
-        
-        # Save best model if requested
-        if opts.save_best:
-            save_model_state(model, opts.save_best)
-        
-    except Exception as e:
-        print(f"Error: {e}")
-        traceback.print_exc()
-        return 1
-    
-    return 0
-
-if __name__ == '__main__':
-    exit(main())
-
 def validate_options(opts):
     """Validate command line options"""
     if not os.path.exists(opts.input):
@@ -1042,3 +1010,36 @@ def format_time(seconds):
         return f"{minutes}m {seconds}s"
     else:
         return f"{seconds}s"
+
+
+def main():
+    # Setup argument parser
+    parser = setup_argument_parser()
+    opts = parser.parse_args()
+    
+    try:
+        # Validate options
+        validate_options(opts)
+        
+        # Create output directories
+        create_output_directories(opts)
+        
+        # Load input image
+        input_image = load_input_image(opts.input)
+        
+        # Run optimization
+        model, final_loss = optimize_model(input_image, opts)
+        
+        # Save best model if requested
+        if opts.save_best:
+            save_model_state(model, opts.save_best)
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        traceback.print_exc()
+        return 1
+    
+    return 0
+
+if __name__ == '__main__':
+    exit(main())
