@@ -1341,6 +1341,10 @@ def cleanup_gpu_memory():
 def main():
     parser = setup_argument_parser()
     opts = parser.parse_args()
+    # Debug print to verify arguments
+    print("\nParsed arguments:")
+    for arg in vars(opts):
+        print(f"{arg}: {getattr(opts, arg)}")
     
     # Configure GPU
     using_gpu = setup_gpu()
