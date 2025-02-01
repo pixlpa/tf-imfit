@@ -120,12 +120,12 @@ class ImageFitter:
         self.best_state = None
         
         # Add temperature scheduling
-        self.initial_temp = 1.0
-        self.min_temp = 0.1
+        self.initial_temp = 0.5
+        self.min_temp = 0.0001
         self.current_temp = self.initial_temp
         
         # Add mutation probability
-        self.mutation_prob = 0.05
+        self.mutation_prob = 0.001
 
     def mutate_parameters(self):
         """Randomly mutate some Gabor functions to explore new solutions"""
