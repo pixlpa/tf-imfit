@@ -114,19 +114,18 @@ def main():
             # Save intermediate result every 100 iterations
             if i % 100 == 0:
                 result = fitter.get_current_image()
-                plt.imsave(
-                    os.path.join(args.output_dir, f'result_{i:04d}.png'),
-                    result,
-                    cmap='gray'
-                )
+                # Convert to correct format and range for PIL
+                result = np.transpose(result, (1, 2, 0))
+                result = np.clip(result * 255, 0, 255).astype(np.uint8)
+                img = Image.fromarray(result)
+                img.save(os.path.join(args.output_dir, f'result_{i:04d}.png'))
 
     # Save final result
     final_result = fitter.get_current_image()
-    plt.imsave(
-        os.path.join(args.output_dir, 'final_result.png'),
-        final_result,
-        cmap='gray'
-    )
+    final_result = np.transpose(final_result, (1, 2, 0))
+    final_result = np.clip(final_result * 255, 0, 255).astype(np.uint8)
+    final_img = Image.fromarray(final_result)
+    final_img.save(os.path.join(args.output_dir, 'final_result.png'))
 
 if __name__ == '__main__':
     main()
