@@ -1079,7 +1079,7 @@ def setup_argument_parser():
                             help='Initial learning rate')
     optim_group.add_argument('--steps-per-iteration', type=int, default=1000,
                             help='Optimization steps per iteration')
-    optim_group.add_argument('--total-iterations', type=int, default=None,
+    optim_group.add_argument('--total-iterations', type=int, default=500,
                             help='Maximum number of iterations (None for unlimited)')
     optim_group.add_argument('--time-limit', type=float, default=None,
                             help='Time limit in seconds (None for unlimited)')
