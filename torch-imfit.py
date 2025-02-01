@@ -63,8 +63,23 @@ class GaborLayer(nn.Module):
         return torch.sum(gabors, dim=0)  # Returns shape [3, H, W]
 
 class ImageFitter:
-    def __init__(self, image_path, weight_path=None, num_gabors=256, device='cuda' if torch.cuda.is_available() else 'cpu'):
+    def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, device='cuda' if torch.cuda.is_available() else 'cpu'):
         image = Image.open(image_path).convert('RGB')
+        
+        # Resize image if target_size is specified
+        if target_size is not None:
+            if isinstance(target_size, int):
+                # If single number, maintain aspect ratio
+                w, h = image.size
+                aspect_ratio = w / h
+                if w > h:
+                    new_w = target_size
+                    new_h = int(target_size / aspect_ratio)
+                else:
+                    new_h = target_size
+                    new_w = int(target_size * aspect_ratio)
+                target_size = (new_w, new_h)
+            image = image.resize(target_size, Image.Resampling.LANCZOS)
         
         # Enhanced preprocessing pipeline
         transform = transforms.Compose([
@@ -74,6 +89,8 @@ class ImageFitter:
         
         self.target = transform(image).to(device)
         h, w = self.target.shape[-2:]
+        if target_size is not None:
+            w,h = target_size
         
         # Load and process weight image if provided
         if weight_path:
@@ -83,7 +100,7 @@ class ImageFitter:
             # Normalize weights to average to 1
             self.weights = self.weights / self.weights.mean()
         else:
-            self.weights = torch.ones_like(self.target[0]).to(device)  # Just channel 0 for shape
+            self.weights = torch.ones_like(self.target[0]).to(device)
 
         # Create coordinate grid
         y, x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
@@ -223,6 +240,13 @@ def main():
                        help='Number of Gabor functions to fit')
     parser.add_argument('--iterations', type=int, default=1000,
                        help='Number of training iterations')
+    # Add size arguments
+    parser.add_argument('--size', type=int, default=None,
+                       help='Target size (maintains aspect ratio)')
+    parser.add_argument('--width', type=int, default=None,
+                       help='Target width')
+    parser.add_argument('--height', type=int, default=None,
+                       help='Target height')
     parser.add_argument('--device', type=str,
                        default='cuda' if torch.cuda.is_available() else 'cpu',
                        help='Device to run on (cuda/cpu)')
@@ -233,8 +257,15 @@ def main():
     # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Initialize fitter
-    fitter = ImageFitter(args.image, args.weight, args.num_gabors, args.device)
+    # Determine target size
+    target_size = None
+    if args.size is not None:
+        target_size = args.size
+    elif args.width is not None and args.height is not None:
+        target_size = (args.width, args.height)
+
+    # Initialize fitter with target size
+    fitter = ImageFitter(args.image, args.weight, args.num_gabors, target_size, args.device)
 
     # Training loop
     print(f"Training on {args.device}...")
