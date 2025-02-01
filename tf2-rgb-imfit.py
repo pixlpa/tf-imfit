@@ -1210,9 +1210,8 @@ def setup_gpu():
             except RuntimeError as e:
                 print(f"Warning: Could not set memory growth for {gpu}: {e}")
         
-        try:
             #set env variable for mem allocation
-             os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
+        os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
         # Enable mixed precision for better GPU performance
         try:
             policy = tf.keras.mixed_precision.Policy('mixed_float16')
