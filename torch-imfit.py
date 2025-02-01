@@ -137,8 +137,8 @@ class ImageFitter:
         self.best_state = None
         
         # Add temperature scheduling
-        self.initial_temp = 0.05
-        self.min_temp = 0.00000001
+        self.initial_temp = 0.5
+        self.min_temp = 0.001
         self.current_temp = self.initial_temp
         
         # Add mutation probability
