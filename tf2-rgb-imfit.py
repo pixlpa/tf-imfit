@@ -22,6 +22,7 @@ try:
     import cv2
 except ImportError:
     print("Warning: opencv-python not installed. Snapshot labels will be disabled.")
+import gc
 
 COLORMAP = None
 
@@ -926,8 +927,7 @@ def optimize_with_curriculum(input_image, opts, weights=None):
         try:
             for stage, (max_sigma, max_freq) in enumerate(zip(
                 opts.sigma_schedules, opts.frequency_schedules)):
-                print(f"\nSigma schedules: {opts.sigma_schedules}")
-                print(f"\ntotal iterations: {opts.total_iterations}")
+                
                 print(f"\nStage {stage + 1}/{len(opts.sigma_schedules)}")
                 print(f"Max sigma: {max_sigma:.1f}, Max frequency: {max_freq:.3f}")
                 
@@ -937,60 +937,35 @@ def optimize_with_curriculum(input_image, opts, weights=None):
                 # Calculate iterations for this stage
                 stage_iterations = opts.total_iterations // len(opts.sigma_schedules)
                 
-                with tqdm(total=stage_iterations, 
-                         desc=f"Stage {stage + 1}") as pbar:
-                    
+                with tqdm(total=stage_iterations, desc=f"Stage {stage + 1}") as pbar:
                     for step in range(stage_iterations):
                         try:
-                            # Check time limit
-                            if opts.time_limit is not None:
-                                elapsed = (datetime.now() - start_time).total_seconds()
-                                if elapsed > opts.time_limit:
-                                    print("\nTime limit reached")
-                                    return model, state_manager.best_loss
-                            
                             # Optimization step
                             loss, components, image = optimizer.optimization_step()
-                            total_steps += 1
                             
-                            # Update state manager
-                            if state_manager.update_best_state(loss):
-                                state_manager.save_checkpoint(
-                                    stage, step, loss)
-                            
-                            # Update progress with more detailed loss information
+                            # Update progress
                             if step % 10 == 0:
-                                pbar.set_postfix(
-                                    loss=f"{loss:.6f}",
-                                    recon=f"{components['reconstruction']:.6f}"
-                                )
+                                pbar.set_postfix(loss=f"{loss:.6f}")
                                 pbar.update(10)
                             
-                            # Save snapshot
-                            if opts.snapshot_prefix and step % opts.snapshot_frequency == 0:
-                                snapshot(image, input_image, opts, 
-                                        total_steps, f"stage_{stage+1}")
-                            
-                            # Early stopping check
-                            if optimizer.should_stop_early(loss):
-                                print("\nEarly stopping triggered")
-                                break
-                            
-                            # Learning rate adjustment
-                            optimizer.adjust_learning_rate(loss)
+                            # Periodic cleanup
+                            if step % 50 == 0:
+                                gc.collect()
+                                if using_gpu:
+                                    tf.keras.backend.clear_session()
                             
                         except tf.errors.ResourceExhaustedError:
                             print("\nOOM error - attempting recovery...")
                             cleanup_gpu_memory()
                             state_manager.restore_best_state()
                             continue
-                        
+                            
                         except Exception as e:
                             print(f"\nError during optimization: {e}")
                             traceback.print_exc()
                             state_manager.restore_best_state()
                             continue
-        
+                            
         except KeyboardInterrupt:
             print("\nOptimization interrupted by user")
             state_manager.restore_best_state()
@@ -999,10 +974,6 @@ def optimize_with_curriculum(input_image, opts, weights=None):
             # Final cleanup
             if using_gpu:
                 cleanup_gpu_memory()
-        
-        elapsed_time = (datetime.now() - start_time).total_seconds()
-        print(f"\nOptimization completed in {format_time(elapsed_time)}")
-        print(f"Final loss: {state_manager.best_loss:.6f}")
         
         return model, state_manager.best_loss
         
@@ -1313,10 +1284,21 @@ def setup_gpu_memory():
         # Enable memory growth for all GPUs
         for gpu in gpus:
             try:
+                # Enable memory growth
                 tf.config.experimental.set_memory_growth(gpu, True)
-                print(f"Enabled memory growth for GPU: {gpu}")
+                
+                # Set memory limit to 90% of available memory
+                memory_limit = int(0.9 * tf.config.experimental.get_device_details(gpu)['memory_limit'])
+                tf.config.set_logical_device_configuration(
+                    gpu,
+                    [tf.config.LogicalDeviceConfiguration(memory_limit=memory_limit)])
+                )
+                
+                print(f"Configured GPU {gpu.name}:")
+                print(f"- Memory growth enabled")
+                print(f"- Memory limit set to {memory_limit / 1024**2:.0f}MB")
             except RuntimeError as e:
-                print(f"Error setting memory growth for {gpu}: {e}")
+                print(f"Error configuring {gpu}: {e}")
                 continue
 
         # Set mixed precision policy
@@ -1327,6 +1309,9 @@ def setup_gpu_memory():
         except Exception as e:
             print(f"Warning: Could not enable mixed precision: {e}")
 
+        # Set memory allocator
+        os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
+        
         return True
     except Exception as e:
         print(f"GPU setup failed: {e}")
@@ -1335,7 +1320,16 @@ def setup_gpu_memory():
 def cleanup_gpu_memory():
     """Clean up GPU memory after optimization"""
     try:
+        # Clear TF session
         tf.keras.backend.clear_session()
+        
+        # Garbage collection
+        gc.collect()
+        
+        # Clear CUDA cache
+        if tf.config.list_physical_devices('GPU'):
+            tf.config.experimental.reset_memory_stats('GPU:0')
+        
         print("Cleaned up GPU memory")
     except Exception as e:
         print(f"Warning: Memory cleanup failed: {e}")
