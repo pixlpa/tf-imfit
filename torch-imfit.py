@@ -19,7 +19,7 @@ class GaborLayer(nn.Module):
         self.theta = nn.Parameter(torch.rand(num_gabors) * np.pi)  # [0, π]
         # Wider range of initial sizes
         self.sigma = nn.Parameter(torch.randn(num_gabors) * 0.7 - 1.0)  # log-space, more varied sizes
-        self.lambda_ = nn.Parameter(torch.randn(num_gabors) * 0.7)  # log-space, more varied frequencies
+        self.lambda_ = nn.Parameter(torch.randn(num_gabors) * 0.9)  # log-space, more varied frequencies
         self.psi = nn.Parameter(torch.rand(num_gabors) * 2 * np.pi)  # [0, 2π]
         self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.2)  # slightly elliptical Gabors
         # Initialize amplitudes with color correlation
@@ -53,7 +53,7 @@ class GaborLayer(nn.Module):
         return torch.sum(gabors, dim=0)  # Returns shape [3, H, W]
 
 class ImageFitter:
-    def __init__(self, image_path, num_gabors=256, device='cuda' if torch.cuda.is_available() else 'cpu'):
+    def __init__(self, image_path, weight_path=None, num_gabors=256, device='cuda' if torch.cuda.is_available() else 'cpu'):
         image = Image.open(image_path).convert('RGB')
         
         # Enhanced preprocessing pipeline
@@ -65,6 +65,16 @@ class ImageFitter:
         self.target = transform(image).to(device)
         h, w = self.target.shape[-2:]
         
+        # Load and process weight image if provided
+        if weight_path:
+            weight_img = Image.open(weight_path).convert('L')  # Convert to grayscale
+            weight_img = weight_img.resize((w, h), Image.Resampling.LANCZOS)
+            self.weights = transforms.ToTensor()(weight_img).to(device)
+            # Normalize weights to average to 1
+            self.weights = self.weights / self.weights.mean()
+        else:
+            self.weights = torch.ones_like(self.target[0]).to(device)  # Just channel 0 for shape
+
         # Create coordinate grid
         y, x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
         self.grid_x = x.to(device)
@@ -99,14 +109,23 @@ class ImageFitter:
         self.best_loss = float('inf')
         self.best_state = None
 
+    def weighted_loss(self, output, target, weights):
+        # Apply weights to each channel
+        mse_per_pixel = (output - target).pow(2)
+        l1_per_pixel = torch.abs(output - target)
+        
+        # Sum across channels, then apply weights
+        mse_loss = (mse_per_pixel.mean(dim=0) * weights).mean()
+        l1_loss = (l1_per_pixel.mean(dim=0) * weights).mean()
+        
+        return mse_loss + 0.1 * l1_loss
+
     def train_step(self):
         self.optimizer.zero_grad()
         output = self.model(self.grid_x, self.grid_y)
         
-        # Combine MSE and L1 losses
-        mse_loss = self.mse_criterion(output, self.target)
-        l1_loss = self.l1_criterion(output, self.target)
-        loss = mse_loss + 0.1 * l1_loss
+        # Use weighted loss
+        loss = self.weighted_loss(output, self.target, self.weights)
         
         loss.backward()
         
@@ -143,6 +162,7 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Fit image with Gabor functions')
     parser.add_argument('image', type=str, help='Path to input image')
+    parser.add_argument('--weight', type=str, help='Path to weight image (grayscale)', default=None)
     parser.add_argument('--num-gabors', type=int, default=256,
                        help='Number of Gabor functions to fit')
     parser.add_argument('--iterations', type=int, default=1000,
@@ -158,7 +178,7 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Initialize fitter
-    fitter = ImageFitter(args.image, args.num_gabors, args.device)
+    fitter = ImageFitter(args.image, args.weight, args.num_gabors, args.device)
 
     # Training loop
     print(f"Training on {args.device}...")
