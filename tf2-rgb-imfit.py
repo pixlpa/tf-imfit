@@ -1057,7 +1057,7 @@ def setup_argument_parser():
     # Model configuration
     model_group = parser.add_argument_group('Model Configuration')
     model_group.add_argument('-n', '--num-models', type=int,
-                           metavar='N', default=128,
+                           metavar='N', default=256,
                            help='Total number of models to fit')
     model_group.add_argument('-L', '--num-local', type=int,
                            metavar='N', default=200,
@@ -1072,7 +1072,7 @@ def setup_argument_parser():
                            metavar='LIMIT',
                            help='Time limit (e.g. 1:30 or 1h30m)')
     optim_group.add_argument('-T', '--total-iterations', type=int,
-                           metavar='N',
+                           metavar='N',default=1000,
                            help='Total limit on outer loop iterations')
     optim_group.add_argument('-f', '--full-iter', type=int,
                            metavar='N', default=10000,
