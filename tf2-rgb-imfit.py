@@ -1042,7 +1042,7 @@ def setup_argument_parser():
     io_group.add_argument('-w', '--weights', type=argparse.FileType('rb'),
                          metavar='WEIGHTS.png',
                          help='Optional weight image (grayscale)')
-    io_group.add_argument('-i', '--input', type=str,
+    io_group.add_argument('-I', '--input', type=str,
                          metavar='PARAMFILE.txt',
                          help='Read initial parameters from file')
     io_group.add_argument('-o', '--output', type=str,
