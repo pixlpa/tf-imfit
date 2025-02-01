@@ -19,7 +19,7 @@ class GaborLayer(nn.Module):
         self.theta = nn.Parameter(torch.rand(num_gabors) * np.pi)  # [0, π]
         # Wider range of initial sizes
         self.sigma = nn.Parameter(torch.randn(num_gabors) * 0.7 - 1.0)  # log-space, more varied sizes
-        self.lambda_ = nn.Parameter(torch.randn(num_gabors) * 0.9)  # log-space, more varied frequencies
+        self.lambda_ = nn.Parameter(torch.randn(num_gabors) * 0.7)  # log-space, more varied frequencies
         self.psi = nn.Parameter(torch.rand(num_gabors) * 2 * np.pi)  # [0, 2π]
         self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.2)  # slightly elliptical Gabors
         # Initialize amplitudes with color correlation
