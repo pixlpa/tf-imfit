@@ -893,6 +893,51 @@ class StateManager:
             return True
         return False
 
+def setup_gpu_memory():
+    """Configure GPU memory growth to prevent OOM errors"""
+    try:
+        gpus = tf.config.list_physical_devices('GPU')
+        if not gpus:
+            print("No GPU devices found. Running on CPU.")
+            return False
+
+        # Enable memory growth for all GPUs
+        for gpu in gpus:
+            try:
+                # Enable memory growth
+                tf.config.experimental.set_memory_growth(gpu, True)
+                
+                # Set memory limit to 75% of available memory to be more conservative
+                memory_limit = int(0.75 * tf.config.experimental.get_device_details(gpu)['memory_limit'])
+                tf.config.set_logical_device_configuration(
+                    gpu,
+                    [tf.config.LogicalDeviceConfiguration(memory_limit=memory_limit)])
+                
+                print(f"Configured GPU {gpu.name}:")
+                print(f"- Memory growth enabled")
+                print(f"- Memory limit set to {memory_limit / 1024**2:.0f}MB")
+            except RuntimeError as e:
+                print(f"Error configuring {gpu}: {e}")
+                continue
+
+        # Set mixed precision policy
+        try:
+            policy = tf.keras.mixed_precision.Policy('mixed_float16')
+            tf.keras.mixed_precision.set_global_policy(policy)
+            print("Enabled mixed precision training")
+        except Exception as e:
+            print(f"Warning: Could not enable mixed precision: {e}")
+
+        # Additional memory optimizations
+        tf.config.optimizer.set_jit(True)  # Enable XLA
+        os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
+        os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+        
+        return True
+    except Exception as e:
+        print(f"GPU setup failed: {e}")
+        return False
+
 def optimize_with_curriculum(input_image, opts, weights=None):
     """Progressive optimization with curriculum learning"""
     print("\nInitializing optimization...")
@@ -901,7 +946,7 @@ def optimize_with_curriculum(input_image, opts, weights=None):
     using_gpu = setup_gpu_memory()
     
     try:
-        # Create model and optimizer
+        # Create model and optimizer with smaller batch size
         model = GaborModel('gabor', count=opts.num_gabors, 
                          image_shape=input_image.shape)
         optimizer = GaborOptimizer(model, input_image, 
@@ -940,6 +985,11 @@ def optimize_with_curriculum(input_image, opts, weights=None):
                 with tqdm(total=stage_iterations, desc=f"Stage {stage + 1}") as pbar:
                     for step in range(stage_iterations):
                         try:
+                            # Clear memory before optimization step
+                            if using_gpu and step % 10 == 0:
+                                tf.keras.backend.clear_session()
+                                gc.collect()
+                            
                             # Optimization step
                             loss, components, image = optimizer.optimization_step()
                             
@@ -948,15 +998,12 @@ def optimize_with_curriculum(input_image, opts, weights=None):
                                 pbar.set_postfix(loss=f"{loss:.6f}")
                                 pbar.update(10)
                             
-                            # Periodic cleanup
-                            if step % 50 == 0:
-                                gc.collect()
-                                if using_gpu:
-                                    tf.keras.backend.clear_session()
-                            
                         except tf.errors.ResourceExhaustedError:
                             print("\nOOM error - attempting recovery...")
                             cleanup_gpu_memory()
+                            if using_gpu:
+                                tf.keras.backend.clear_session()
+                                gc.collect()
                             state_manager.restore_best_state()
                             continue
                             
@@ -1272,49 +1319,6 @@ def load_model_state(model, filename):
         print(f"⚠️ Failed to load model state: {e}")
         traceback.print_exc()
         raise
-
-def setup_gpu_memory():
-    """Configure GPU memory growth to prevent OOM errors"""
-    try:
-        gpus = tf.config.list_physical_devices('GPU')
-        if not gpus:
-            print("No GPU devices found. Running on CPU.")
-            return False
-
-        # Enable memory growth for all GPUs
-        for gpu in gpus:
-            try:
-                # Enable memory growth
-                tf.config.experimental.set_memory_growth(gpu, True)
-                
-                # Set memory limit to 90% of available memory
-                memory_limit = int(0.9 * tf.config.experimental.get_device_details(gpu)['memory_limit'])
-                tf.config.set_logical_device_configuration(
-                    gpu,
-                    [tf.config.LogicalDeviceConfiguration(memory_limit=memory_limit)])
-                
-                print(f"Configured GPU {gpu.name}:")
-                print(f"- Memory growth enabled")
-                print(f"- Memory limit set to {memory_limit / 1024**2:.0f}MB")
-            except RuntimeError as e:
-                print(f"Error configuring {gpu}: {e}")
-                continue
-
-        # Set mixed precision policy
-        try:
-            policy = tf.keras.mixed_precision.Policy('mixed_float16')
-            tf.keras.mixed_precision.set_global_policy(policy)
-            print("Enabled mixed precision training")
-        except Exception as e:
-            print(f"Warning: Could not enable mixed precision: {e}")
-
-        # Set memory allocator
-        os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
-        
-        return True
-    except Exception as e:
-        print(f"GPU setup failed: {e}")
-        return False
 
 def cleanup_gpu_memory():
     """Clean up GPU memory after optimization"""
