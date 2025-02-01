@@ -13,15 +13,17 @@ class GaborLayer(nn.Module):
     def __init__(self, num_gabors=256):
         super().__init__()
         
-        # Learnable parameters for each Gabor function
-        self.u = nn.Parameter(torch.rand(num_gabors))  # x position
-        self.v = nn.Parameter(torch.rand(num_gabors))  # y position
-        self.theta = nn.Parameter(torch.rand(num_gabors))  # rotation
-        self.sigma = nn.Parameter(torch.rand(num_gabors))  # width
-        self.lambda_ = nn.Parameter(torch.rand(num_gabors))  # wavelength
-        self.psi = nn.Parameter(torch.rand(num_gabors))  # phase
-        self.gamma = nn.Parameter(torch.rand(num_gabors))  # aspect ratio
-        self.amplitude = nn.Parameter(torch.rand(num_gabors, 3))  # amplitude for RGB channels
+        # Initialize parameters with better defaults
+        self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # start spread out in [-1, 1]
+        self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # start spread out in [-1, 1]
+        self.theta = nn.Parameter(torch.rand(num_gabors) * np.pi)  # [0, π]
+        # Start with varying sizes of Gabors
+        self.sigma = nn.Parameter(torch.randn(num_gabors) * 0.5)  # log-space, varied sizes
+        self.lambda_ = nn.Parameter(torch.randn(num_gabors) * 0.5)  # log-space, varied frequencies
+        self.psi = nn.Parameter(torch.rand(num_gabors) * 2 * np.pi)  # [0, 2π]
+        self.gamma = nn.Parameter(torch.zeros(num_gabors))  # start with circular Gabors
+        # Initialize amplitudes small to prevent oversaturation
+        self.amplitude = nn.Parameter(torch.rand(num_gabors, 3) * 0.1)
 
     def forward(self, grid_x, grid_y):
         # Convert parameters to proper ranges
@@ -52,9 +54,15 @@ class GaborLayer(nn.Module):
 
 class ImageFitter:
     def __init__(self, image_path, num_gabors=256, device='cuda' if torch.cuda.is_available() else 'cpu'):
-        # Modified: Load color image and convert to RGB
         image = Image.open(image_path).convert('RGB')
-        self.target = transforms.ToTensor()(image).to(device)
+        
+        # Add preprocessing to normalize the input image
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        ])
+        
+        self.target = transform(image).to(device)
         h, w = self.target.shape[-2:]
         
         # Create coordinate grid
@@ -62,9 +70,13 @@ class ImageFitter:
         self.grid_x = x.to(device)
         self.grid_y = y.to(device)
         
-        # Initialize model and optimizer
+        # Initialize model with improved optimizer settings
         self.model = GaborLayer(num_gabors).to(device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=0.01)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=0.03)
+        # Add learning rate scheduler
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode='min', factor=0.5, patience=100, verbose=True
+        )
         self.criterion = nn.MSELoss()
 
     def train_step(self):
@@ -72,12 +84,21 @@ class ImageFitter:
         output = self.model(self.grid_x, self.grid_y)
         loss = self.criterion(output, self.target)
         loss.backward()
+        
+        # Add gradient clipping to prevent instability
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+        
         self.optimizer.step()
+        # Update learning rate based on loss
+        self.scheduler.step(loss)
         return loss.item()
 
     def get_current_image(self):
         with torch.no_grad():
-            return self.model(self.grid_x, self.grid_y).cpu().numpy()
+            output = self.model(self.grid_x, self.grid_y)
+            # Denormalize the output
+            output = output * 0.5 + 0.5
+            return output.clamp(0, 1).cpu().numpy()
 
 def main():
     """Run Gabor image fitting on an input image."""
