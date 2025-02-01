@@ -63,7 +63,7 @@ class GaborLayer(nn.Module):
         return torch.sum(gabors, dim=0)  # Returns shape [3, H, W]
 
 class ImageFitter:
-    def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, device='cuda' if torch.cuda.is_available() else 'cpu'):
+    def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, device='cuda' if torch.cuda.is_available() else 'cpu', init=None):
         image = Image.open(image_path).convert('RGB')
         
         # Resize image if target_size is specified
@@ -143,6 +143,10 @@ class ImageFitter:
         
         # Add mutation probability
         self.mutation_prob = 0.0001
+
+    def init_parameters(self, init):
+        if init is not None:
+            self.model.load_state_dict(torch.load(init))
 
     def mutate_parameters(self):
         """Randomly mutate some Gabor functions to explore new solutions"""
@@ -240,6 +244,8 @@ def main():
                        help='Number of Gabor functions to fit')
     parser.add_argument('--iterations', type=int, default=1000,
                        help='Number of training iterations')
+    parser.add_argument('--init', type=str, default=None,
+                       help='load initial parameters from file')
     # Add size arguments
     parser.add_argument('--size', type=int, default=None,
                        help='Target size (maintains aspect ratio)')
@@ -265,7 +271,7 @@ def main():
         target_size = (args.width, args.height)
 
     # Initialize fitter with target size
-    fitter = ImageFitter(args.image, args.weight, args.num_gabors, target_size, args.device)
+    fitter = ImageFitter(args.image, args.weight, args.num_gabors, target_size, args.device, args.init)
 
     # Training loop
     print(f"Training on {args.device}...")
@@ -292,6 +298,7 @@ def main():
     final_result = np.clip(final_result * 255, 0, 255).astype(np.uint8)
     final_img = Image.fromarray(final_result)
     final_img.save(os.path.join(args.output_dir, 'final_result.png'))
+    torch.save(fitter.model.state_dict(), os.path.join(args.output_dir, 'saved_model.pth'))
 
 if __name__ == '__main__':
     main()
