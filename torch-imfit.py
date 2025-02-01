@@ -39,9 +39,9 @@ class GaborLayer(nn.Module):
 
         # Add random noise during training
         if self.training:
-            u = u + torch.randn_like(u) * 0.02 * temperature
-            v = v + torch.randn_like(v) * 0.02 * temperature
-            theta = theta + torch.randn_like(theta) * 0.02 * temperature
+            u = u + torch.randn_like(u) * 0.002 * temperature
+            v = v + torch.randn_like(v) * 0.002 * temperature
+            theta = theta + torch.randn_like(theta) * 0.002 * temperature
             
         # Compute rotated coordinates for each Gabor
         x_rot = (grid_x[None,:,:] - u[:,None,None]) * torch.cos(theta[:,None,None]) + \
