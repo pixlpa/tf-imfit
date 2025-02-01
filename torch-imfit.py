@@ -109,7 +109,8 @@ class ImageFitter:
         
         # Initialize model with improved training setup
         self.model = GaborLayer(num_gabors).to(device)
-        
+        # Initialize model parameters if provided
+        self.init_parameters(init)
         # Use AdamW optimizer with weight decay
         self.optimizer = optim.AdamW(
             self.model.parameters(),
