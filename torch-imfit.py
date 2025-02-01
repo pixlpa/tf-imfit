@@ -13,17 +13,17 @@ class GaborLayer(nn.Module):
     def __init__(self, num_gabors=256):
         super().__init__()
         
-        # Initialize parameters with better defaults
-        self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # start spread out in [-1, 1]
-        self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # start spread out in [-1, 1]
+        # Initialize parameters with even better defaults
+        self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1]
+        self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1]
         self.theta = nn.Parameter(torch.rand(num_gabors) * np.pi)  # [0, π]
-        # Start with varying sizes of Gabors
-        self.sigma = nn.Parameter(torch.randn(num_gabors) * 0.5)  # log-space, varied sizes
-        self.lambda_ = nn.Parameter(torch.randn(num_gabors) * 0.5)  # log-space, varied frequencies
+        # Wider range of initial sizes
+        self.sigma = nn.Parameter(torch.randn(num_gabors) * 0.7 - 1.0)  # log-space, more varied sizes
+        self.lambda_ = nn.Parameter(torch.randn(num_gabors) * 0.7)  # log-space, more varied frequencies
         self.psi = nn.Parameter(torch.rand(num_gabors) * 2 * np.pi)  # [0, 2π]
-        self.gamma = nn.Parameter(torch.zeros(num_gabors))  # start with circular Gabors
-        # Initialize amplitudes small to prevent oversaturation
-        self.amplitude = nn.Parameter(torch.rand(num_gabors, 3) * 0.1)
+        self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.2)  # slightly elliptical Gabors
+        # Initialize amplitudes with color correlation
+        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.05)
 
     def forward(self, grid_x, grid_y):
         # Convert parameters to proper ranges
@@ -56,7 +56,7 @@ class ImageFitter:
     def __init__(self, image_path, num_gabors=256, device='cuda' if torch.cuda.is_available() else 'cpu'):
         image = Image.open(image_path).convert('RGB')
         
-        # Add preprocessing to normalize the input image
+        # Enhanced preprocessing pipeline
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
@@ -70,32 +70,70 @@ class ImageFitter:
         self.grid_x = x.to(device)
         self.grid_y = y.to(device)
         
-        # Initialize model with improved optimizer settings
+        # Initialize model with improved training setup
         self.model = GaborLayer(num_gabors).to(device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=0.03)
-        # Add learning rate scheduler
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='min', factor=0.5, patience=100, verbose=True
+        
+        # Use AdamW optimizer with weight decay
+        self.optimizer = optim.AdamW(
+            self.model.parameters(),
+            lr=0.03,
+            weight_decay=1e-4,
+            betas=(0.9, 0.999)
         )
-        self.criterion = nn.MSELoss()
+        
+        # More aggressive learning rate scheduling
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer,
+            mode='min',
+            factor=0.5,
+            patience=50,
+            verbose=True,
+            min_lr=1e-5
+        )
+        
+        # Use a combination of MSE and L1 loss
+        self.mse_criterion = nn.MSELoss()
+        self.l1_criterion = nn.L1Loss()
+        
+        # Initialize best loss tracking
+        self.best_loss = float('inf')
+        self.best_state = None
 
     def train_step(self):
         self.optimizer.zero_grad()
         output = self.model(self.grid_x, self.grid_y)
-        loss = self.criterion(output, self.target)
+        
+        # Combine MSE and L1 losses
+        mse_loss = self.mse_criterion(output, self.target)
+        l1_loss = self.l1_criterion(output, self.target)
+        loss = mse_loss + 0.1 * l1_loss
+        
         loss.backward()
         
-        # Add gradient clipping to prevent instability
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+        # Gradient clipping
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
         
         self.optimizer.step()
-        # Update learning rate based on loss
         self.scheduler.step(loss)
+        
+        # Save best state
+        if loss.item() < self.best_loss:
+            self.best_loss = loss.item()
+            self.best_state = {k: v.clone() for k, v in self.model.state_dict().items()}
+        
         return loss.item()
 
-    def get_current_image(self):
+    def get_current_image(self, use_best=True):
         with torch.no_grad():
-            output = self.model(self.grid_x, self.grid_y)
+            if use_best and self.best_state is not None:
+                # Use the best model state for final output
+                current_state = {k: v.clone() for k, v in self.model.state_dict().items()}
+                self.model.load_state_dict(self.best_state)
+                output = self.model(self.grid_x, self.grid_y)
+                self.model.load_state_dict(current_state)
+            else:
+                output = self.model(self.grid_x, self.grid_y)
+            
             # Denormalize the output
             output = output * 0.5 + 0.5
             return output.clamp(0, 1).cpu().numpy()
