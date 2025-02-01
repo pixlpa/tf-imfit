@@ -39,9 +39,9 @@ class GaborLayer(nn.Module):
 
         # Add random noise during training
         if self.training:
-            u = u + torch.randn_like(u) * 0.002 * temperature
-            v = v + torch.randn_like(v) * 0.002 * temperature
-            theta = theta + torch.randn_like(theta) * 0.002 * temperature
+            u = u + torch.randn_like(u) * 0.0002 * temperature
+            v = v + torch.randn_like(v) * 0.0002 * temperature
+            theta = theta + torch.randn_like(theta) * 0.0002 * temperature
             
         # Compute rotated coordinates for each Gabor
         x_rot = (grid_x[None,:,:] - u[:,None,None]) * torch.cos(theta[:,None,None]) + \
@@ -138,8 +138,8 @@ class ImageFitter:
         self.best_state = None
         
         # Add temperature scheduling
-        self.initial_temp = 0.5
-        self.min_temp = 0.001
+        self.initial_temp = 0.05
+        self.min_temp = 0.00000001
         self.current_temp = self.initial_temp
         
         # Add mutation probability
