@@ -728,14 +728,6 @@ def snapshot(current_image, input_image, opts, iteration, extra_info=None):
     except Exception as e:
         print(f"Error in snapshot function: {e}")
         traceback.print_exc()
-
-def add_snapshot_arguments(parser):
-    """Add snapshot-related command line arguments"""
-    parser.add_argument('--snapshot-prefix', type=str,
-                       help='Prefix for snapshot filenames')
-    parser.add_argument('--label-snapshot', action='store_true',
-                       help='Add labels to snapshot images')
-
 ######################################################################
 
 class GaborOptimizer:
@@ -947,7 +939,7 @@ def optimize_with_curriculum(input_image, opts, weights=None):
     
     try:
         # Create model and optimizer with smaller batch size
-        model = GaborModel('gabor', count=opts.num_gabors, 
+        model = GaborModel('gabor', count=opts.num_models, 
                          image_shape=input_image.shape)
         optimizer = GaborOptimizer(model, input_image, 
                                  learning_rate=opts.learning_rate,
@@ -1031,130 +1023,164 @@ def optimize_with_curriculum(input_image, opts, weights=None):
             cleanup_gpu_memory()
         raise
 
-def add_optimization_arguments(parser):
-    """Add optimization-related command line arguments"""
-    parser.add_argument('--input', type=str, required=True,
-                       help='Input image path')
-    parser.add_argument('--num-gabors', type=int, default=256,
-                       help='Number of Gabor functions')
-    parser.add_argument('--learning-rate', type=float, default=0.01,
-                       help='Learning rate for optimization')
-    parser.add_argument('--early-stop', action='store_true',
-                       help='Enable early stopping')
-    parser.add_argument('--patience', type=int, default=64,
-                       help='Number of iterations without improvement before early stopping')
-    parser.add_argument('--total-iterations', type=int, default=100,
-                       help='Maximum number of iterations')
-    parser.add_argument('--time-limit', type=float,
-                       help='Time limit in seconds')
-    parser.add_argument('--steps-per-iteration', type=int, default=256,
-                       help='Optimization steps per iteration')
-    parser.add_argument('--max-gradient-norm', type=float, default=1.0,
-                       help='Maximum gradient norm for clipping')
-
-def add_output_arguments(parser):
-    """Add output-related command line arguments"""
-    parser.add_argument('--output-dir', type=str,
-                       help='Directory for output files')
-    parser.add_argument('--save-best', type=str,
-                       help='Save best model state to file')
-    parser.add_argument('--load-state', type=str,
-                       help='Load initial model state from file')
-    parser.add_argument('--snapshot-prefix', type=str,
-                       help='Prefix for snapshot filenames')
-    parser.add_argument('--label-snapshot', action='store_true',
-                       help='Add labels to snapshot images')
-
 def setup_argument_parser():
-    """Create and setup argument parser with all relevant arguments"""
-    parser = argparse.ArgumentParser(description='TF2 Gabor Image Fitting')
+    """Create and configure argument parser with all options.
+    
+    Returns:
+        argparse.ArgumentParser: Configured argument parser
+    """
+    parser = argparse.ArgumentParser(
+        description='TF2 Gabor Image Fitting',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     
     # Input/Output arguments
     io_group = parser.add_argument_group('Input/Output')
-    io_group.add_argument('--input', type=str, required=True,
-                         help='Input image path')
-    io_group.add_argument('--weights', type=str,
-                         help='Optional weight image path (greyscale)')
+    io_group.add_argument('image', type=argparse.FileType('rb'),
+                         metavar='IMAGE.png',
+                         help='Input image to approximate')
+    io_group.add_argument('-w', '--weights', type=argparse.FileType('rb'),
+                         metavar='WEIGHTS.png',
+                         help='Optional weight image (grayscale)')
+    io_group.add_argument('-i', '--input', type=str,
+                         metavar='PARAMFILE.txt',
+                         help='Read initial parameters from file')
+    io_group.add_argument('-o', '--output', type=str,
+                         metavar='PARAMFILE.txt',
+                         help='Write final parameters to file')
+    io_group.add_argument('-s', '--max-size', type=int,
+                         metavar='N', default=128,
+                         help='Maximum size of image to load')
     io_group.add_argument('--output-dir', type=str, default='results',
                          help='Directory for output files')
-    io_group.add_argument('--snapshot-prefix', type=str,
-                         help='Prefix for snapshot filenames (e.g., results/output)')
-    io_group.add_argument('--save-best', type=str,
-                         help='Save best model state to file')
-    io_group.add_argument('--load-state', type=str,
-                         help='Load initial model state from file')
     
-    # Model arguments
+    # Model configuration
     model_group = parser.add_argument_group('Model Configuration')
-    model_group.add_argument('--num-gabors', type=int, default=100,
-                           help='Number of Gabor functions')
-    model_group.add_argument('--regularization', type=float, default=0.001,
-                           help='L2 regularization strength')
+    model_group.add_argument('-n', '--num-models', type=int,
+                           metavar='N', default=128,
+                           help='Total number of models to fit')
+    model_group.add_argument('-L', '--num-local', type=int,
+                           metavar='N', default=200,
+                           help='Number of random guesses per local fit')
+    model_group.add_argument('-p', '--preview-size', type=int,
+                           metavar='N', default=0,
+                           help='Size of large preview image (0 to disable)')
     
-    # Optimization arguments
+    # Optimization parameters
     optim_group = parser.add_argument_group('Optimization')
-    optim_group.add_argument('--learning-rate', type=float, default=0.01,
-                            help='Initial learning rate')
-    optim_group.add_argument('--steps-per-iteration', type=int, default=1000,
-                            help='Optimization steps per iteration')
-    optim_group.add_argument('--total-iterations', type=int, default=500,
-                            help='Maximum number of iterations (None for unlimited)')
-    optim_group.add_argument('--time-limit', type=float, default=None,
-                            help='Time limit in seconds (None for unlimited)')
-    optim_group.add_argument('--early-stop', action='store_true',
-                            help='Enable early stopping')
-    optim_group.add_argument('--patience', type=int, default=1000,
-                            help='Patience for early stopping')
-    optim_group.add_argument('--batch-size', type=int, default=4,
-                            help='Batch size for optimization')
+    optim_group.add_argument('-t', '--time-limit', type=parse_duration,
+                           metavar='LIMIT',
+                           help='Time limit (e.g. 1:30 or 1h30m)')
+    optim_group.add_argument('-T', '--total-iterations', type=int,
+                           metavar='N',
+                           help='Total limit on outer loop iterations')
+    optim_group.add_argument('-f', '--full-iter', type=int,
+                           metavar='N', default=10000,
+                           help='Maximum iterations for joint optimization')
+    optim_group.add_argument('-l', '--local-iter', type=int,
+                           metavar='N', default=100,
+                           help='Maximum iterations per local fit')
+    optim_group.add_argument('-F', '--full-every', type=int,
+                           metavar='N', default=32,
+                           help='Perform joint optimization every N outer loops')
+    optim_group.add_argument('-r', '--local-learning-rate', type=float,
+                           metavar='R', default=0.01,
+                           help='Learning rate for local optimization')
+    optim_group.add_argument('-R', '--full-learning-rate', type=float,
+                           metavar='R', default=0.0005,
+                           help='Learning rate for full optimization')
     
-    # Annealing arguments
-    anneal_group = parser.add_argument_group('Learning Rate Annealing')
-    anneal_group.add_argument('--anneal-learning-rate', action='store_true',
-                             help='Enable learning rate annealing')
-    anneal_group.add_argument('--anneal-factor', type=float, default=0.7,
-                             help='Factor to reduce learning rate by during annealing')
-    anneal_group.add_argument('--anneal-patience', type=int, default=500,
-                             help='Iterations before annealing')
-    anneal_group.add_argument('--min-learning-rate', type=float, default=1e-6,
-                             help='Minimum learning rate for annealing')
+    # Advanced optimization options
+    advanced_group = parser.add_argument_group('Advanced Optimization')
+    advanced_group.add_argument('-P', '--perturb-amount', type=float,
+                              metavar='R', default=0.15,
+                              help='Amount to perturb replacement fits')
+    advanced_group.add_argument('-c', '--copy-quantity', type=float,
+                              metavar='C', default=0.5,
+                              help='Number or fraction of re-fits to initialize with current model')
+    advanced_group.add_argument('-a', '--anneal-temp', type=float,
+                              metavar='T', default=0.08,
+                              help='Temperature for simulated annealing')
+    advanced_group.add_argument('--mixed-precision', action='store_true',
+                              help='Enable mixed precision training')
+    advanced_group.add_argument('--force-cpu', action='store_true',
+                              help='Force CPU usage even if GPU is available')
     
-    # Visualization arguments
+    # Snapshot/visualization options
     vis_group = parser.add_argument_group('Visualization')
-    vis_group.add_argument('--label-snapshot', action='store_true',
-                          help='Add labels to snapshot images')
-    vis_group.add_argument('--snapshot-frequency', type=int, default=1,
+    vis_group.add_argument('-S', '--label-snapshot', action='store_true',
+                          help='Individually label snapshots')
+    vis_group.add_argument('-x', '--snapshot-prefix', type=str,
+                          metavar='BASENAME', default='out',
+                          help='Prefix for snapshot filenames')
+    vis_group.add_argument('--snapshot-frequency', type=int,
+                          default=1,
                           help='Save snapshot every N iterations')
-    vis_group.add_argument('--progress-frequency', type=int, default=100,
-                          help='Show progress every N steps')
-    
-    # Hardware configuration
-    hw_group = parser.add_argument_group('Hardware')
-    hw_group.add_argument('--force-cpu', action='store_true',
-                         help='Force CPU usage even if GPU is available')
-    hw_group.add_argument('--mixed-precision', action='store_true',
-                         help='Enable mixed precision training')
-    hw_group.add_argument('--memory-growth', action='store_true',
-                         help='Enable GPU memory growth')
     
     return parser
 
 def validate_options(opts):
-    """Validate command line options"""
-    if not os.path.exists(opts.input):
-        raise ValueError(f"Input file not found: {opts.input}")
+    """Validate and normalize command line options.
     
-    if opts.num_gabors < 1:
-        raise ValueError("Number of Gabors must be positive")
+    Args:
+        opts: Parsed command line arguments
+        
+    Returns:
+        opts: Validated and normalized options
+        
+    Raises:
+        ValueError: If options are invalid
+    """
+    # Validate numeric ranges
+    if opts.max_size <= 0:
+        raise ValueError("Maximum size must be positive")
+    if opts.num_models <= 0:
+        raise ValueError("Number of models must be positive")
+    if opts.num_local <= 0:
+        raise ValueError("Number of local fits must be positive")
+    if opts.local_learning_rate <= 0:
+        raise ValueError("Learning rates must be positive")
+    if opts.full_learning_rate <= 0:
+        raise ValueError("Learning rates must be positive")
+        
+    # Normalize copy quantity to fraction
+    if opts.copy_quantity < 0:
+        opts.copy_quantity = 0
+    elif opts.copy_quantity >= 1:
+        opts.copy_quantity = 1
+    else:
+        opts.copy_quantity = int(round(opts.copy_quantity * opts.num_local))
+        
+    # Normalize preview size
+    if opts.preview_size < 0:
+        opts.preview_size = 0
+        
+    # Create output directories if needed
+    if opts.output_dir:
+        os.makedirs(opts.output_dir, exist_ok=True)
+    if opts.snapshot_prefix:
+        os.makedirs(os.path.dirname(opts.snapshot_prefix), exist_ok=True)
+        
+    return opts
+
+def get_options():
+    """Parse and validate command line options.
     
-    if opts.learning_rate <= 0:
-        raise ValueError("Learning rate must be positive")
+    Returns:
+        opts: Validated command line options
+        
+    Raises:
+        SystemExit: If invalid options are provided
+    """
+    parser = setup_argument_parser()
+    opts = parser.parse_args()
     
-    if opts.time_limit is not None and opts.time_limit <= 0:
-        raise ValueError("Time limit must be positive")
-    
-    if opts.total_iterations is not None and opts.total_iterations < 1:
-        raise ValueError("Total iterations must be positive")
+    try:
+        opts = validate_options(opts)
+    except ValueError as e:
+        parser.error(str(e))
+        
+    return opts
 
 def create_output_directories(opts):
     """Create necessary output directories"""
@@ -1350,7 +1376,7 @@ def main():
     
     try:
         # Load and preprocess input
-        input_image, weights = load_input_image(opts.input, opts.weights)
+        input_image, weights = load_input_image(opts.image, opts.weights)
         
         # Run optimization with curriculum learning
         model, final_loss = optimize_with_curriculum(
