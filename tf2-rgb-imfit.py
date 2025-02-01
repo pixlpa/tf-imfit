@@ -1036,7 +1036,7 @@ def setup_argument_parser():
     
     # Input/Output arguments
     io_group = parser.add_argument_group('Input/Output')
-    io_group.add_argument('image', type=argparse.FileType('rb'),
+    io_group.add_argument('-i','--image', type=argparse.FileType('rb'),
                          metavar='IMAGE.png',
                          help='Input image to approximate')
     io_group.add_argument('-w', '--weights', type=argparse.FileType('rb'),
