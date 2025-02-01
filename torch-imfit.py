@@ -136,15 +136,17 @@ class ImageFitter:
                 num_mutate = max(1, int(0.05 * num_gabors))
                 idx = np.random.choice(num_gabors, num_mutate, replace=False)
                 
-                # Reset their parameters randomly
-                self.model.u.data[idx] = torch.rand(num_mutate) * 2 - 1
-                self.model.v.data[idx] = torch.rand(num_mutate) * 2 - 1
-                self.model.theta.data[idx] = torch.rand(num_mutate) * np.pi
-                self.model.sigma.data[idx] = torch.randn(num_mutate) * 0.7 - 1.0
-                self.model.lambda_.data[idx] = torch.randn(num_mutate) * 0.7
-                self.model.psi.data[idx] = torch.rand(num_mutate) * 2 * np.pi
-                self.model.gamma.data[idx] = torch.randn(num_mutate) * 0.2
-                self.model.amplitude.data[idx] = torch.randn(num_mutate, 3) * 0.05
+                device = self.model.u.device  # Get the current device
+                
+                # Reset their parameters randomly, ensuring correct device
+                self.model.u.data[idx] = (torch.rand(num_mutate, device=device) * 2 - 1)
+                self.model.v.data[idx] = (torch.rand(num_mutate, device=device) * 2 - 1)
+                self.model.theta.data[idx] = (torch.rand(num_mutate, device=device) * np.pi)
+                self.model.sigma.data[idx] = (torch.randn(num_mutate, device=device) * 0.7 - 1.0)
+                self.model.lambda_.data[idx] = (torch.randn(num_mutate, device=device) * 0.7)
+                self.model.psi.data[idx] = (torch.rand(num_mutate, device=device) * 2 * np.pi)
+                self.model.gamma.data[idx] = (torch.randn(num_mutate, device=device) * 0.2)
+                self.model.amplitude.data[idx] = (torch.randn(num_mutate, 3, device=device) * 0.05)
 
     def update_temperature(self, iteration, max_iterations):
         """Update temperature for simulated annealing"""
