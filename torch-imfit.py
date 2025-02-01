@@ -24,8 +24,9 @@ class GaborLayer(nn.Module):
         self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.2)  # slightly elliptical Gabors
         # Initialize amplitudes with color correlation
         self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.05)
+        self.dropout = nn.Dropout(p=0.1)  # Add dropout
 
-    def forward(self, grid_x, grid_y):
+    def forward(self, grid_x, grid_y, temperature=1.0, dropout_active=True):
         # Convert parameters to proper ranges
         u = self.u * 2 - 1  # [-1, 1]
         v = self.v * 2 - 1  # [-1, 1] 
@@ -36,6 +37,12 @@ class GaborLayer(nn.Module):
         gamma = torch.exp(self.gamma)  # (0, ∞)
         amplitude = self.amplitude  # [0, 1] for each channel
 
+        # Add random noise during training
+        if self.training:
+            u = u + torch.randn_like(u) * 0.02 * temperature
+            v = v + torch.randn_like(v) * 0.02 * temperature
+            theta = theta + torch.randn_like(theta) * 0.02 * temperature
+            
         # Compute rotated coordinates for each Gabor
         x_rot = (grid_x[None,:,:] - u[:,None,None]) * torch.cos(theta[:,None,None]) + \
                 (grid_y[None,:,:] - v[:,None,None]) * torch.sin(theta[:,None,None])
@@ -49,7 +56,10 @@ class GaborLayer(nn.Module):
         # Modified: compute Gabor functions for each color channel
         gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid[:, None, :, :]
         
-        # Sum all Gabor functions for each channel
+        # Apply dropout during training if requested
+        if dropout_active and self.training:
+            gabors = self.dropout(gabors)
+        
         return torch.sum(gabors, dim=0)  # Returns shape [3, H, W]
 
 class ImageFitter:
@@ -108,6 +118,40 @@ class ImageFitter:
         # Initialize best loss tracking
         self.best_loss = float('inf')
         self.best_state = None
+        
+        # Add temperature scheduling
+        self.initial_temp = 1.0
+        self.min_temp = 0.1
+        self.current_temp = self.initial_temp
+        
+        # Add mutation probability
+        self.mutation_prob = 0.05
+
+    def mutate_parameters(self):
+        """Randomly mutate some Gabor functions to explore new solutions"""
+        if np.random.random() < self.mutation_prob:
+            with torch.no_grad():
+                # Randomly select 5% of Gabors to mutate
+                num_gabors = self.model.amplitude.shape[0]
+                num_mutate = max(1, int(0.05 * num_gabors))
+                idx = np.random.choice(num_gabors, num_mutate, replace=False)
+                
+                # Reset their parameters randomly
+                self.model.u.data[idx] = torch.rand(num_mutate) * 2 - 1
+                self.model.v.data[idx] = torch.rand(num_mutate) * 2 - 1
+                self.model.theta.data[idx] = torch.rand(num_mutate) * np.pi
+                self.model.sigma.data[idx] = torch.randn(num_mutate) * 0.7 - 1.0
+                self.model.lambda_.data[idx] = torch.randn(num_mutate) * 0.7
+                self.model.psi.data[idx] = torch.rand(num_mutate) * 2 * np.pi
+                self.model.gamma.data[idx] = torch.randn(num_mutate) * 0.2
+                self.model.amplitude.data[idx] = torch.randn(num_mutate, 3) * 0.05
+
+    def update_temperature(self, iteration, max_iterations):
+        """Update temperature for simulated annealing"""
+        self.current_temp = max(
+            self.min_temp,
+            self.initial_temp * (1 - iteration / max_iterations)
+        )
 
     def weighted_loss(self, output, target, weights):
         # Apply weights to each channel
@@ -120,23 +164,33 @@ class ImageFitter:
         
         return mse_loss + 0.1 * l1_loss
 
-    def train_step(self):
+    def train_step(self, iteration, max_iterations):
         self.optimizer.zero_grad()
-        output = self.model(self.grid_x, self.grid_y)
         
-        # Use weighted loss
+        # Update temperature
+        self.update_temperature(iteration, max_iterations)
+        
+        # Forward pass with current temperature
+        output = self.model(
+            self.grid_x, 
+            self.grid_y, 
+            temperature=self.current_temp,
+            dropout_active=(iteration < max_iterations * 0.8)  # Disable dropout near end
+        )
+        
+        # Calculate loss
         loss = self.weighted_loss(output, self.target, self.weights)
         
+        # Add random mutation
+        self.mutate_parameters()
+        
         loss.backward()
-        
-        # Gradient clipping
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
-        
         self.optimizer.step()
         self.scheduler.step(loss)
         
-        # Save best state
-        if loss.item() < self.best_loss:
+        # Save best state (only when temperature is low)
+        if self.current_temp < 0.5 and loss.item() < self.best_loss:
             self.best_loss = loss.item()
             self.best_state = {k: v.clone() for k, v in self.model.state_dict().items()}
         
@@ -184,16 +238,16 @@ def main():
     print(f"Training on {args.device}...")
     with tqdm(total=args.iterations) as pbar:
         for i in range(args.iterations):
-            loss = fitter.train_step()
+            loss = fitter.train_step(i, args.iterations)
             
             if i % 10 == 0:
-                pbar.set_postfix(loss=f"{loss:.6f}")
+                temp = fitter.current_temp
+                pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
                 pbar.update(10)
-
-            # Save intermediate result every 100 iterations
+            
+            # Save intermediate results
             if i % 100 == 0:
                 result = fitter.get_current_image()
-                # Convert to correct format and range for PIL
                 result = np.transpose(result, (1, 2, 0))
                 result = np.clip(result * 255, 0, 255).astype(np.uint8)
                 img = Image.fromarray(result)
