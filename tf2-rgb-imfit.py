@@ -1292,7 +1292,6 @@ def setup_gpu_memory():
                 tf.config.set_logical_device_configuration(
                     gpu,
                     [tf.config.LogicalDeviceConfiguration(memory_limit=memory_limit)])
-                )
                 
                 print(f"Configured GPU {gpu.name}:")
                 print(f"- Memory growth enabled")
