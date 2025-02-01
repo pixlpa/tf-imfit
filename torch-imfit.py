@@ -235,6 +235,33 @@ class ImageFitter:
             output = output * 0.5 + 0.5
             return output.clamp(0, 1).cpu().numpy()
 
+    def save_parameters_to_text(self, filepath):
+        """Save model parameters in a human-readable format"""
+        with torch.no_grad():
+            params = {
+                'u': self.model.u.cpu().tolist(),
+                'v': self.model.v.cpu().tolist(),
+                'theta': self.model.theta.cpu().tolist(),
+                'sigma': self.model.sigma.cpu().tolist(),
+                'lambda': self.model.lambda_.cpu().tolist(),
+                'psi': self.model.psi.cpu().tolist(),
+                'gamma': self.model.gamma.cpu().tolist(),
+                'amplitude': self.model.amplitude.cpu().tolist()
+            }
+            
+            with open(filepath, 'w') as f:
+                f.write("Gabor Function Parameters:\n\n")
+                for i in range(len(params['u'])):
+                    f.write(f"Gabor {i}:\n")
+                    f.write(f"  Position (u, v): ({params['u'][i]:.4f}, {params['v'][i]:.4f})\n")
+                    f.write(f"  Orientation (θ): {params['theta'][i]:.4f}\n")
+                    f.write(f"  Size (σ): {params['sigma'][i]:.4f}\n")
+                    f.write(f"  Wavelength (λ): {params['lambda'][i]:.4f}\n")
+                    f.write(f"  Phase (ψ): {params['psi'][i]:.4f}\n")
+                    f.write(f"  Aspect ratio (γ): {params['gamma'][i]:.4f}\n")
+                    f.write(f"  Amplitude (RGB): {[f'{a:.4f}' for a in params['amplitude'][i]]}\n")
+                    f.write("\n")
+
 def main():
     """Run Gabor image fitting on an input image."""
     # Parse command line arguments
@@ -299,7 +326,10 @@ def main():
     final_result = np.clip(final_result * 255, 0, 255).astype(np.uint8)
     final_img = Image.fromarray(final_result)
     final_img.save(os.path.join(args.output_dir, 'final_result.png'))
+    
+    # Save both binary and human-readable formats
     torch.save(fitter.model.state_dict(), os.path.join(args.output_dir, 'saved_model.pth'))
+    fitter.save_parameters_to_text(os.path.join(args.output_dir, 'parameters.txt'))
 
 if __name__ == '__main__':
     main()
