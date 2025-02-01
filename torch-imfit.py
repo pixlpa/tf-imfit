@@ -52,8 +52,9 @@ class GaborLayer(nn.Module):
 
 class ImageFitter:
     def __init__(self, image_path, num_gabors=256, device='cuda' if torch.cuda.is_available() else 'cpu'):
-        # Modified: Load color image (don't convert to grayscale)
-        self.target = transforms.ToTensor()(Image.open(image_path)).to(device)
+        # Modified: Load color image and convert to RGB
+        image = Image.open(image_path).convert('RGB')
+        self.target = transforms.ToTensor()(image).to(device)
         h, w = self.target.shape[-2:]
         
         # Create coordinate grid
