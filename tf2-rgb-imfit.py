@@ -1024,11 +1024,7 @@ def optimize_with_curriculum(input_image, opts, weights=None):
         raise
 
 def setup_argument_parser():
-    """Create and configure argument parser with all options.
-    
-    Returns:
-        argparse.ArgumentParser: Configured argument parser
-    """
+    """Create and configure argument parser with all options."""
     parser = argparse.ArgumentParser(
         description='TF2 Gabor Image Fitting',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -1036,13 +1032,13 @@ def setup_argument_parser():
     
     # Input/Output arguments
     io_group = parser.add_argument_group('Input/Output')
-    io_group.add_argument('-i','--image', type=argparse.FileType('rb'),
+    io_group.add_argument('image', type=argparse.FileType('rb'),
                          metavar='IMAGE.png',
                          help='Input image to approximate')
     io_group.add_argument('-w', '--weights', type=argparse.FileType('rb'),
                          metavar='WEIGHTS.png',
                          help='Optional weight image (grayscale)')
-    io_group.add_argument('-I', '--input', type=str,
+    io_group.add_argument('-i', '--input', type=str,
                          metavar='PARAMFILE.txt',
                          help='Read initial parameters from file')
     io_group.add_argument('-o', '--output', type=str,
@@ -1065,6 +1061,9 @@ def setup_argument_parser():
     model_group.add_argument('-p', '--preview-size', type=int,
                            metavar='N', default=0,
                            help='Size of large preview image (0 to disable)')
+    model_group.add_argument('--learning-rate', type=float,
+                           default=0.01,
+                           help='Base learning rate for optimizer')
     
     # Optimization parameters
     optim_group = parser.add_argument_group('Optimization')
@@ -1072,7 +1071,7 @@ def setup_argument_parser():
                            metavar='LIMIT',
                            help='Time limit (e.g. 1:30 or 1h30m)')
     optim_group.add_argument('-T', '--total-iterations', type=int,
-                           metavar='N',default=1000,
+                           metavar='N', default=1000,
                            help='Total limit on outer loop iterations')
     optim_group.add_argument('-f', '--full-iter', type=int,
                            metavar='N', default=10000,
@@ -1083,30 +1082,33 @@ def setup_argument_parser():
     optim_group.add_argument('-F', '--full-every', type=int,
                            metavar='N', default=32,
                            help='Perform joint optimization every N outer loops')
-    optim_group.add_argument('-r', '--local-learning-rate', type=float,
+    optim_group.add_argument('--local-lr', type=float,
                            metavar='R', default=0.01,
                            help='Learning rate for local optimization')
-    optim_group.add_argument('-R', '--full-learning-rate', type=float,
+    optim_group.add_argument('--full-lr', type=float,
                            metavar='R', default=0.0005,
                            help='Learning rate for full optimization')
     
-    # Advanced optimization options
-    advanced_group = parser.add_argument_group('Advanced Optimization')
-    advanced_group.add_argument('-P', '--perturb-amount', type=float,
-                              metavar='R', default=0.15,
-                              help='Amount to perturb replacement fits')
-    advanced_group.add_argument('-c', '--copy-quantity', type=float,
-                              metavar='C', default=0.5,
-                              help='Number or fraction of re-fits to initialize with current model')
-    advanced_group.add_argument('-a', '--anneal-temp', type=float,
-                              metavar='T', default=0.08,
-                              help='Temperature for simulated annealing')
-    advanced_group.add_argument('--mixed-precision', action='store_true',
-                              help='Enable mixed precision training')
-    advanced_group.add_argument('--force-cpu', action='store_true',
-                              help='Force CPU usage even if GPU is available')
+    # Curriculum learning
+    curriculum_group = parser.add_argument_group('Curriculum Learning')
+    curriculum_group.add_argument('--sigma-schedule', type=float, nargs='+',
+                                default=[20.0, 10.0, 5.0, 2.0],
+                                help='Schedule of max sigma values')
+    curriculum_group.add_argument('--frequency-schedule', type=float, nargs='+',
+                                default=[0.02, 0.05, 0.1, 0.2],
+                                help='Schedule of max frequency values')
     
-    # Snapshot/visualization options
+    # State management
+    state_group = parser.add_argument_group('State Management')
+    state_group.add_argument('--load-state', type=str,
+                           help='Load initial state from checkpoint file')
+    state_group.add_argument('--save-best', type=str,
+                           help='Save best model state to file')
+    state_group.add_argument('--checkpoint-dir', type=str,
+                           default='checkpoints',
+                           help='Directory for saving checkpoints')
+    
+    # Visualization
     vis_group = parser.add_argument_group('Visualization')
     vis_group.add_argument('-S', '--label-snapshot', action='store_true',
                           help='Individually label snapshots')
