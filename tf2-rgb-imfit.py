@@ -927,6 +927,7 @@ def optimize_with_curriculum(input_image, opts, weights=None):
             for stage, (max_sigma, max_freq) in enumerate(zip(
                 opts.sigma_schedules, opts.frequency_schedules)):
                 print(f"\nSigma schedules: {opts.sigma_schedules}")
+                print(f"\ntotal iterations: {opts.total_iterations}")
                 print(f"\nStage {stage + 1}/{len(opts.sigma_schedules)}")
                 print(f"Max sigma: {max_sigma:.1f}, Max frequency: {max_freq:.3f}")
                 
