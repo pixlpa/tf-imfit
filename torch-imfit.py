@@ -9,6 +9,7 @@ import os
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import scipy.signal
+from torchvision.transforms.functional import gaussian_blur
 
 class GaborLayer(nn.Module):
     def __init__(self, num_gabors=256):
@@ -131,47 +132,23 @@ class ImageFitter:
         self.model = GaborLayer(num_gabors).to(device)
         # Initialize model parameters if provided
         self.init_parameters(init)
-        
-        # Add phase tracking
-        self.optimization_phase = 'global'  # 'global' or 'local'
-        
-        # Initialize separate optimizers for different phases
-        self.global_optimizer = optim.AdamW(
+        # Use AdamW optimizer with weight decay
+        self.optimizer = optim.AdamW(
             self.model.parameters(),
             lr=0.03,
             weight_decay=1e-4,
             betas=(0.9, 0.999)
         )
         
-        self.local_optimizer = optim.AdamW(
-            self.model.parameters(),
-            lr=0.01,
-            weight_decay=1e-5,
-            betas=(0.9, 0.999)
-        )
-        
-        self.optimizer = self.global_optimizer  # Start with global optimizer
-        
-        # Separate schedulers for each phase
-        self.global_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.global_optimizer,
+        # More aggressive learning rate scheduling
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer,
             mode='min',
             factor=0.5,
             patience=50,
             verbose=True,
             min_lr=1e-5
         )
-        
-        self.local_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.local_optimizer,
-            mode='min',
-            factor=0.5,
-            patience=30,
-            verbose=True,
-            min_lr=1e-6
-        )
-        
-        self.scheduler = self.global_scheduler
         
         # Use a combination of MSE and L1 loss
         self.mse_criterion = nn.MSELoss()
@@ -264,86 +241,28 @@ class ImageFitter:
             
             return weights.squeeze(0)
 
-    def switch_to_local_phase(self):
-        """Switch optimization from global to local phase"""
-        self.optimization_phase = 'local'
-        self.optimizer = self.local_optimizer
-        self.scheduler = self.local_scheduler
-        
-        # Reduce dropout for fine-tuning
-        self.model.dropout.p = 0.0001
-        
-        # Update mutation settings
-        self.mutation_prob = 0.00005
-        
-        print("Switching to local optimization phase...")
-
-    def get_phase_specific_weights(self):
-        """Get weights specific to current optimization phase"""
-        if self.optimization_phase == 'global':
-            # For global phase, use smoother weights
-            weights = self.weights.clone()
-            # Apply Gaussian blur to weights
-            kernel_size = 9
-            sigma = 2.0
-            weights = torch.nn.functional.gaussian_blur(
-                weights.unsqueeze(0),
-                kernel_size=(kernel_size, kernel_size),
-                sigma=(sigma, sigma)
-            ).squeeze(0)
-            return weights
-        else:
-            # For local phase, use sharp weights and enhance high-frequency regions
-            weights = self.weights.clone()
-            # Enhance edge weights
-            weights = weights ** 1.5
-            return weights
-
     def train_step(self, iteration, max_iterations):
-        # Switch to local phase halfway through
-        if iteration == max_iterations // 2:
-            self.switch_to_local_phase()
-        
         self.optimizer.zero_grad()
         
         # Update temperature
         self.update_temperature(iteration, max_iterations)
-        
-        # Get phase-specific weights
-        phase_weights = self.get_phase_specific_weights()
-        
-        # Adjust dropout based on phase
-        dropout_active = True
-        if self.optimization_phase == 'local':
-            dropout_active = iteration < (max_iterations * 0.9)
         
         # Forward pass with current temperature
         output = self.model(
             self.grid_x, 
             self.grid_y, 
             temperature=self.current_temp,
-            dropout_active=dropout_active
+            dropout_active=(iteration < max_iterations * 0.8)  # Disable dropout near end
         )
         
-        # Calculate loss with phase-specific weights
-        loss = self.weighted_loss(output, self.target, phase_weights)
+        # Calculate loss
+        loss = self.weighted_loss(output, self.target, self.weights)
         
-        # Add random mutation (less aggressive in local phase)
-        if self.optimization_phase == 'global':
-            self.mutate_parameters()
-        else:
-            # More selective mutation in local phase
-            if np.random.random() < self.mutation_prob / 2:
-                self.mutate_parameters()
+        # Add random mutation
+        self.mutate_parameters()
         
         loss.backward()
-        
-        # Adjust gradient clipping based on phase
-        if self.optimization_phase == 'global':
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
-        else:
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.2)
-        
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
         self.optimizer.step()
         self.scheduler.step(loss)
         
@@ -395,6 +314,27 @@ class ImageFitter:
                     f.write(f"  Aspect ratio (γ): {params['gamma'][i]:.4f}\n")
                     f.write(f"  Amplitude (RGB): {[f'{a:.4f}' for a in params['amplitude'][i]]}\n")
                     f.write("\n")
+
+    def get_phase_specific_weights(self):
+        """Get weights specific to current optimization phase"""
+        if self.optimization_phase == 'global':
+            # For global phase, use smoother weights
+            weights = self.weights.clone()
+            # Apply Gaussian blur to weights
+            kernel_size = 9
+            sigma = 2.0
+            weights = gaussian_blur(
+                weights.unsqueeze(0).unsqueeze(0),  # Add batch and channel dimensions
+                kernel_size=kernel_size,
+                sigma=sigma
+            ).squeeze(0).squeeze(0)  # Remove batch and channel dimensions
+            return weights
+        else:
+            # For local phase, use sharp weights and enhance high-frequency regions
+            weights = self.weights.clone()
+            # Enhance edge weights
+            weights = weights ** 1.5
+            return weights
 
 def main():
     """Run Gabor image fitting on an input image."""
