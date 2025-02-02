@@ -159,12 +159,16 @@ class ImageFitter:
         self.best_state = None
         
         # Add temperature scheduling
-        self.initial_temp = 0.05
+        self.initial_temp = 0.2
         self.min_temp = 0.00000001
         self.current_temp = self.initial_temp
         
         # Add mutation probability
-        self.mutation_prob = 0.0001
+        self.mutation_prob = 0.001
+        
+        # Add phase tracking
+        self.optimization_phase = 'global'  # 'global' or 'local'
+        self.phase_split = 0.5  # default value, will be updated from args
 
     def init_parameters(self, init):
         if init is not None:
@@ -242,6 +246,10 @@ class ImageFitter:
             return weights.squeeze(0)
 
     def train_step(self, iteration, max_iterations):
+        # Switch to local phase at the specified split point
+        if iteration == int(max_iterations * self.phase_split):
+            self.switch_to_local_phase()
+        
         self.optimizer.zero_grad()
         
         # Update temperature
@@ -376,6 +384,8 @@ def main():
 
     # Initialize fitter with target size
     fitter = ImageFitter(args.image, args.weight, args.num_gabors, target_size, args.device, args.init)
+    # Set the phase split from arguments
+    fitter.phase_split = args.phase_split
 
     # Training loop
     print(f"Training on {args.device}...")
