@@ -8,6 +8,7 @@ import argparse
 import os
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import scipy.signal
 
 class GaborLayer(nn.Module):
     def __init__(self, num_gabors=256):
@@ -94,7 +95,7 @@ class ImageFitter:
         if target_size is not None:
             w,h = target_size
         
-        # Load and process weight image if provided
+        # Enhanced weight calculation if no weight_path provided
         if weight_path:
             weight_img = Image.open(weight_path).convert('L')  # Convert to grayscale
             weight_img = weight_img.resize((w, h), Image.Resampling.LANCZOS)
@@ -102,7 +103,24 @@ class ImageFitter:
             # Normalize weights to average to 1
             self.weights = self.weights / self.weights.mean()
         else:
-            self.weights = torch.ones_like(self.target[0]).to(device)
+            # Calculate edge-based weights using Sobel filters
+            target_np = self.target.cpu().numpy()
+            gray = np.mean(target_np, axis=0)  # Convert to grayscale
+            
+            # Apply Sobel filters
+            dx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
+            dy = dx.T
+            grad_x = np.abs(scipy.signal.convolve2d(gray, dx, mode='same', boundary='symm'))
+            grad_y = np.abs(scipy.signal.convolve2d(gray, dy, mode='same', boundary='symm'))
+            
+            # Combine gradients and normalize
+            edge_weights = np.sqrt(grad_x**2 + grad_y**2)
+            edge_weights = edge_weights / edge_weights.mean()
+            
+            # Add bias to ensure non-edge regions still get some weight
+            edge_weights = 0.5 + 0.5 * edge_weights
+            
+            self.weights = torch.from_numpy(edge_weights).float().to(device)
 
         # Create coordinate grid
         y, x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
@@ -180,15 +198,47 @@ class ImageFitter:
         )
 
     def weighted_loss(self, output, target, weights):
-        # Apply weights to each channel
+        # Enhanced weighted loss function
         mse_per_pixel = (output - target).pow(2)
         l1_per_pixel = torch.abs(output - target)
         
-        # Sum across channels, then apply weights
-        mse_loss = (mse_per_pixel.mean(dim=0) * weights).mean()
-        l1_loss = (l1_per_pixel.mean(dim=0) * weights).mean()
+        # Apply frequency-based weighting
+        high_freq_weight = self.get_frequency_weights(output, target)
+        combined_weights = weights * high_freq_weight
         
-        return mse_loss + 0.1 * l1_loss
+        # Sum across channels, then apply weights
+        mse_loss = (mse_per_pixel.mean(dim=0) * combined_weights).mean()
+        l1_loss = (l1_per_pixel.mean(dim=0) * combined_weights).mean()
+        
+        # Add perceptual loss term
+        perceptual_loss = self.perceptual_loss(output, target) if hasattr(self, 'perceptual_loss') else 0
+        
+        return mse_loss + 0.1 * l1_loss + 0.01 * perceptual_loss
+
+    def get_frequency_weights(self, output, target):
+        """Calculate weights based on local frequency content"""
+        with torch.no_grad():
+            # Convert to grayscale
+            output_gray = output.mean(dim=0, keepdim=True)
+            target_gray = target.mean(dim=0, keepdim=True)
+            
+            # Calculate local variance (proxy for frequency content)
+            kernel_size = 5
+            padding = kernel_size // 2
+            kernel = torch.ones(1, 1, kernel_size, kernel_size).to(output.device) / (kernel_size * kernel_size)
+            
+            # Calculate local mean
+            target_mean = torch.nn.functional.conv2d(target_gray, kernel, padding=padding)
+            local_var = torch.nn.functional.conv2d((target_gray - target_mean)**2, kernel, padding=padding)
+            
+            # Normalize weights
+            weights = torch.sqrt(local_var)
+            weights = weights / weights.mean()
+            
+            # Add bias to ensure low-frequency regions still get some weight
+            weights = 0.3 + 0.7 * weights
+            
+            return weights.squeeze(0)
 
     def train_step(self, iteration, max_iterations):
         self.optimizer.zero_grad()
