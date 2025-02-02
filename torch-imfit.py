@@ -20,7 +20,7 @@ class GaborLayer(nn.Module):
         # Wider range of initial sizes
         self.sigma = nn.Parameter(torch.randn(num_gabors) * 0.7 - 1.0)  # log-space, more varied sizes
         self.lambda_ = nn.Parameter(torch.randn(num_gabors) * 0.7)  # log-space, more varied frequencies
-        self.psi = nn.Parameter(torch.rand(num_gabors) * 2 * np.pi)  # [0, 2π]
+        self.psi = nn.Parameter(torch.randn(num_gabors,3) * 2 * np.pi)  # [0, 2π]
         self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.2)  # slightly elliptical Gabors
         # Initialize amplitudes with color correlation
         self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.05)
@@ -166,7 +166,7 @@ class ImageFitter:
                 self.model.theta.data[idx] = (torch.rand(num_mutate, device=device) * np.pi)
                 self.model.sigma.data[idx] = (torch.randn(num_mutate, device=device) * 0.7 - 1.0)
                 self.model.lambda_.data[idx] = (torch.randn(num_mutate, device=device) * 0.7)
-                self.model.psi.data[idx] = (torch.rand(num_mutate, device=device) * 2 * np.pi)
+                self.model.psi.data[idx] = (torch.randn(num_mutate, 3, device=device) * 2 * np.pi)
                 self.model.gamma.data[idx] = (torch.randn(num_mutate, device=device) * 0.2)
                 self.model.amplitude.data[idx] = (torch.randn(num_mutate, 3, device=device) * 0.05)
 
@@ -257,7 +257,7 @@ class ImageFitter:
                     f.write(f"  Orientation (θ): {params['theta'][i]:.4f}\n")
                     f.write(f"  Size (σ): {params['sigma'][i]:.4f}\n")
                     f.write(f"  Wavelength (λ): {params['lambda'][i]:.4f}\n")
-                    f.write(f"  Phase (ψ): {params['psi'][i]:.4f}\n")
+                    f.write(f"  Phase (ψ): {[f'{a:.4f}' for a in params['psi'][i]]}\n")
                     f.write(f"  Aspect ratio (γ): {params['gamma'][i]:.4f}\n")
                     f.write(f"  Amplitude (RGB): {[f'{a:.4f}' for a in params['amplitude'][i]]}\n")
                     f.write("\n")
