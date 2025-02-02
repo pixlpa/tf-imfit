@@ -360,6 +360,8 @@ def main():
                        help='Device to run on (cuda/cpu)')
     parser.add_argument('--output-dir', type=str, default='results',
                        help='Directory for output files')
+    parser.add_argument('--phase-split', type=float, default=0.25,
+                       help='Fraction of iterations to spend in global phase (0-1)')
     args = parser.parse_args()
 
     # Create output directory if it doesn't exist
