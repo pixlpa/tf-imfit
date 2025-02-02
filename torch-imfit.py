@@ -51,10 +51,12 @@ class GaborLayer(nn.Module):
 
         # Compute Gabor functions
         gaussian = torch.exp(-(x_rot**2 + (gamma[:,None,None] * y_rot)**2) / (2 * sigma[:,None,None]**2))
-        sinusoid = torch.cos(2 * np.pi * x_rot / lambda_[:,None,None] + psi[:,None,None])
         
-        # Modified: compute Gabor functions for each color channel
-        gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid[:, None, :, :]
+        # Modified: handle psi for each color channel separately
+        sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / lambda_[:, None, None, None] + psi[:, :, None, None])
+        
+        # Compute Gabor functions for each color channel
+        gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
         
         # Apply dropout during training if requested
         if dropout_active and self.training:
