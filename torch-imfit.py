@@ -355,6 +355,20 @@ class ImageFitter:
             weights = weights ** 1.5
             return weights
 
+    def switch_to_local_phase(self):
+        """Switch optimization from global to local phase"""
+        self.optimization_phase = 'local'
+        self.optimizer = self.local_optimizer
+        self.scheduler = self.local_scheduler
+        
+        # Reduce dropout for fine-tuning
+        self.model.dropout.p = 0.0001
+        
+        # Update mutation settings
+        self.mutation_prob = 0.00005
+        
+        print("Switching to local optimization phase...")
+
 def main():
     """Run Gabor image fitting on an input image."""
     # Parse command line arguments
