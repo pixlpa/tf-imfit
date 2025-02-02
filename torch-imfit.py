@@ -67,7 +67,9 @@ class GaborLayer(nn.Module):
         return torch.sum(gabors, dim=0)  # Returns shape [3, H, W]
 
 class ImageFitter:
-    def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, device='cuda' if torch.cuda.is_available() else 'cpu', init=None):
+    def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 
+                 device='cuda' if torch.cuda.is_available() else 'cpu', init=None,
+                 global_lr=0.03, local_lr=0.01):  # Add learning rate parameters
         image = Image.open(image_path).convert('RGB')
         
         # Resize image if target_size is specified
@@ -132,13 +134,22 @@ class ImageFitter:
         self.model = GaborLayer(num_gabors).to(device)
         # Initialize model parameters if provided
         self.init_parameters(init)
-        # Use AdamW optimizer with weight decay
-        self.optimizer = optim.AdamW(
+        # Initialize optimizers with provided learning rates
+        self.global_optimizer = optim.AdamW(
             self.model.parameters(),
-            lr=0.03,
+            lr=global_lr,
             weight_decay=1e-4,
             betas=(0.9, 0.999)
         )
+        
+        self.local_optimizer = optim.AdamW(
+            self.model.parameters(),
+            lr=local_lr,
+            weight_decay=1e-5,
+            betas=(0.9, 0.999)
+        )
+        
+        self.optimizer = self.global_optimizer  # Start with global optimizer
         
         # More aggressive learning rate scheduling
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -370,6 +381,10 @@ def main():
                        help='Directory for output files')
     parser.add_argument('--phase-split', type=float, default=0.25,
                        help='Fraction of iterations to spend in global phase (0-1)')
+    parser.add_argument('--global-lr', type=float, default=0.03,
+                       help='Learning rate for global phase')
+    parser.add_argument('--local-lr', type=float, default=0.01,
+                       help='Learning rate for local phase')
     args = parser.parse_args()
 
     # Create output directory if it doesn't exist
@@ -382,8 +397,17 @@ def main():
     elif args.width is not None and args.height is not None:
         target_size = (args.width, args.height)
 
-    # Initialize fitter with target size
-    fitter = ImageFitter(args.image, args.weight, args.num_gabors, target_size, args.device, args.init)
+    # Initialize fitter with target size and learning rates
+    fitter = ImageFitter(
+        args.image, 
+        args.weight, 
+        args.num_gabors, 
+        target_size, 
+        args.device, 
+        args.init,
+        global_lr=args.global_lr,
+        local_lr=args.local_lr
+    )
     # Set the phase split from arguments
     fitter.phase_split = args.phase_split
 
