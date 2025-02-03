@@ -779,7 +779,23 @@ def local_optimize(opts, inputs, models, state,
                    cur_approx, cur_con_losses, cur_target,
                    is_replace, model_idx, loop_count,
                    model_start_idx, prev_best_loss):
-
+    """
+    Optimize a bunch of randomly-initialized small ensembles in parallel.
+    
+    Parameters:
+    - opts: Options object
+    - inputs: Inputs tuple
+    - models: Models tuple
+    - state: State tuple
+    - cur_approx: Current approximation
+    - cur_con_losses: Current constraint losses
+    - cur_target: Current target
+    - is_replace: Whether to replace existing models
+    - model_idx: Current model index
+    - loop_count: Current loop count
+    - model_start_idx: Current model start index
+    - prev_best_loss: Previous best loss value
+    """
     if prev_best_loss is not None:
         print('  loss before local fit is', prev_best_loss)
         
@@ -952,7 +968,7 @@ def main():
             # Do a big parallel optimization for a bunch of random
             # model initializations
             prev_best_loss = local_optimize(opts, inputs, models,
-                                            state, None,  # removed sess parameter
+                                            state,  # removed sess parameter
                                             cur_approx, cur_con_losses,
                                             cur_target,
                                             is_replace, model_idx, 
