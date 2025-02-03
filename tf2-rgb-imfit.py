@@ -737,10 +737,21 @@ def snapshot(cur_gabor, cur_approx,
         
     else:
         max_rowval = min(model_start_idx, opts.num_models)
-        inputs.max_row.assign(max_rowval)
-        preview_image = models.preview.approx.numpy()[0]
-        ph, pw = preview_image.shape[:2]
+        print(f"\nPreview debug:")
+        print(f"max_rowval: {max_rowval}")
+        print(f"model_start_idx: {model_start_idx}")
+        print(f"opts.num_models: {opts.num_models}")
         
+        inputs.max_row.assign(max_rowval)
+        
+        # Force preview model to update
+        models.preview.params.assign(models.full.params.numpy())
+        
+        preview_image = models.preview.approx.numpy()[0]
+        print(f"preview model params shape: {models.preview.params.shape}")
+        print(f"preview model params range: {models.preview.params.numpy().min():.3f} to {models.preview.params.numpy().max():.3f}")
+        
+        ph, pw = preview_image.shape[:2]
         print(f"Preview before rescale: {preview_image.min():.3f} to {preview_image.max():.3f}")
         preview_image = rescale(preview_image, -1, 1)
         print(f"Preview after rescale: {preview_image.min()} to {preview_image.max()}")
