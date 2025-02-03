@@ -333,6 +333,12 @@ class ImageFitter:
         return total_loss
 
     def train_step(self, iteration, max_iterations):
+        """Training step with state verification"""
+        if iteration == 0:
+            print("\nParameters before first training step:")
+            for name, param in self.model.named_parameters():
+                print(f"{name}: range [{param.min():.3f}, {param.max():.3f}]")
+        
         # Switch to local phase at the specified split point
         if iteration == int(max_iterations * self.phase_split):
             self.switch_to_local_phase()
@@ -349,6 +355,11 @@ class ImageFitter:
             temperature=self.current_temp,
             dropout_active=(iteration < max_iterations * 0.8)  # Disable dropout near end
         )
+        
+        if iteration == 0:
+            print("\nParameters after model forward in first step:")
+            for name, param in self.model.named_parameters():
+                print(f"{name}: range [{param.min():.3f}, {param.max():.3f}]")
         
         # Calculate loss
         loss = self.weighted_loss(output, self.target, self.weights)
@@ -369,7 +380,13 @@ class ImageFitter:
         return loss.item()
 
     def get_current_image(self, use_best=True):
+        """Get current image with parameter state logging"""
         with torch.no_grad():
+            # Print key parameter stats
+            print("\nCurrent parameter state:")
+            for name, param in self.model.named_parameters():
+                print(f"{name}: range [{param.min():.3f}, {param.max():.3f}]")
+            
             if use_best and self.best_state is not None:
                 # Use the best model state for final output
                 current_state = {k: v.clone() for k, v in self.model.state_dict().items()}
