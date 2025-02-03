@@ -889,9 +889,9 @@ def local_optimize(opts, inputs, models, state,
         tmpparams[:,model_idx] = new_params[:,0]
         models.full.params.assign(tmpparams[None,:])
 
-    # Create snapshot
+    # Create snapshot with current state
     snapshot(new_gabor,
-             new_approx,  # This should be the current approximation
+             cur_approx + new_gabor,  # Add new gabor to current approximation
              opts, inputs, models,
              loop_count, model_start_idx+1, '')
 
