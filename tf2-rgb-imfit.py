@@ -349,11 +349,6 @@ class GaborModel(object):
     def _forward_pass(self):
         """Compute forward pass with numerical safeguards"""
         with tf.name_scope('forward_pass'):
-            # Debug prints for parameter ranges
-            print("\nForward Pass Debug:")
-            print("Input params shape:", self.params.shape)
-            print("Input params min/max:", tf.reduce_min(self.params), tf.reduce_max(self.params))
-            
             # Reshape gmin and gmax for broadcasting
             gmin = tf.reshape(self.gmin, [1, GABOR_NUM_PARAMS, 1])
             gmax = tf.reshape(self.gmax, [1, GABOR_NUM_PARAMS, 1])
@@ -364,7 +359,6 @@ class GaborModel(object):
                 clip_value_min=gmin,
                 clip_value_max=gmax
             )
-            print("Clipped params min/max:", tf.reduce_min(self.cparams), tf.reduce_max(self.cparams))
             
             # Extract parameters
             u = self.cparams[:,GABOR_PARAM_U,:]
@@ -377,16 +371,6 @@ class GaborModel(object):
             # Extract RGB parameters
             h = self.cparams[:,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]  # [batch, 3, models]
             p = self.cparams[:,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]  # [batch, 3, models]
-            
-            print("Parameter ranges:")
-            print(f"u: {tf.reduce_min(u)} to {tf.reduce_max(u)}")
-            print(f"v: {tf.reduce_min(v)} to {tf.reduce_max(v)}")
-            print(f"r: {tf.reduce_min(r)} to {tf.reduce_max(r)}")
-            print(f"l: {tf.reduce_min(l)} to {tf.reduce_max(l)}")
-            print(f"t: {tf.reduce_min(t)} to {tf.reduce_max(t)}")
-            print(f"s: {tf.reduce_min(s)} to {tf.reduce_max(s)}")
-            print(f"h: {tf.reduce_min(h)} to {tf.reduce_max(h)}")
-            print(f"p: {tf.reduce_min(p)} to {tf.reduce_max(p)}")
             
             # Add necessary dimensions for broadcasting
             u = u[:,None,None,None,:]  # [batch, 1, 1, 1, models]
@@ -422,10 +406,7 @@ class GaborModel(object):
             
             # Combine components with proper scaling for RGB
             self.gabor = tf.identity(h * w * ck, name='gabor')
-            print("Gabor output min/max:", tf.reduce_min(self.gabor), tf.reduce_max(self.gabor))
-            
             self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
-            print("Approx output min/max:", tf.reduce_min(self.approx), tf.reduce_max(self.approx))
             
             if self.target is not None:
                 self._compute_losses()
@@ -993,6 +974,13 @@ def main():
             # Done with this mini-ensemble
             model_start_idx += 1
 
+            # Debug print for condition check
+            print(f"Checking save condition: model_start_idx={model_start_idx}, "
+                  f"opts.num_models={opts.num_models}, "
+                  f"loop_count={loop_count}, "
+                  f"opts.full_every={opts.full_every}, "
+                  f"(loop_count + 1) % opts.full_every = {(loop_count + 1) % opts.full_every}")
+                  
             if ( model_start_idx >= opts.num_models and
                  (loop_count + 1) % opts.full_every == 0 ):
 
