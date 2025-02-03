@@ -742,12 +742,12 @@ def snapshot(cur_gabor, cur_approx,
         print(f"current_model: {current_model}")
         print(f"opts.num_models: {opts.num_models}")
         
-        # Set preview to only show current model
-        inputs.max_row.assign(1)
-        
-        # Create a new parameter array with zeros except for the current model
+        # Create a new parameter array with the current model in the first position
         preview_params = np.zeros_like(models.full.params.numpy())
-        preview_params[:,:,current_model] = models.full.params.numpy()[:,:,current_model]
+        preview_params[:,:,0] = models.full.params.numpy()[:,:,current_model]  # Put current model in first position
+        
+        # Set preview to show just this one model
+        inputs.max_row.assign(1)
         models.preview.params.assign(preview_params)
         
         # Force a forward pass to update the preview
@@ -757,15 +757,11 @@ def snapshot(cur_gabor, cur_approx,
         print(f"preview model params shape: {models.preview.params.shape}")
         print(f"preview model params range: {models.preview.params.numpy().min():.3f} to {models.preview.params.numpy().max():.3f}")
         print(f"preview approx shape: {preview_image.shape}")
-        
-        ph, pw = preview_image.shape[:2]
-        print(f"Preview before rescale: {preview_image.min():.3f} to {preview_image.max():.3f}")
-        preview_image = rescale(preview_image, -1, 1)
-        print(f"Preview after rescale: {preview_image.min()} to {preview_image.max()}")
+        print(f"Current model params: {preview_params[:,:,0].min():.3f} to {preview_params[:,:,0].max():.3f}")
         
         err_image = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
         err_image = Image.fromarray(err_image, 'RGB')
-        err_image = err_image.resize((pw, ph), resample=Image.NEAREST)
+        err_image = err_image.resize((preview_image.shape[1], preview_image.shape[0]), resample=Image.NEAREST)
         err_image = np.array(err_image)
         out_img = np.hstack((preview_image, err_image))
 
