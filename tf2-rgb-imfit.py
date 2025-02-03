@@ -907,7 +907,6 @@ def main():
         loop_count = -1
         if opts.time_limit != 0 and opts.total_iterations != 0:
             prev_best_loss = full_optimize(opts, inputs, models, state,
-                                           None,  # removed sess parameter
                                            loop_count,
                                            model_start_idx,
                                            prev_best_loss)
@@ -964,7 +963,7 @@ def main():
             # Do a big parallel optimization for a bunch of random
             # model initializations
             prev_best_loss, new_params, new_con_loss = local_optimize(opts, inputs, models,
-                                            state,  # removed sess parameter
+                                            state,
                                             cur_approx, cur_con_losses,
                                             cur_target,
                                             is_replace, model_idx, 
@@ -981,7 +980,6 @@ def main():
 
                 # Do a full optimization
                 prev_best_loss = full_optimize(opts, inputs, models, state,
-                                               None,  # removed sess parameter
                                                loop_count,
                                                model_start_idx,
                                                prev_best_loss)
