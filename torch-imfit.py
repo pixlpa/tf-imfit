@@ -43,33 +43,29 @@ class GaborLayer(nn.Module):
         return super().load_state_dict(state_dict, strict)
 
     def forward(self, grid_x, grid_y, temperature=1.0, dropout_active=True):
-        # Get image dimensions from grid
         H, W = grid_x.shape
         image_size = max(H, W)
         
-        # Convert parameters to proper ranges
-        u = self.u * 2 - 1  # [-1, 1]
-        v = self.v * 2 - 1  # [-1, 1] 
-        theta = self.theta * 2 * np.pi  # [0, 2π]
+        # Keep positions in [-1, 1]
+        u = self.u.clamp(-1, 1)
+        v = self.v.clamp(-1, 1)
+        theta = self.theta.clamp(0, np.pi)
         
-        # More controlled scaling of size and frequency
+        # Adjust base scale based on image size
         base_size = image_size / self.base_scale
         
-        # Scale sigma relative to image size
-        sigma = base_size * torch.exp(self.rel_sigma.clamp(-3, 3))
+        # More controlled scaling for sigma and frequency
+        sigma = base_size * (1.0 + torch.tanh(self.rel_sigma))  # Always positive, centered around base_size
+        wavelength = base_size * (1.0 + torch.tanh(self.rel_freq))  # Similar scale as sigma
         
-        # Scale wavelength relative to sigma to maintain appearance
-        wavelength = sigma * torch.exp(self.rel_freq.clamp(-3, 3))
+        gamma = 0.5 + torch.sigmoid(self.gamma)  # Keep aspect ratio positive and reasonable
         
-        gamma = torch.exp(self.gamma)
-        
-        # Add random noise during training
         if self.training:
-            u = u + torch.randn_like(u) * 0.0002 * temperature
-            v = v + torch.randn_like(v) * 0.0002 * temperature
-            theta = theta + torch.randn_like(theta) * 0.0002 * temperature
-            
-        # Compute rotated coordinates for each Gabor
+            u = u + torch.randn_like(u) * 0.0001 * temperature
+            v = v + torch.randn_like(v) * 0.0001 * temperature
+            theta = theta + torch.randn_like(theta) * 0.0001 * temperature
+        
+        # Compute rotated coordinates
         x_rot = (grid_x[None,:,:] - u[:,None,None]) * torch.cos(theta[:,None,None]) + \
                 (grid_y[None,:,:] - v[:,None,None]) * torch.sin(theta[:,None,None])
         y_rot = -(grid_x[None,:,:] - u[:,None,None]) * torch.sin(theta[:,None,None]) + \
@@ -81,18 +77,20 @@ class GaborLayer(nn.Module):
             min=-80, max=80
         ))
         
-        # Changed lambda_ to wavelength here
         sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / wavelength[:, None, None, None] + 
-                           self.psi[:, :, None, None])
+                           self.psi[:, :, None, None].clamp(-2*np.pi, 2*np.pi))
         
-        # Compute Gabor functions for each color channel
-        gabors = self.amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
+        # Scale amplitude
+        amplitude = torch.tanh(self.amplitude) * 0.5
         
-        # Apply dropout during training if requested
+        gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
         if dropout_active and self.training:
             gabors = self.dropout(gabors)
         
-        return torch.sum(gabors, dim=0)  # Returns shape [3, H, W]
+        result = torch.sum(gabors, dim=0)
+        result = torch.clamp(result, 0, 1)
+        
+        return result
 
     def enforce_parameter_ranges(self):
         """Enforce valid parameter ranges"""
