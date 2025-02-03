@@ -745,8 +745,9 @@ def snapshot(cur_gabor, cur_approx,
         # Set preview to only show current model
         inputs.max_row.assign(1)
         
-        # Get parameters for just the current model
-        preview_params = models.full.params.numpy()[:,:,current_model:current_model+1]
+        # Create a new parameter array with zeros except for the current model
+        preview_params = np.zeros_like(models.full.params.numpy())
+        preview_params[:,:,current_model] = models.full.params.numpy()[:,:,current_model]
         models.preview.params.assign(preview_params)
         
         # Force a forward pass to update the preview
