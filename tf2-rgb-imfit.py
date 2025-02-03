@@ -641,18 +641,6 @@ def rescale(idata, imin, imax, cmap=None):
 ######################################################################
 # Save a snapshot of the current state to a PNG file
 
-def create_progress_bar(current, total, width=None, height=20):
-    """Create a visual progress bar that matches the width of the output image"""
-    if width is None:
-        # Default width should match the output image width
-        width = 816  # This should match the total width of all horizontally stacked images
-        
-    bar = np.zeros((height, width, 3), dtype=np.uint8)
-    progress = int((current / total) * width)
-    bar[:, :progress, 1] = 255  # Green for completed
-    bar[:, progress:, 0] = 128  # Red for remaining
-    return bar
-
 def snapshot(cur_gabor, cur_approx,
              opts, inputs, models,
              loop_count, model_start_idx,
@@ -672,15 +660,6 @@ def snapshot(cur_gabor, cur_approx,
     if cur_gabor is None:
         cur_gabor = np.zeros_like(cur_approx)
         
-    # Print debug info
-    print("Debug - Image shapes and ranges:")
-    print("Input image:", inputs.input_image.shape, 
-          "range:", inputs.input_image.min(), "to", inputs.input_image.max())
-    print("Current approx:", cur_approx.shape, 
-          "range:", cur_approx.min(), "to", cur_approx.max())
-    print("Current gabor:", cur_gabor.shape, 
-          "range:", cur_gabor.min(), "to", cur_gabor.max())
-        
     # Ensure proper scaling for RGB values
     cur_abserr = np.abs(cur_approx - inputs.input_image)
     cur_abserr = cur_abserr * inputs.weight_image
@@ -698,10 +677,6 @@ def snapshot(cur_gabor, cur_approx,
         error_img = rescale(cur_abserr, 0, 1.0, COLORMAP)
         
         out_img = np.hstack((input_img, approx_img, gabor_img, error_img))
-        
-        # Create progress bar with matching width
-        progress_bar = create_progress_bar(model_start_idx, opts.num_models, 
-                                         width=out_img.shape[1])
         
     else:
         
@@ -723,13 +698,6 @@ def snapshot(cur_gabor, cur_approx,
         err_image = np.array(err_image)
 
         out_img = np.hstack((preview_image, err_image))
-        
-        # Create progress bar with matching width
-        progress_bar = create_progress_bar(model_start_idx, opts.num_models,
-                                         width=out_img.shape[1])
-    
-    # Add progress bar
-    out_img = np.vstack((progress_bar, out_img))
 
     out_img = Image.fromarray(out_img, 'RGB')
 
@@ -767,11 +735,6 @@ def full_optimize(opts, inputs, models, state,
             cur_approx = models.full.approx.numpy()[0]
             
             print('  loss at iter {:6d} is {}'.format(i+1, cur_loss))
-            print("Gabor output stats:", 
-                  "min:", tf.reduce_min(models.full.gabor).numpy(),
-                  "max:", tf.reduce_max(models.full.gabor).numpy(),
-                  "mean:", tf.reduce_mean(models.full.gabor).numpy())
-
             snapshot(None, cur_approx,
                      opts, inputs, models,
                      loop_count, model_start_idx, i)
@@ -852,22 +815,6 @@ def local_optimize(opts, inputs, models, state,
     for i in range(opts.local_iter):
         # Use the model's train_step method
         result = models.local.train_step()
-        
-        if i % 100 == 0:  # Print progress every 100 iterations
-            # Get current state for monitoring
-            current_state = models.local.get_current_state()
-            print(f"  Iteration {i}, Loss: {float(result['loss'])}")
-            print("Gabor output stats:", 
-                  "min:", tf.reduce_min(current_state['gabor']).numpy(),
-                  "max:", tf.reduce_max(current_state['gabor']).numpy(),
-                  "mean:", tf.reduce_mean(current_state['gabor']).numpy())
-            print("Parameter stats:",
-                  "min:", tf.reduce_min(current_state['params']).numpy(),
-                  "max:", tf.reduce_max(current_state['params']).numpy(),
-                  "mean:", tf.reduce_mean(current_state['params']).numpy())
-            print("Shapes:",
-                  "gabor:", current_state['gabor'].shape,
-                  "params:", current_state['params'].shape)
 
     # Get final state
     final_state = models.local.get_current_state()

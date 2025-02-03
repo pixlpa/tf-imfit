@@ -352,7 +352,6 @@ class GaborModel(object):
 
         cr = tf.cos(r)
         sr = tf.sin(r)
-
         f = np.float32(2*np.pi) / l
 
         s2 = s*s
