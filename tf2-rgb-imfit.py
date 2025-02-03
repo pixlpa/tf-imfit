@@ -810,7 +810,7 @@ def local_optimize(opts, inputs, models, state,
     inputs.target_tensor.assign(cur_target)
 
     # Training loop
-    for i in range(opts.local_iter):  # Add loop counter
+    for i in range(opts.local_iter):
         with tf.GradientTape() as tape:
             # Get trainable variables
             trainable_vars = models.local.params
@@ -825,12 +825,16 @@ def local_optimize(opts, inputs, models, state,
             print(f"cur_output shape: {cur_output.shape}")
             print(f"cur_target shape: {cur_target.shape}")
             
-            # Reshape target to match output shape:
-            # 1. Add batch dimension (200)
-            # 2. Add final singleton dimension (1)
-            cur_target = tf.expand_dims(cur_target, axis=0)  # Add batch dim
+            # Reshape target to match output shape
+            cur_target = tf.convert_to_tensor(cur_target)
+            cur_target = tf.reshape(cur_target, (1, *cur_target.shape))  # Add batch dim
             cur_target = tf.expand_dims(cur_target, axis=-1)  # Add final dim
-            cur_target = tf.tile(cur_target, [200, 1, 1, 1, 1])  # Repeat for batch size
+            
+            # Calculate the proper multiples for tiling
+            multiples = [cur_output.shape[0] // cur_target.shape[0]]  # Batch dimension
+            multiples.extend([1] * (len(cur_output.shape) - 1))  # Rest of dimensions
+            
+            cur_target = tf.tile(cur_target, multiples)
             
             print(f"Reshaped target shape: {cur_target.shape}")
             
