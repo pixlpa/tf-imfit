@@ -62,14 +62,19 @@ class GaborLayer(nn.Module):
         sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / lambda_[:, None, None, None] + self.psi[:, :, None, None])
         
         # Scale amplitude to prevent overflow
-        amplitude = torch.tanh(self.amplitude) * 0.25
+        amplitude = torch.tanh(self.amplitude) * 0.25  # Limit amplitude range
         
-        # Compute Gabors with black background
+        # Start with grey background
+        result = torch.ones(3, H, W, device=grid_x.device) * 0.5
+        
+        # Compute and add Gabors
         gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
         if dropout_active and self.training:
             gabors = self.dropout(gabors)
         
-        result = torch.sum(gabors, dim=0)
+        result = result + torch.sum(gabors, dim=0)
+        
+        # Ensure output stays in valid range
         result = torch.clamp(result, 0, 1)
         
         return result
