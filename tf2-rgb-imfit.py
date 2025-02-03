@@ -803,16 +803,28 @@ def local_optimize(opts, inputs, models, state,
     # Training loop
     for i in range(opts.local_iter):
         with tf.GradientTape() as tape:
-            # Use the model's built-in loss computation
-            loss = models.local.loss
+            # Ensure variables are being watched
+            tape.watch(models.local.params)
             
-        # Compute gradients
-        grads = tape.gradient(loss, [models.local.params])
+            # Forward pass
+            cur_output = models.local.gabor
+            
+            # Compute loss using tf.reduce_mean to maintain gradients
+            loss = tf.reduce_mean(tf.square(cur_output - cur_target))
+            
+            print(f"Loss shape: {loss.shape}, Loss value: {loss}")
+            print(f"Variables being trained: {[v.name for v in models.local.params]}")
+            
+        # Get gradients
+        grads = tape.gradient(loss, models.local.params)
         
-        if any(g is None for g in grads):
-            print("Warning: Some gradients are None. Loss value:", float(loss))
-            continue
-            
+        # Print gradient info for debugging
+        for grad, var in zip(grads, models.local.params):
+            if grad is None:
+                print(f"Gradient is None for variable {var.name}")
+            else:
+                print(f"Gradient stats for {var.name}: mean={tf.reduce_mean(grad)}, var={tf.math.reduce_variance(grad)}")
+        
         # Apply gradients
         models.local.opt.apply_gradients(zip(grads, [models.local.params]))
 
