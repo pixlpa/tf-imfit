@@ -48,24 +48,24 @@ class GaborLayer(nn.Module):
         image_size = max(H, W)
         base_size = image_size / self.base_scale
         
-        # Safe parameter transformations
-        u = torch.clamp(self.u, -1, 1)
-        v = torch.clamp(self.v, -1, 1)
-        theta = torch.clamp(self.theta, 0, np.pi)
+        # Safe parameter transformations with gradient preservation
+        u = self.u.clamp(-1, 1)
+        v = self.v.clamp(-1, 1)
+        theta = self.theta.clamp(0, np.pi)
         
         # Ensure positive sigma with safe scaling
-        sigma = base_size * (0.5 + 0.5 * torch.tanh(self.rel_sigma))  # [0.5, 1.5] * base_size
+        sigma = base_size * (0.5 + 0.5 * torch.tanh(self.rel_sigma.clamp(-5, 5)))
         
         # Safe wavelength calculation
-        wavelength = base_size * (0.5 + 0.5 * torch.tanh(self.rel_freq))  # [0.5, 1.5] * base_size
-        wavelength = torch.clamp(wavelength, min=base_size * 0.1)  # Prevent too small wavelengths
+        wavelength = base_size * (0.5 + 0.5 * torch.tanh(self.rel_freq.clamp(-5, 5)))
+        wavelength = torch.clamp(wavelength, min=base_size * 0.1)
         
         # Safe aspect ratio
-        gamma = 0.5 + 0.5 * torch.sigmoid(self.gamma)  # [0.5, 1.0]
+        gamma = 0.5 + 0.5 * torch.sigmoid(self.gamma.clamp(-5, 5))
         
-        # Add small noise during training
+        # Add small noise during training (with gradient preservation)
         if self.training:
-            noise = torch.randn_like(u) * 0.0001 * temperature
+            noise = torch.randn_like(u, device=u.device) * 0.0001 * temperature
             u = torch.clamp(u + noise, -1, 1)
             v = torch.clamp(v + noise, -1, 1)
             theta = torch.clamp(theta + noise, 0, np.pi)
@@ -83,12 +83,12 @@ class GaborLayer(nn.Module):
         ))
         
         # Safe sinusoid computation
-        phase = torch.clamp(self.psi, -np.pi, np.pi)
+        phase = self.psi.clamp(-np.pi, np.pi)
         sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / wavelength[:, None, None, None] + 
                            phase[:, :, None, None])
         
         # Safe amplitude scaling
-        amplitude = 0.2 * torch.tanh(self.amplitude)  # Smaller max amplitude
+        amplitude = 0.2 * torch.tanh(self.amplitude.clamp(-5, 5))
         
         # Combine components safely
         gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
@@ -97,11 +97,6 @@ class GaborLayer(nn.Module):
         
         result = torch.sum(gabors, dim=0)
         result = torch.clamp(result, 0, 1)
-        
-        # Final safety check
-        if torch.isnan(result).any():
-            print("Warning: NaN detected in output")
-            result = torch.zeros_like(result)
         
         return result
 
@@ -278,94 +273,21 @@ class ImageFitter:
             self.initial_temp * (1 - iteration / max_iterations)
         )
 
-    def weighted_loss(self, output, target, weights):
-        # Calculate multiple loss components
+    def weighted_loss(self, output, target, weights=None):
+        """Calculate weighted MSE loss with gradient preservation"""
+        if weights is None:
+            weights = torch.ones_like(target[0])
         
-        # 1. Per-pixel losses
-        mse_per_pixel = (output - target).pow(2)
-        l1_per_pixel = torch.abs(output - target)
+        # Ensure tensors have gradients
+        if not output.requires_grad:
+            output.requires_grad_(True)
+            
+        # Calculate MSE with weights
+        diff = (output - target) ** 2
+        weighted_diff = diff * weights[None, :, :]
+        loss = weighted_diff.mean()
         
-        # 2. Structural similarity
-        # Calculate local means and variances for structural comparison
-        kernel_size = 11
-        padding = kernel_size // 2
-        kernel = torch.ones(1, 1, kernel_size, kernel_size).to(output.device) / (kernel_size * kernel_size)
-        
-        # Calculate means
-        output_mean = torch.nn.functional.conv2d(
-            output.unsqueeze(0), kernel.expand(3, -1, -1, -1), 
-            padding=padding, groups=3
-        ).squeeze(0)
-        target_mean = torch.nn.functional.conv2d(
-            target.unsqueeze(0), kernel.expand(3, -1, -1, -1), 
-            padding=padding, groups=3
-        ).squeeze(0)
-        
-        # Calculate variances and covariance
-        output_var = torch.nn.functional.conv2d(
-            (output.unsqueeze(0) - output_mean.unsqueeze(0)).pow(2),
-            kernel.expand(3, -1, -1, -1),
-            padding=padding, groups=3
-        ).squeeze(0)
-        target_var = torch.nn.functional.conv2d(
-            (target.unsqueeze(0) - target_mean.unsqueeze(0)).pow(2),
-            kernel.expand(3, -1, -1, -1),
-            padding=padding, groups=3
-        ).squeeze(0)
-        
-        # Structural similarity term
-        c1 = 0.01 ** 2
-        c2 = 0.03 ** 2
-        ssim = ((2 * output_mean * target_mean + c1) * 
-                (2 * torch.sqrt(output_var * target_var) + c2)) / \
-               ((output_mean.pow(2) + target_mean.pow(2) + c1) * 
-                (output_var + target_var + c2))
-        
-        # 3. Edge detection loss
-        # Sobel filters for edge detection
-        sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], 
-                              device=output.device).float().unsqueeze(0).unsqueeze(0)
-        sobel_y = sobel_x.transpose(2, 3)
-        
-        # Calculate edges
-        output_edges_x = torch.nn.functional.conv2d(output.mean(dim=0, keepdim=True).unsqueeze(0), 
-                                                  sobel_x, padding=1)
-        output_edges_y = torch.nn.functional.conv2d(output.mean(dim=0, keepdim=True).unsqueeze(0), 
-                                                  sobel_y, padding=1)
-        target_edges_x = torch.nn.functional.conv2d(target.mean(dim=0, keepdim=True).unsqueeze(0), 
-                                                  sobel_x, padding=1)
-        target_edges_y = torch.nn.functional.conv2d(target.mean(dim=0, keepdim=True).unsqueeze(0), 
-                                                  sobel_y, padding=1)
-        
-        edge_loss = torch.mean(torch.abs(
-            torch.sqrt(output_edges_x.pow(2) + output_edges_y.pow(2)) -
-            torch.sqrt(target_edges_x.pow(2) + target_edges_y.pow(2))
-        ))
-        
-        # Combine losses with weights
-        pixel_loss = (
-            0.5 * (mse_per_pixel.mean(dim=0) * weights).mean() +  # MSE loss
-            0.5 * (l1_per_pixel.mean(dim=0) * weights).mean()     # L1 loss
-        )
-        structural_loss = (1 - ssim.mean(dim=0) * weights).mean()
-        
-        # Phase-specific loss weighting
-        if self.optimization_phase == 'global':
-            # In global phase, focus more on structural similarity
-            total_loss = (
-                0.7 * pixel_loss +
-                0.2 * structural_loss +
-                0.1 * edge_loss
-            )
-        else:
-            # In local phase, increase weight of edge and pixel losses
-            total_loss = (
-                0.8 * pixel_loss +
-                0.1 * structural_loss +
-                0.1 * edge_loss
-            )
-        
-        return total_loss
+        return loss
 
     def train_step(self, iteration, max_iterations):
         # Update temperature
