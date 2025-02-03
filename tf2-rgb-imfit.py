@@ -736,16 +736,18 @@ def snapshot(cur_gabor, cur_approx,
         out_img = np.hstack((input_img, approx_img, gabor_img, error_img))
         
     else:
-        max_rowval = min(model_start_idx, opts.num_models)
+        # Get current model index (subtract 1 since model_start_idx points to next model)
+        current_model = max(0, model_start_idx - 1)
         print(f"\nPreview debug:")
-        print(f"max_rowval: {max_rowval}")
-        print(f"model_start_idx: {model_start_idx}")
+        print(f"current_model: {current_model}")
         print(f"opts.num_models: {opts.num_models}")
         
-        inputs.max_row.assign(max_rowval)
+        # Set preview to only show current model
+        inputs.max_row.assign(1)
         
-        # Force preview model to update
-        models.preview.params.assign(models.full.params.numpy())
+        # Get parameters for just the current model
+        preview_params = models.full.params.numpy()[:,:,current_model:current_model+1]
+        models.preview.params.assign(preview_params)
         
         # Force a forward pass to update the preview
         _ = models.preview._forward_pass()
