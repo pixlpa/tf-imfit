@@ -664,8 +664,11 @@ def snapshot(cur_gabor, cur_approx,
         
         max_rowval = min(model_start_idx, opts.num_models)
 
-        feed_dict = { inputs.max_row: max_rowval }
-        preview_image = tf.keras.backend.eval(models.preview.approx)[0]
+        # Update max_row value
+        inputs.max_row.assign(max_rowval)
+        
+        # Get preview image directly
+        preview_image = models.preview.approx.numpy()[0]
 
         ph, pw = preview_image.shape[:2]
             
