@@ -63,11 +63,15 @@ class GaborLayer(nn.Module):
         y_rot = -(grid_x[None,:,:] - u[:,None,None]) * torch.sin(theta[:,None,None]) + \
                 (grid_y[None,:,:] - v[:,None,None]) * torch.cos(theta[:,None,None])
 
-        # Compute Gabor functions
-        gaussian = torch.exp(-(x_rot**2 + (gamma[:,None,None] * y_rot)**2) / (2 * sigma[:,None,None]**2))
+        # Compute Gabor functions with numerical stability
+        gaussian = torch.exp(torch.clamp(
+            -(x_rot**2 + (gamma[:,None,None] * y_rot)**2) / (2 * sigma[:,None,None]**2),
+            min=-80, max=80
+        ))
         
-        # Modified: handle psi for each color channel separately
-        sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / lambda_[:, None, None, None] + self.psi[:, :, None, None])
+        # Changed lambda_ to wavelength here
+        sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / wavelength[:, None, None, None] + 
+                           self.psi[:, :, None, None])
         
         # Compute Gabor functions for each color channel
         gabors = self.amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
