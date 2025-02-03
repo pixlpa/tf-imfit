@@ -299,16 +299,16 @@ class ImageFitter:
         if self.optimization_phase == 'global':
             # In global phase, focus more on structural similarity
             total_loss = (
-                0.2 * pixel_loss +
-                0.7 * structural_loss +
+                0.6 * pixel_loss +
+                0.3 * structural_loss +
                 0.1 * edge_loss
             )
         else:
             # In local phase, increase weight of edge and pixel losses
             total_loss = (
-                0.4 * pixel_loss +
-                0.2 * structural_loss +
-                0.4 * edge_loss
+                0.8 * pixel_loss +
+                0.1 * structural_loss +
+                0.1 * edge_loss
             )
         
         return total_loss
