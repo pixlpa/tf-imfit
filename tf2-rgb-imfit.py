@@ -792,11 +792,11 @@ def full_optimize(opts, inputs, models, state,
     }
     
     # Find best fit using per-fit losses
-    fidx = results['loss_per_fit'].argmin()
+    fidx = np.argmin(results['loss_per_fit'])
     
     # Get the best results
-    loss_per_fit = float(results['loss_per_fit'][fidx].item())
-    con_losses = float(results['con_losses'][fidx].item())
+    loss_per_fit = float(results['loss_per_fit'][fidx])  # Should be a scalar
+    con_losses = float(results['con_losses'][fidx])  # Should be a scalar
     new_loss = loss_per_fit + con_losses
     
     # Get the best gabor and approx
