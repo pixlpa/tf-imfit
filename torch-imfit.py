@@ -225,47 +225,93 @@ class ImageFitter:
         )
 
     def weighted_loss(self, output, target, weights):
-        # Enhanced weighted loss function
+        # Calculate multiple loss components
+        
+        # 1. Per-pixel losses
         mse_per_pixel = (output - target).pow(2)
         l1_per_pixel = torch.abs(output - target)
         
-        # Apply frequency-based weighting
-        high_freq_weight = self.get_frequency_weights(output, target)
-        combined_weights = weights * high_freq_weight
+        # 2. Structural similarity
+        # Calculate local means and variances for structural comparison
+        kernel_size = 11
+        padding = kernel_size // 2
+        kernel = torch.ones(1, 1, kernel_size, kernel_size).to(output.device) / (kernel_size * kernel_size)
         
-        # Sum across channels, then apply weights
-        mse_loss = (mse_per_pixel.mean(dim=0) * combined_weights).mean()
-        l1_loss = (l1_per_pixel.mean(dim=0) * combined_weights).mean()
+        # Calculate means
+        output_mean = torch.nn.functional.conv2d(
+            output.unsqueeze(0), kernel.expand(3, -1, -1, -1), 
+            padding=padding, groups=3
+        ).squeeze(0)
+        target_mean = torch.nn.functional.conv2d(
+            target.unsqueeze(0), kernel.expand(3, -1, -1, -1), 
+            padding=padding, groups=3
+        ).squeeze(0)
         
-        # Add perceptual loss term
-        perceptual_loss = self.perceptual_loss(output, target) if hasattr(self, 'perceptual_loss') else 0
+        # Calculate variances and covariance
+        output_var = torch.nn.functional.conv2d(
+            (output.unsqueeze(0) - output_mean.unsqueeze(0)).pow(2),
+            kernel.expand(3, -1, -1, -1),
+            padding=padding, groups=3
+        ).squeeze(0)
+        target_var = torch.nn.functional.conv2d(
+            (target.unsqueeze(0) - target_mean.unsqueeze(0)).pow(2),
+            kernel.expand(3, -1, -1, -1),
+            padding=padding, groups=3
+        ).squeeze(0)
         
-        return mse_loss + 0.1 * l1_loss + 0.01 * perceptual_loss
-
-    def get_frequency_weights(self, output, target):
-        """Calculate weights based on local frequency content"""
-        with torch.no_grad():
-            # Convert to grayscale
-            output_gray = output.mean(dim=0, keepdim=True)
-            target_gray = target.mean(dim=0, keepdim=True)
-            
-            # Calculate local variance (proxy for frequency content)
-            kernel_size = 5
-            padding = kernel_size // 2
-            kernel = torch.ones(1, 1, kernel_size, kernel_size).to(output.device) / (kernel_size * kernel_size)
-            
-            # Calculate local mean
-            target_mean = torch.nn.functional.conv2d(target_gray, kernel, padding=padding)
-            local_var = torch.nn.functional.conv2d((target_gray - target_mean)**2, kernel, padding=padding)
-            
-            # Normalize weights
-            weights = torch.sqrt(local_var)
-            weights = weights / weights.mean()
-            
-            # Add bias to ensure low-frequency regions still get some weight
-            weights = 0.3 + 0.7 * weights
-            
-            return weights.squeeze(0)
+        # Structural similarity term
+        c1 = 0.01 ** 2
+        c2 = 0.03 ** 2
+        ssim = ((2 * output_mean * target_mean + c1) * 
+                (2 * torch.sqrt(output_var * target_var) + c2)) / \
+               ((output_mean.pow(2) + target_mean.pow(2) + c1) * 
+                (output_var + target_var + c2))
+        
+        # 3. Edge detection loss
+        # Sobel filters for edge detection
+        sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], 
+                              device=output.device).float().unsqueeze(0).unsqueeze(0)
+        sobel_y = sobel_x.transpose(2, 3)
+        
+        # Calculate edges
+        output_edges_x = torch.nn.functional.conv2d(output.mean(dim=0, keepdim=True).unsqueeze(0), 
+                                                  sobel_x, padding=1)
+        output_edges_y = torch.nn.functional.conv2d(output.mean(dim=0, keepdim=True).unsqueeze(0), 
+                                                  sobel_y, padding=1)
+        target_edges_x = torch.nn.functional.conv2d(target.mean(dim=0, keepdim=True).unsqueeze(0), 
+                                                  sobel_x, padding=1)
+        target_edges_y = torch.nn.functional.conv2d(target.mean(dim=0, keepdim=True).unsqueeze(0), 
+                                                  sobel_y, padding=1)
+        
+        edge_loss = torch.mean(torch.abs(
+            torch.sqrt(output_edges_x.pow(2) + output_edges_y.pow(2)) -
+            torch.sqrt(target_edges_x.pow(2) + target_edges_y.pow(2))
+        ))
+        
+        # Combine losses with weights
+        pixel_loss = (
+            0.5 * (mse_per_pixel.mean(dim=0) * weights).mean() +  # MSE loss
+            0.5 * (l1_per_pixel.mean(dim=0) * weights).mean()     # L1 loss
+        )
+        structural_loss = (1 - ssim.mean(dim=0) * weights).mean()
+        
+        # Phase-specific loss weighting
+        if self.optimization_phase == 'global':
+            # In global phase, focus more on structural similarity
+            total_loss = (
+                0.4 * pixel_loss +
+                0.4 * structural_loss +
+                0.2 * edge_loss
+            )
+        else:
+            # In local phase, increase weight of edge and pixel losses
+            total_loss = (
+                0.3 * pixel_loss +
+                0.3 * structural_loss +
+                0.4 * edge_loss
+            )
+        
+        return total_loss
 
     def train_step(self, iteration, max_iterations):
         # Switch to local phase at the specified split point
