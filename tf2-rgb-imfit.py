@@ -730,60 +730,62 @@ def snapshot(cur_gabor, cur_approx,
 # Perform an optimization on the full joint model (expensive/slow).
 
 def full_optimize(opts, inputs, models, state,
-                  loop_count,
-                  model_start_idx,
-                  prev_best_loss,
-                  rollback_loss):
-
-    print('performing full optimization')
-
-    if rollback_loss is not None:
-        print('  best prev full loss is {}'.format(rollback_loss))
+                 loop_count,
+                 model_start_idx,
+                 prev_best_loss):
+    """Perform full optimization across all models"""
+    print("\nStarting full optimization:")
+    print(f"  Current loss: {prev_best_loss}")
+    print(f"  Model start index: {model_start_idx}")
+    print(f"  Loop count: {loop_count}")
     
-    print('  before full opt, loss: {}'.format(prev_best_loss))
-
-    models.full.params.assign(state.params[None,:])
-
-    max_rowval = min(model_start_idx, opts.num_models)
-    inputs.max_row.assign(max_rowval)
+    # Set the target tensor to the full input image
     inputs.target_tensor.assign(inputs.input_image)
-
+    
+    # Get initial state
+    initial_state = models.full.get_current_state()
+    print("Initial state:")
+    print(f"  Params shape: {initial_state['params'].shape}")
+    print(f"  Loss: {initial_state['err_loss_per_fit'].numpy()}")
+    
+    # Training loop
     for i in range(opts.full_iter):
         # Use the model's train_step method
-        loss = models.full.train_step()
-        
-        if ((i+1) % 1000 == 0 and (i+1) < opts.full_iter):
-            # Get current values
-            cur_loss = float(loss)
-            cur_approx = models.full.approx.numpy()[0]
-            
-            print('  loss at iter {:6d} is {}'.format(i+1, cur_loss))
-            snapshot(None, cur_approx,
-                     opts, inputs, models,
-                     loop_count, model_start_idx, i)
-
-    # Get final values
-    final_loss = float(models.full.loss)
-    final_gabor = models.full.gabor.numpy()[0]
-    final_approx = models.full.approx.numpy()[0]
-    final_params = models.full.cparams.numpy()[0]
-    final_con_losses = models.full.con_losses.numpy()[0]
-
-    print('  new final loss is now  {}'.format(final_loss))
-
-    snapshot(None, final_approx,
-             opts, inputs, models,
-             loop_count, model_start_idx, opts.full_iter-1)
-
-    if final_loss < prev_best_loss:
-        state.params[:,:max_rowval] = final_params
-        state.gabor[:,:,:,:max_rowval] = final_gabor[:,:,:,:max_rowval]
-        state.con_loss[:max_rowval] = final_con_losses[:max_rowval]
-        prev_best_loss = final_loss
-
-    print()
-
-    return prev_best_loss
+        result = models.full.train_step()
+        if i % 10 == 0:  # Print progress every 10 iterations
+            print(f"  Iteration {i}: loss = {result['err_loss_per_fit'].numpy()}")
+    
+    # Get final state
+    final_state = models.full.get_current_state()
+    
+    # Convert tensors to numpy arrays
+    results = {
+        'loss_per_fit': final_state['err_loss_per_fit'].numpy(),
+        'con_losses': final_state['con_losses'].numpy(),
+        'approx': final_state['approx'].numpy(),
+        'gabor': final_state['gabor'].numpy(),
+        'params': final_state['params'].numpy()
+    }
+    
+    # Find best fit using per-fit losses
+    fidx = results['loss_per_fit'].argmin()
+    
+    # Get the best results
+    new_loss = results['loss_per_fit'][fidx] + results['con_losses'][fidx]
+    
+    print("\nFull optimization complete:")
+    print(f"  Previous loss: {prev_best_loss}")
+    print(f"  New loss: {new_loss}")
+    print(f"  Improvement: {prev_best_loss - new_loss}")
+    
+    # Update state with best parameters if improved
+    if new_loss < prev_best_loss:
+        print("  Updating state with improved parameters")
+        state.params = results['params'][fidx]
+        return new_loss
+    else:
+        print("  Keeping previous parameters (no improvement)")
+        return prev_best_loss
 
 ######################################################################
 # Apply a small perturbation to the input parameters
@@ -908,8 +910,7 @@ def main():
                                            None,  # removed sess parameter
                                            loop_count,
                                            model_start_idx,
-                                           prev_best_loss,
-                                           rollback_loss)
+                                           prev_best_loss)
 
     rollback_state = copy_state(state)
     rollback_loss = prev_best_loss
@@ -983,8 +984,7 @@ def main():
                                                None,  # removed sess parameter
                                                loop_count,
                                                model_start_idx,
-                                               prev_best_loss,
-                                               rollback_loss)
+                                               prev_best_loss)
                 
                 if rollback_loss is None or prev_best_loss <= rollback_loss:
                     rollback_loss = prev_best_loss
