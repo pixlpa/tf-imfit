@@ -201,7 +201,7 @@ class ImageFitter:
 
     def init_parameters(self, init):
         if init is not None:
-            load_model(self, init)
+            self.load_model(self, init)
 
     def mutate_parameters(self):
         """Randomly mutate some Gabor functions to explore new solutions"""
