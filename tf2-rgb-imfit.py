@@ -324,7 +324,6 @@ class GaborModel(object):
                     maxval=self.gmax)
             self.params = tf.Variable(
                 initializer(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
-                           dtype=tf.float32),
                 trainable=True,
                 name='params')
 
@@ -830,17 +829,17 @@ def local_optimize(opts, inputs, models, state,
     
     # Convert tensors to numpy arrays
     results = {
-        'loss': final_state['loss'].numpy(),
+        'loss_per_fit': final_state['err_loss_per_fit'].numpy(),  # Per-fit losses
         'con_losses': final_state['con_losses'].numpy(),
         'approx': final_state['approx'].numpy(),
         'gabor': final_state['gabor'].numpy(),
         'params': final_state['params'].numpy()
     }
 
-    # Now we can use numpy operations
-    fidx = results['loss'].argmin()
+    # Find best fit using per-fit losses
+    fidx = results['loss_per_fit'].argmin()
 
-    new_loss = results['loss'][fidx] + cur_con_losses
+    new_loss = results['loss_per_fit'][fidx] + cur_con_losses
     new_approx = results['approx'][fidx]
     new_gabor = results['gabor'][fidx,...,0]  # Remove the last dimension
     new_params = results['params'][fidx]
@@ -852,7 +851,7 @@ def local_optimize(opts, inputs, models, state,
         models.full.params.assign(tmpparams[None,:])
 
     snapshot(new_gabor,
-             cur_approx + new_gabor,  # Now shapes should match
+             cur_approx + new_gabor,
              opts, inputs, models,
              loop_count, model_start_idx+1, '')
 
