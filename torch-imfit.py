@@ -434,13 +434,27 @@ class ImageFitter:
         print("Switching to local optimization phase...")
 
     def save_model(self, path):
-        """Save the model state"""
-        torch.save(self.model.state_dict(), path)
+        """Save the model state with parameter info"""
+        state_dict = self.model.state_dict()
+        print("\nSaving model parameters:")
+        for name, param in state_dict.items():
+            print(f"{name}: shape {param.shape}, range [{param.min():.3f}, {param.max():.3f}]")
+        torch.save(state_dict, path)
         print(f"Saved model to {path}")
 
     def load_model(self, path):
-        """Load the model state"""
-        self.model.load_state_dict(torch.load(path))
+        """Load the model state with parameter verification"""
+        state_dict = torch.load(path)
+        print("\nLoading model parameters:")
+        for name, param in state_dict.items():
+            print(f"{name}: shape {param.shape}, range [{param.min():.3f}, {param.max():.3f}]")
+        
+        # Print current model parameters before loading
+        print("\nCurrent model parameters before loading:")
+        for name, param in self.model.state_dict().items():
+            print(f"{name}: shape {param.shape}, range [{param.min():.3f}, {param.max():.3f}]")
+            
+        self.model.load_state_dict(state_dict)
         print(f"Loaded model from {path}")
 
 def main():
