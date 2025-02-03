@@ -624,18 +624,18 @@ def load_params(opts, inputs, models, state):
 # Rescale image to map given bounds to [0,255] uint8
 
 def rescale(idata, imin, imax, cmap=None):
-
     assert imax > imin
     img = (idata - imin) / (imax - imin)
     img = np.clip(img, 0, 1)
 
     if cmap is not None:
+        # For error images, convert to grayscale before applying colormap
         img = img.mean(axis=2)
-        
-    img = (img*255).astype(np.uint8)
-
-    if cmap is not None:
+        img = (img*255).astype(np.uint8)
         img = cmap[img]
+    else:
+        # For RGB images, scale each channel independently
+        img = (img*255).astype(np.uint8)
 
     return img
 
