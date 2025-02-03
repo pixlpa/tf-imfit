@@ -310,9 +310,10 @@ class GaborModel(object):
             self.params = params
         else:
             if initializer is None:
-                # Updated initializer syntax for TF2
-                initializer = tf.random.uniform_initializer(minval=gmin,
-                                                          maxval=gmax)
+                # Updated to use keras initializer
+                initializer = tf.keras.initializers.RandomUniform(
+                    minval=gmin,
+                    maxval=gmax)
 
             # n x 12 x e
             self.params = tf.Variable(
