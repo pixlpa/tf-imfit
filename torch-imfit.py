@@ -467,8 +467,6 @@ class ImageFitter:
             
         self.model.load_state_dict(state_dict)
         print(f"Loaded model from {path}")
-        if self.output_dir:
-            self.save_image(os.path.join(self.output_dir, 'initial_result.png'))
     
     def save_image(self, path):
         """Save the current image to a file"""
@@ -532,7 +530,8 @@ def main():
     )
     # Set the phase split from arguments
     fitter.phase_split = args.phase_split
-
+    if args.init:
+        fitter.save_image(os.path.join(args.output_dir, 'initial_result.png'))
     # Training loop
     print(f"Training on {args.device}...")
     with tqdm(total=args.iterations) as pbar:
