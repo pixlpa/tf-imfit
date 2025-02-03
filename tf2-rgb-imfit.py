@@ -304,33 +304,40 @@ class GaborModel(object):
         self.target = target
         self.max_row = ensemble_size if max_row is None else max_row
         
-        # Set up parameter ranges with numerical safeguards
-        self.gmin = GABOR_RANGE[:,0].reshape(1,GABOR_NUM_PARAMS,1)
-        self.gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1)
-        
         # Initialize parameters
         if params is not None:
             self.params = params
         else:
-            if initializer is None:
-                # Create properly shaped min/max values for initialization
-                minval = np.tile(GABOR_RANGE[:,0], (num_parallel, 1, ensemble_size))
-                maxval = np.tile(GABOR_RANGE[:,1], (num_parallel, 1, ensemble_size))
-                
-                initializer = tf.keras.initializers.RandomUniform(
-                    minval=minval,
-                    maxval=maxval)
-                
+            # Create random values directly using tf.random.uniform
+            random_values = tf.random.uniform(
+                shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
+                dtype=tf.float32
+            )
+            
+            # Scale and shift the random values to the desired ranges
+            ranges = GABOR_RANGE[:,1] - GABOR_RANGE[:,0]  # Range for each parameter
+            mins = GABOR_RANGE[:,0]  # Minimum for each parameter
+            
+            # Reshape for broadcasting
+            ranges = tf.reshape(ranges, [1, GABOR_NUM_PARAMS, 1])
+            mins = tf.reshape(mins, [1, GABOR_NUM_PARAMS, 1])
+            
+            # Scale random values to proper ranges
             self.params = tf.Variable(
-                initializer(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size)),
-                trainable=True, dtype=tf.float32,
+                random_values * ranges + mins,
+                trainable=True,
+                dtype=tf.float32,
                 name='params'
             )
-
+        
+        # Set up parameter ranges for clipping
+        self.gmin = tf.constant(GABOR_RANGE[:,0], dtype=tf.float32)
+        self.gmax = tf.constant(GABOR_RANGE[:,1], dtype=tf.float32)
+        
         # Set up optimizer with gradient clipping
         self.opt = tf.keras.optimizers.Adam(
             learning_rate=learning_rate,
-            clipnorm=1.0  # Add gradient clipping
+            clipnorm=1.0
         )
         
         # Initial forward pass
