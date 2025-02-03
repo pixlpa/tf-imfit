@@ -681,11 +681,15 @@ def snapshot(cur_gabor, cur_approx,
         outfile = '{}{:04d}{}.png'.format(
             opts.snapshot_prefix, loop_count+1, full_iteration)
 
-    if cur_gabor is None:
-        cur_gabor = np.zeros_like(cur_approx)
-        
     # Print debug info
     print("\nSnapshot debug:")
+    print(f"cur_gabor shape: {cur_gabor.shape if cur_gabor is not None else 'None'}")
+    print(f"cur_approx shape: {cur_approx.shape}")
+    
+    if cur_gabor is None or cur_gabor.size == 0:
+        print("Creating zero gabor array")
+        cur_gabor = np.zeros_like(cur_approx)
+    
     print(f"cur_gabor range: {cur_gabor.min():.3f} to {cur_gabor.max():.3f}")
     print(f"cur_approx range: {cur_approx.min():.3f} to {cur_approx.max():.3f}")
         
