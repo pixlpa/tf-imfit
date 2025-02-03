@@ -667,8 +667,16 @@ def rescale(img, src_min, src_max, colormap=None):
     img = (img * 255).astype(np.uint8)
     
     if colormap is not None:
-        # Apply colormap lookup
-        return colormap[img]
+        # Convert to RGB using colormap
+        if len(img.shape) == 3:
+            # Convert each channel separately
+            result = np.zeros((*img.shape[:2], 3), dtype=np.uint8)
+            for i in range(3):
+                result[..., i] = colormap[img[..., i]][..., i]
+            return result
+        else:
+            # Single channel image
+            return colormap[img]
     
     return img
 
@@ -702,7 +710,7 @@ def snapshot(cur_gabor, cur_approx,
     print(f"cur_approx range: {cur_approx.min():.3f} to {cur_approx.max():.3f}")
     print(f"input_image range: {inputs.input_image.min():.3f} to {inputs.input_image.max():.3f}")
         
-    # Ensure proper scaling for RGB values
+    # Calculate error
     cur_abserr = np.abs(cur_approx - inputs.input_image)
     cur_abserr = cur_abserr * inputs.weight_image
     cur_abserr = np.power(cur_abserr, 0.5) # boost low end to aid visualization
@@ -720,10 +728,10 @@ def snapshot(cur_gabor, cur_approx,
         error_img = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
         
         print(f"Scaled ranges:")
-        print(f"input_img: {input_img.min()} to {input_img.max()}")
-        print(f"approx_img: {approx_img.min()} to {approx_img.max()}")
-        print(f"gabor_img: {gabor_img.min()} to {gabor_img.max()}")
-        print(f"error_img: {error_img.min()} to {error_img.max()}")
+        print(f"input_img shape: {input_img.shape}, range: {input_img.min()} to {input_img.max()}")
+        print(f"approx_img shape: {approx_img.shape}, range: {approx_img.min()} to {approx_img.max()}")
+        print(f"gabor_img shape: {gabor_img.shape}, range: {gabor_img.min()} to {gabor_img.max()}")
+        print(f"error_img shape: {error_img.shape}, range: {error_img.min()} to {error_img.max()}")
         
         out_img = np.hstack((input_img, approx_img, gabor_img, error_img))
         
@@ -739,7 +747,7 @@ def snapshot(cur_gabor, cur_approx,
         err_image = np.array(err_image)
         out_img = np.hstack((preview_image, err_image))
 
-    out_img = Image.fromarray(out_img, 'RGB')
+    out_img = Image.fromarray(out_img.astype(np.uint8), 'RGB')
     out_img.save(outfile)
 
 ######################################################################
