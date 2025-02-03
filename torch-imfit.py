@@ -16,15 +16,16 @@ class GaborLayer(nn.Module):
         super().__init__()
         self.base_scale = base_scale
         
-        # Initialize parameters with proper ranges
-        self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1]
-        self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1]
-        self.theta = nn.Parameter(torch.rand(num_gabors) * np.pi)  # [0, π]
-        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 0.5)  # smaller variance
-        self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 0.5)   # smaller variance
-        self.psi = nn.Parameter(torch.randn(num_gabors, 3) * np.pi)   # phase
-        self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.4)      # aspect ratio
-        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.06)
+        # Initialize parameters with conservative ranges
+        self.u = nn.Parameter(torch.rand(num_gabors) * 1.6 - 0.8)  # [-0.8, 0.8]
+        self.v = nn.Parameter(torch.rand(num_gabors) * 1.6 - 0.8)  # [-0.8, 0.8]
+        self.theta = nn.Parameter(torch.rand(num_gabors) * 0.8 * np.pi)  # [0, 0.8π]
+        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 0.2)  # smaller variance
+        self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 0.2)   # smaller variance
+        self.gamma = nn.Parameter(torch.zeros(num_gabors))  # starts at 0.5 after sigmoid
+        self.psi = nn.Parameter(torch.rand(num_gabors, 3) * 2 * np.pi - np.pi)  # [-π, π]
+        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.1)  # smaller initial amplitudes
+        
         self.dropout = nn.Dropout(p=0.01)
 
     def load_state_dict(self, state_dict, strict=True):
@@ -45,25 +46,29 @@ class GaborLayer(nn.Module):
     def forward(self, grid_x, grid_y, temperature=1.0, dropout_active=True):
         H, W = grid_x.shape
         image_size = max(H, W)
-        
-        # Keep positions in [-1, 1]
-        u = self.u.clamp(-1, 1)
-        v = self.v.clamp(-1, 1)
-        theta = self.theta.clamp(0, np.pi)
-        
-        # Adjust base scale based on image size
         base_size = image_size / self.base_scale
         
-        # More controlled scaling for sigma and frequency
-        sigma = base_size * (1.0 + torch.tanh(self.rel_sigma))  # Always positive, centered around base_size
-        wavelength = base_size * (1.0 + torch.tanh(self.rel_freq))  # Similar scale as sigma
+        # Safe parameter transformations
+        u = torch.clamp(self.u, -1, 1)
+        v = torch.clamp(self.v, -1, 1)
+        theta = torch.clamp(self.theta, 0, np.pi)
         
-        gamma = 0.5 + torch.sigmoid(self.gamma)  # Keep aspect ratio positive and reasonable
+        # Ensure positive sigma with safe scaling
+        sigma = base_size * (0.5 + 0.5 * torch.tanh(self.rel_sigma))  # [0.5, 1.5] * base_size
         
+        # Safe wavelength calculation
+        wavelength = base_size * (0.5 + 0.5 * torch.tanh(self.rel_freq))  # [0.5, 1.5] * base_size
+        wavelength = torch.clamp(wavelength, min=base_size * 0.1)  # Prevent too small wavelengths
+        
+        # Safe aspect ratio
+        gamma = 0.5 + 0.5 * torch.sigmoid(self.gamma)  # [0.5, 1.0]
+        
+        # Add small noise during training
         if self.training:
-            u = u + torch.randn_like(u) * 0.0001 * temperature
-            v = v + torch.randn_like(v) * 0.0001 * temperature
-            theta = theta + torch.randn_like(theta) * 0.0001 * temperature
+            noise = torch.randn_like(u) * 0.0001 * temperature
+            u = torch.clamp(u + noise, -1, 1)
+            v = torch.clamp(v + noise, -1, 1)
+            theta = torch.clamp(theta + noise, 0, np.pi)
         
         # Compute rotated coordinates
         x_rot = (grid_x[None,:,:] - u[:,None,None]) * torch.cos(theta[:,None,None]) + \
@@ -71,24 +76,32 @@ class GaborLayer(nn.Module):
         y_rot = -(grid_x[None,:,:] - u[:,None,None]) * torch.sin(theta[:,None,None]) + \
                 (grid_y[None,:,:] - v[:,None,None]) * torch.cos(theta[:,None,None])
 
-        # Compute Gabor functions with numerical stability
+        # Safe gaussian computation
         gaussian = torch.exp(torch.clamp(
             -(x_rot**2 + (gamma[:,None,None] * y_rot)**2) / (2 * sigma[:,None,None]**2),
             min=-80, max=80
         ))
         
+        # Safe sinusoid computation
+        phase = torch.clamp(self.psi, -np.pi, np.pi)
         sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / wavelength[:, None, None, None] + 
-                           self.psi[:, :, None, None].clamp(-2*np.pi, 2*np.pi))
+                           phase[:, :, None, None])
         
-        # Scale amplitude
-        amplitude = torch.tanh(self.amplitude) * 0.5
+        # Safe amplitude scaling
+        amplitude = 0.2 * torch.tanh(self.amplitude)  # Smaller max amplitude
         
+        # Combine components safely
         gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
         if dropout_active and self.training:
             gabors = self.dropout(gabors)
         
         result = torch.sum(gabors, dim=0)
         result = torch.clamp(result, 0, 1)
+        
+        # Final safety check
+        if torch.isnan(result).any():
+            print("Warning: NaN detected in output")
+            result = torch.zeros_like(result)
         
         return result
 
