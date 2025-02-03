@@ -140,7 +140,8 @@ class ImageFitter:
         # Initialize model with improved training setup
         self.model = GaborLayer(num_gabors).to(device)
         # Initialize model parameters if provided
-        self.init_parameters(init)
+        if init:
+            self.init_parameters(init)
         # Initialize optimizers with provided learning rates
         self.global_optimizer = optim.AdamW(
             self.model.parameters(),
@@ -200,8 +201,10 @@ class ImageFitter:
         self.phase_split = 0.5  # default value, will be updated from args
 
     def init_parameters(self, init):
-        if init is not None:
-            self.load_model(self, init)
+        """Initialize parameters from a saved model"""
+        if init:
+            self.load_model(init)  # Remove self argument
+            print("Initialized parameters from", init)
 
     def mutate_parameters(self):
         """Randomly mutate some Gabor functions to explore new solutions"""
@@ -449,7 +452,6 @@ class ImageFitter:
         for name, param in state_dict.items():
             print(f"{name}: shape {param.shape}, range [{param.min():.3f}, {param.max():.3f}]")
         
-        # Print current model parameters before loading
         print("\nCurrent model parameters before loading:")
         for name, param in self.model.state_dict().items():
             print(f"{name}: shape {param.shape}, range [{param.min():.3f}, {param.max():.3f}]")
