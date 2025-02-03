@@ -124,7 +124,7 @@ def get_options():
 
     parser.add_argument('-f', '--full-iter', type=int, metavar='N',
                         help='maximum # of iterations for joint optimization',
-                        default=10000)
+                        default=1000)
 
     parser.add_argument('-r', '--local-learning-rate', type=float, metavar='R',
                         help='learning rate for local opt.',
