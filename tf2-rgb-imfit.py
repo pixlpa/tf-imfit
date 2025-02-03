@@ -1017,8 +1017,20 @@ def main():
                     state = copy_state(rollback_state)
                     
                 if opts.output is not None:
-                    np.savetxt(opts.output, state.params.transpose(),
+                    print("\nSaving state params:")
+                    print("Shape:", state.params.shape)
+                    print("Min/Max:", np.min(state.params), np.max(state.params))
+                    print("First few values:", state.params.flatten()[:5])
+                    
+                    # Convert to numpy if it's a tensor
+                    save_params = state.params.numpy() if tf.is_tensor(state.params) else state.params
+                    
+                    np.savetxt(opts.output, save_params.transpose(),
                                fmt='%f', delimiter=',')
+                    
+                    # Verify the save
+                    loaded = np.loadtxt(opts.output, delimiter=',')
+                    print("Verified saved file - Min/Max:", np.min(loaded), np.max(loaded))
                 
             # Finished with this loop iteration
             loop_count += 1
