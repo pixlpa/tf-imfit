@@ -315,8 +315,8 @@ class GaborModel(object):
             )
             
             # Scale and shift the random values to the desired ranges
-            ranges = GABOR_RANGE[:,1] - GABOR_RANGE[:,0]  # Range for each parameter
-            mins = GABOR_RANGE[:,0]  # Minimum for each parameter
+            ranges = tf.cast(GABOR_RANGE[:,1] - GABOR_RANGE[:,0], tf.float32)  # Range for each parameter
+            mins = tf.cast(GABOR_RANGE[:,0], tf.float32)  # Minimum for each parameter
             
             # Reshape for broadcasting
             ranges = tf.reshape(ranges, [1, GABOR_NUM_PARAMS, 1])
