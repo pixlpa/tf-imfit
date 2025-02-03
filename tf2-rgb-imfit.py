@@ -347,9 +347,9 @@ class GaborModel(object):
             u = self.cparams[:,GABOR_PARAM_U,:]
             v = self.cparams[:,GABOR_PARAM_V,:]
             r = self.cparams[:,GABOR_PARAM_R,:]
-            l = tf.maximum(self.cparams[:,GABOR_PARAM_L,:], self.eps)
-            t = tf.maximum(self.cparams[:,GABOR_PARAM_T,:], self.eps)
-            s = tf.maximum(self.cparams[:,GABOR_PARAM_S,:], self.eps)
+            l = self.cparams[:,GABOR_PARAM_L,:]
+            t = self.cparams[:,GABOR_PARAM_T,:]
+            s = self.cparams[:,GABOR_PARAM_S,:]
             
             # Extract RGB parameters
             h = self.cparams[:,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]  # [batch, 3, models]
@@ -365,15 +365,12 @@ class GaborModel(object):
             h = h[:,None,None,:,:]  # [batch, 1, 1, 3, models]
             p = p[:,None,None,:,:]
             
-            # Scale RGB amplitudes to [-1,1] range
-            h = 2.0 * tf.nn.sigmoid(h) - 1.0
-            
             # Compute Gabor function
             cr = tf.cos(r)
             sr = tf.sin(r)
             f = np.float32(2*np.pi) / l
-            s2 = s*s + self.eps
-            t2 = t*t + self.eps
+            s2 = s*s
+            t2 = t*t
             
             xp = self.x - u
             yp = self.y - v
@@ -384,18 +381,15 @@ class GaborModel(object):
             b12 = b1*b1
             b22 = b2*b2
             
-            exp_term = tf.clip_by_value(-b12/(2*s2) - b22/(2*t2), -88.0, 88.0)
+            exp_term = -b12/(2*s2) - b22/(2*t2)
             w = tf.exp(exp_term)  # Gaussian envelope [0,1]
             
             k = f*b1 + p
             ck = tf.cos(k)  # Oscillation [-1,1]
             
             # Combine components with proper scaling for RGB
-            self.gabor = h * w * ck  # Result should be in [-1,1] range per channel
-            self.approx = tf.reduce_sum(self.gabor, axis=4)
-            
-            # Ensure output is in valid range
-            self.approx = tf.clip_by_value(self.approx, -1.0, 1.0)
+            self.gabor = tf.identity(h * w * ck, name='gabor')
+            self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
             
             if self.target is not None:
                 self._compute_losses()
