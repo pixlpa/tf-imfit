@@ -384,7 +384,47 @@ class GaborModel(object):
 
     def _compute_losses(self):
         """Compute losses with numerical safeguards"""
-        # ... rest of the loss computation code remains the same ...
+        # Compute error loss
+        self.err = tf.multiply((self.target - self.approx), self.weight)
+        err_sqr = 0.5 * self.err**2
+        
+        # Per-fit error losses (average across h/w/c)
+        self.err_loss_per_fit = tf.reduce_mean(err_sqr, axis=(1,2,3))
+        # Overall error loss
+        self.err_loss = tf.reduce_mean(self.err_loss_per_fit)
+        
+        # Compute constraints
+        l = self.cparams[:,GABOR_PARAM_L,:]
+        s = self.cparams[:,GABOR_PARAM_S,:]
+        t = self.cparams[:,GABOR_PARAM_T,:]
+        
+        constraints = [
+            s - l/32,
+            l/2 - s,
+            t - s,
+            8*s - t
+        ]
+        
+        # Stack constraints (n x e x k)
+        self.constraints = tf.stack(constraints, axis=2)
+        
+        # Compute squared constraints (n x e x k)
+        con_sqr = tf.minimum(self.constraints, 0)**2
+        
+        # Per-model constraint losses (n x e)
+        self.con_losses = tf.reduce_sum(con_sqr, axis=2)
+        
+        # Per-fit constraint losses (n)
+        self.con_loss_per_fit = tf.reduce_sum(self.con_losses, axis=1)
+        
+        # Overall constraint loss
+        self.con_loss = tf.reduce_mean(self.con_loss_per_fit)
+        
+        # Total loss per fit (n)
+        self.loss_per_fit = self.err_loss_per_fit + self.con_loss_per_fit
+        
+        # Overall total loss
+        self.loss = self.err_loss + self.con_loss
 
     @tf.function
     def train_step(self):
