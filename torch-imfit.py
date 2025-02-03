@@ -440,25 +440,31 @@ class ImageFitter:
                     f.write("\n")
 
     def get_phase_specific_weights(self):
-        """Get weights specific to current optimization phase"""
+        """Calculate phase-specific importance weights"""
+        H, W = self.target.shape[-2:]
+        
+        # Create base weights
+        weights = torch.ones((H, W), device=self.target.device)
+        
+        # Add gaussian-weighted center focus
+        y, x = torch.meshgrid(
+            torch.linspace(-1, 1, H, device=self.target.device),
+            torch.linspace(-1, 1, W, device=self.target.device)
+        )
+        r = torch.sqrt(x*x + y*y)
+        gaussian_weight = torch.exp(-r * 2)
+        
         if self.optimization_phase == 'global':
-            # For global phase, use smoother weights
-            weights = self.weights.clone()
-            # Apply Gaussian blur to weights
-            kernel_size = 9
-            sigma = 2.0
-            weights = gaussian_blur(
-                weights.unsqueeze(0).unsqueeze(0),  # Add batch and channel dimensions
-                kernel_size=kernel_size,
-                sigma=sigma
-            ).squeeze(0).squeeze(0)  # Remove batch and channel dimensions
-            return weights
+            # Global phase: focus more on center
+            weights = weights * (0.5 + 0.5 * gaussian_weight)
         else:
-            # For local phase, use sharp weights and enhance high-frequency regions
-            weights = self.weights.clone()
-            # Enhance edge weights
-            weights = weights ** 1.5
-            return weights
+            # Local phase: more uniform weights with slight center bias
+            weights = weights * (0.8 + 0.2 * gaussian_weight)
+        
+        # Normalize weights
+        weights = weights / weights.mean()
+        
+        return weights
 
     def switch_to_local_phase(self):
         """Switch optimization from global to local phase"""
