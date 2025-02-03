@@ -646,20 +646,30 @@ def load_params(opts, inputs, models, state):
 ######################################################################
 # Rescale image to map given bounds to [0,255] uint8
 
-def rescale(idata, imin, imax, cmap=None):
-    assert imax > imin
-    img = (idata - imin) / (imax - imin)
-    img = np.clip(img, 0, 1)
-
-    if cmap is not None:
-        # For error images, convert to grayscale before applying colormap
-        img = img.mean(axis=2)
-        img = (img*255).astype(np.uint8)
-        img = cmap[img]
+def rescale(img, src_min, src_max, colormap=None):
+    """
+    Rescale image from [src_min,src_max] to [0,255] range.
+    If colormap provided, use it for the output instead of grayscale.
+    """
+    # Ensure float32 for calculations
+    img = img.astype(np.float32)
+    
+    # Scale to [0,1] range
+    if src_max != src_min:
+        img = (img - src_min) / (src_max - src_min)
     else:
-        # For RGB images, scale each channel independently
-        img = (img*255).astype(np.uint8)
-
+        img = np.zeros_like(img)
+    
+    # Clip to ensure we're in [0,1]
+    img = np.clip(img, 0, 1)
+    
+    # Scale to [0,255]
+    img = (img * 255).astype(np.uint8)
+    
+    if colormap is not None:
+        # Apply colormap lookup
+        return colormap[img]
+    
     return img
 
 ######################################################################
@@ -681,17 +691,16 @@ def snapshot(cur_gabor, cur_approx,
         outfile = '{}{:04d}{}.png'.format(
             opts.snapshot_prefix, loop_count+1, full_iteration)
 
-    # Print debug info
-    print("\nSnapshot debug:")
-    print(f"cur_gabor shape: {cur_gabor.shape if cur_gabor is not None else 'None'}")
-    print(f"cur_approx shape: {cur_approx.shape}")
-    
     if cur_gabor is None or cur_gabor.size == 0:
         print("Creating zero gabor array")
         cur_gabor = np.zeros_like(cur_approx)
     
+    print("\nSnapshot debug:")
+    print(f"cur_gabor shape: {cur_gabor.shape}")
+    print(f"cur_approx shape: {cur_approx.shape}")
     print(f"cur_gabor range: {cur_gabor.min():.3f} to {cur_gabor.max():.3f}")
     print(f"cur_approx range: {cur_approx.min():.3f} to {cur_approx.max():.3f}")
+    print(f"input_image range: {inputs.input_image.min():.3f} to {inputs.input_image.max():.3f}")
         
     # Ensure proper scaling for RGB values
     cur_abserr = np.abs(cur_approx - inputs.input_image)
@@ -704,13 +713,10 @@ def snapshot(cur_gabor, cur_approx,
         COLORMAP = get_colormap()
         
     if not opts.preview_size:
-        # Scale input image from [-1,1] to [0,255]
+        # Scale all images from their actual ranges to [0,255]
         input_img = rescale(inputs.input_image, -1, 1)
-        # Scale approximation from [-1,1] to [0,255]
         approx_img = rescale(cur_approx, -1, 1)
-        # Scale gabor from [-1,1] to [0,255]
         gabor_img = rescale(cur_gabor, -1, 1)
-        # Scale error from [0,1] to [0,255] with colormap
         error_img = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
         
         print(f"Scaled ranges:")
