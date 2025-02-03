@@ -818,29 +818,8 @@ def local_optimize(opts, inputs, models, state,
             # Ensure variables are being watched
             tape.watch(trainable_vars)
             
-            # Forward pass
-            cur_output = models.local.gabor
-            
-            # Debug shapes
-            print(f"cur_output shape: {cur_output.shape}")
-            print(f"cur_target shape: {cur_target.shape}")
-            
-            # Reshape target to match output shape
-            cur_target = tf.convert_to_tensor(cur_target)
-            cur_target = tf.reshape(cur_target, (1, *cur_target.shape))  # Add batch dim
-            cur_target = tf.expand_dims(cur_target, axis=-1)  # Add final dim
-            
-            # Calculate the proper multiples for tiling
-            multiples = [cur_output.shape[0] // cur_target.shape[0]]  # Batch dimension
-            multiples.extend([1] * (len(cur_output.shape) - 1))  # Rest of dimensions
-            
-            cur_target = tf.tile(cur_target, multiples)
-            
-            print(f"Reshaped target shape: {cur_target.shape}")
-            
-            # Compute loss using tf.reduce_mean
-            diff = cur_output - cur_target
-            loss = tf.reduce_mean(tf.square(diff))
+            # Forward pass - use the model's loss directly
+            loss = models.local.loss
             
             print(f"Loss value: {loss}")
         
@@ -850,11 +829,12 @@ def local_optimize(opts, inputs, models, state,
         # Apply gradients if they exist
         if grads is not None:
             models.local.opt.apply_gradients([(grads, trainable_vars)])
+            if i % 100 == 0:  # Print progress every 100 iterations
+                print(f"  Iteration {i}, Loss: {float(loss)}")
         else:
-            print("Warning: Gradients are None!")
-
-        if i % 100 == 0:  # Print progress every 100 iterations
-            print(f"  Iteration {i}, Loss: {float(loss)}")
+            print(f"Warning: Gradients are None at iteration {i}!")
+            print(f"Trainable vars shape: {trainable_vars.shape}")
+            print(f"Loss value: {float(loss)}")
 
     # Get results
     results = {
