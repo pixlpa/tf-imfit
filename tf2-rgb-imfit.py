@@ -709,14 +709,23 @@ def full_optimize(opts, inputs, models, state,
 
     for i in range(opts.full_iter):
         with tf.GradientTape() as tape:
+            # Get trainable variables
+            trainable_vars = models.full.params
+            
+            # Ensure variables are being watched
+            tape.watch(trainable_vars)
+            
             # Forward pass
             loss = models.full.loss
             
-        # Compute gradients
-        grads = tape.gradient(loss, models.full.params)
+        # Get gradients
+        grads = tape.gradient(loss, trainable_vars)
         
-        # Apply gradients
-        models.full.opt.apply_gradients([(grads, models.full.params)])
+        # Apply gradients if they exist
+        if grads is not None:
+            models.full.opt.apply_gradients([(grads, trainable_vars)])
+        else:
+            print("Warning: Gradients are None!")
 
         if ((i+1) % 1000 == 0 and (i+1) < opts.full_iter):
             # Get current values
@@ -801,46 +810,47 @@ def local_optimize(opts, inputs, models, state,
     inputs.target_tensor.assign(cur_target)
 
     # Training loop
-    with tf.GradientTape() as tape:
-        # Get trainable variables
-        trainable_vars = models.local.params
+    for i in range(opts.local_iter):  # Add loop counter
+        with tf.GradientTape() as tape:
+            # Get trainable variables
+            trainable_vars = models.local.params
+            
+            # Ensure variables are being watched
+            tape.watch(trainable_vars)
+            
+            # Forward pass
+            cur_output = models.local.gabor
+            
+            # Debug shapes
+            print(f"cur_output shape: {cur_output.shape}")
+            print(f"cur_target shape: {cur_target.shape}")
+            
+            # Reshape target to match output shape:
+            # 1. Add batch dimension (200)
+            # 2. Add final singleton dimension (1)
+            cur_target = tf.expand_dims(cur_target, axis=0)  # Add batch dim
+            cur_target = tf.expand_dims(cur_target, axis=-1)  # Add final dim
+            cur_target = tf.tile(cur_target, [200, 1, 1, 1, 1])  # Repeat for batch size
+            
+            print(f"Reshaped target shape: {cur_target.shape}")
+            
+            # Compute loss using tf.reduce_mean
+            diff = cur_output - cur_target
+            loss = tf.reduce_mean(tf.square(diff))
+            
+            print(f"Loss value: {loss}")
         
-        # Ensure variables are being watched
-        tape.watch(trainable_vars)
+        # Get gradients
+        grads = tape.gradient(loss, trainable_vars)
         
-        # Forward pass
-        cur_output = models.local.gabor
-        
-        # Debug shapes
-        print(f"cur_output shape: {cur_output.shape}")
-        print(f"cur_target shape: {cur_target.shape}")
-        
-        # Reshape target to match output shape:
-        # 1. Add batch dimension (200)
-        # 2. Add final singleton dimension (1)
-        cur_target = tf.expand_dims(cur_target, axis=0)  # Add batch dim
-        cur_target = tf.expand_dims(cur_target, axis=-1)  # Add final dim
-        cur_target = tf.tile(cur_target, [200, 1, 1, 1, 1])  # Repeat for batch size
-        
-        print(f"Reshaped target shape: {cur_target.shape}")
-        
-        # Compute loss using tf.reduce_mean
-        diff = cur_output - cur_target
-        loss = tf.reduce_mean(tf.square(diff))
-        
-        print(f"Loss value: {loss}")
-    
-    # Get gradients
-    grads = tape.gradient(loss, trainable_vars)
-    
-    # Apply gradients if they exist
-    if grads is not None:
-        models.local.opt.apply_gradients([(grads, trainable_vars)])
-    else:
-        print("Warning: Gradients are None!")
+        # Apply gradients if they exist
+        if grads is not None:
+            models.local.opt.apply_gradients([(grads, trainable_vars)])
+        else:
+            print("Warning: Gradients are None!")
 
-    if i % 100 == 0:  # Print progress every 100 iterations
-        print(f"  Iteration {i}, Loss: {float(loss)}")
+        if i % 100 == 0:  # Print progress every 100 iterations
+            print(f"  Iteration {i}, Loss: {float(loss)}")
 
     # Get results
     results = {
