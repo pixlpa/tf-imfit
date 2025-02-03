@@ -306,6 +306,9 @@ class GaborModel(object):
         
         # Initialize parameters
         if params is not None:
+            # Convert params to Variable if it isn't already
+            if not isinstance(params, tf.Variable):
+                params = tf.Variable(params, trainable=True, dtype=tf.float32)
             self.params = params
         else:
             # Create random values directly using tf.random.uniform
@@ -322,7 +325,7 @@ class GaborModel(object):
             ranges = tf.reshape(ranges, [1, GABOR_NUM_PARAMS, 1])
             mins = tf.reshape(mins, [1, GABOR_NUM_PARAMS, 1])
             
-            # Scale random values to proper ranges
+            # Scale random values to proper ranges and create Variable
             self.params = tf.Variable(
                 random_values * ranges + mins,
                 trainable=True,
@@ -576,7 +579,6 @@ def copy_state(state):
 # Load weights from file.
 
 def load_params(opts, inputs, models, state):
-
     if opts.input is not None:
         iparams = np.genfromtxt(opts.input, dtype=np.float32, delimiter=',')
         nparams = len(iparams)
@@ -599,8 +601,9 @@ def load_params(opts, inputs, models, state):
 
     state.params[:,:nparams] = iparams.transpose()
 
-    # Update the full model's parameters
-    models.full.params.assign(state.params[None,:])
+    # Update the full model's parameters using tf.Variable.assign
+    new_params = tf.constant(state.params[None,:], dtype=tf.float32)
+    models.full.params.assign(new_params)
 
     # Set the target and max_row
     inputs.target_tensor.assign(inputs.input_image)
@@ -619,7 +622,7 @@ def load_params(opts, inputs, models, state):
     prev_best_loss = err_loss + state.con_loss[:nparams].sum()
         
     if opts.preview_size:
-        models.full.params.assign(state.params[None,:])
+        models.preview.params.assign(new_params)
     
     snapshot(None, approx,
              opts, inputs, models,
