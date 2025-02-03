@@ -26,7 +26,7 @@ class GaborLayer(nn.Module):
         self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.4)  # slightly elliptical Gabors
         # Initialize amplitudes with color correlation
         self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.06)
-        self.dropout = nn.Dropout(p=0.001)  # Add dropout
+        self.dropout = nn.Dropout(p=0.01)  # Add dropout
 
     def forward(self, grid_x, grid_y, temperature=1.0, dropout_active=True):
         # Convert parameters to proper ranges
@@ -181,7 +181,7 @@ class ImageFitter:
         self.best_state = None
         
         # Add temperature scheduling
-        self.initial_temp = 0.5
+        self.initial_temp = 0.08
         self.min_temp = 0.00000001
         self.current_temp = self.initial_temp
         
@@ -202,7 +202,7 @@ class ImageFitter:
             with torch.no_grad():
                 # Randomly select 5% of Gabors to mutate
                 num_gabors = self.model.amplitude.shape[0]
-                num_mutate = max(1, int(0.001 * num_gabors))
+                num_mutate = max(1, int(0.01 * num_gabors))
                 idx = np.random.choice(num_gabors, num_mutate, replace=False)
                 
                 device = self.model.u.device  # Get the current device
