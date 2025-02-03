@@ -20,8 +20,8 @@ class GaborLayer(nn.Module):
         self.u = nn.Parameter(torch.rand(num_gabors) * 1.6 - 0.8)  # [-0.8, 0.8]
         self.v = nn.Parameter(torch.rand(num_gabors) * 1.6 - 0.8)  # [-0.8, 0.8]
         self.theta = nn.Parameter(torch.rand(num_gabors) * 0.8 * np.pi)  # [0, 0.8π]
-        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 0.2)  # smaller variance
-        self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 0.2)   # smaller variance
+        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 0.4)  # smaller variance
+        self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 0.8)   # smaller variance
         self.gamma = nn.Parameter(torch.zeros(num_gabors))  # starts at 0.5 after sigmoid
         self.psi = nn.Parameter(torch.rand(num_gabors, 3) * 2 * np.pi - np.pi)  # [-π, π]
         self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.1)  # smaller initial amplitudes
@@ -36,7 +36,7 @@ class GaborLayer(nn.Module):
             state_dict['v'].clamp_(-1, 1)
             state_dict['theta'].clamp_(0, np.pi)
             state_dict['rel_sigma'].clamp_(-3, 3)
-            state_dict['rel_freq'].clamp_(-3, 3)
+            state_dict['rel_freq']
             state_dict['psi'].clamp_(-2*np.pi, 2*np.pi)
             state_dict['gamma'].clamp_(-2, 2)
             state_dict['amplitude'].clamp_(-0.5, 0.5)
@@ -56,9 +56,6 @@ class GaborLayer(nn.Module):
         # Ensure positive sigma with safe scaling
         sigma = base_size * (0.5 + 0.5 * torch.tanh(self.rel_sigma.clamp(-5, 5)))
         
-        # Safe wavelength calculation
-        wavelength = base_size * (0.5 + 0.5 * torch.tanh(self.rel_freq.clamp(-5, 5)))
-        wavelength = torch.clamp(wavelength, min=base_size * 0.1)
         
         # Safe aspect ratio
         gamma = 0.5 + 0.5 * torch.sigmoid(self.gamma.clamp(-5, 5))
@@ -84,7 +81,7 @@ class GaborLayer(nn.Module):
         
         # Safe sinusoid computation
         phase = self.psi.clamp(-np.pi, np.pi)
-        sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / wavelength[:, None, None, None] + 
+        sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] * self.rel_freq[:, None, None, None] + 
                            phase[:, :, None, None])
         
         # Safe amplitude scaling
@@ -107,7 +104,7 @@ class GaborLayer(nn.Module):
             self.v.clamp_(-1, 1)
             self.theta.clamp_(0, np.pi)
             self.rel_sigma.clamp_(-3, 3)
-            self.rel_freq.clamp_(-3, 3)
+            self.rel_freq
             self.psi.clamp_(-2*np.pi, 2*np.pi)
             self.gamma.clamp_(-2, 2)
             self.amplitude.clamp_(-0.5, 0.5)
