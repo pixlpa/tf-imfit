@@ -318,9 +318,10 @@ class GaborModel(object):
                                                             dtype=tf.float32)
 
             # n x 12 x e
-            self.params = tf.Variable(
-                tf.random.uniform(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
-                                 minval=gmin, maxval=gmax, dtype=tf.float32)
+            self.params = tf.Variable(tf.random.uniform(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
+                                minval=gmin, maxval=gmax, dtype=tf.float32),
+                                trainable=True,
+                                name='params')
 
         gmin[:,:GABOR_PARAM_L,:] = -np.inf
         gmax[:,:GABOR_PARAM_L,:] =  np.inf
