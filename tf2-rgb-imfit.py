@@ -404,8 +404,64 @@ class GaborModel(object):
         with tf.name_scope('forward_pass'):
             self.cparams = tf.clip_by_value(self.params[:,:,:self.max_row],
                                           self.gmin, self.gmax)
-            # ... rest of forward pass computation ...
-            # (same as in train_step, store results as instance variables)
+            
+            # Extract parameters
+            u = self.cparams[:,None,None,None,GABOR_PARAM_U,:]
+            v = self.cparams[:,None,None,None,GABOR_PARAM_V,:]
+            r = self.cparams[:,None,None,None,GABOR_PARAM_R,:]
+            l = self.cparams[:,None,None,None,GABOR_PARAM_L,:]
+            t = self.cparams[:,None,None,None,GABOR_PARAM_T,:]
+            s = self.cparams[:,None,None,None,GABOR_PARAM_S,:]
+            p = self.cparams[:,None,None,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
+            h = self.cparams[:,None,None,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
+
+            # Compute Gabor function
+            cr = tf.cos(r)
+            sr = tf.sin(r)
+            f = np.float32(2*np.pi) / l
+            s2 = s*s
+            t2 = t*t
+            
+            xp = self.x - u
+            yp = self.y - v
+            
+            b1 = cr*xp + sr*yp
+            b2 = -sr*xp + cr*yp
+            
+            b12 = b1*b1
+            b22 = b2*b2
+            
+            w = tf.exp(-b12/(2*s2) - b22/(2*t2))
+            k = f*b1 + p
+            ck = tf.cos(k)
+            
+            # Compute Gabor output
+            self.gabor = h * w * ck
+            self.approx = tf.reduce_sum(self.gabor, axis=4)
+            
+            if target is not None:
+                # Compute losses
+                self.err = tf.multiply((target - self.approx), weight)
+                err_sqr = 0.5*self.err**2
+                self.err_loss = tf.reduce_mean(err_sqr)
+                
+                # Compute constraints
+                l = self.cparams[:,GABOR_PARAM_L,:]
+                s = self.cparams[:,GABOR_PARAM_S,:]
+                t = self.cparams[:,GABOR_PARAM_T,:]
+                
+                constraints = [
+                    s - l/32,
+                    l/2 - s,
+                    t - s,
+                    8*s - t
+                ]
+                
+                con_sqr = tf.minimum(tf.stack(constraints, axis=2), 0)**2
+                self.con_loss = tf.reduce_mean(tf.reduce_sum(con_sqr, axis=2))
+                
+                # Total loss
+                self.loss = self.err_loss + self.con_loss
 
 ######################################################################
 # Set up tensorflow models themselves. We need a separate model for
