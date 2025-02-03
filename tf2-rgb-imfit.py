@@ -350,8 +350,12 @@ class GaborModel(object):
             l = tf.maximum(self.cparams[:,None,None,None,GABOR_PARAM_L,:], self.eps)
             t = tf.maximum(self.cparams[:,None,None,None,GABOR_PARAM_T,:], self.eps)
             s = tf.maximum(self.cparams[:,None,None,None,GABOR_PARAM_S,:], self.eps)
-            p = self.cparams[:,None,None,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
-            h = self.cparams[:,None,None,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
+            
+            # RGB color parameters (3 channels)
+            h = tf.reshape(self.cparams[:,None,None,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:], 
+                          [-1, 1, 1, 3, self.max_row])  # Reshape to handle RGB
+            p = tf.reshape(self.cparams[:,None,None,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:],
+                          [-1, 1, 1, 3, self.max_row])  # Phase for each channel
 
             # Compute Gabor function with safeguards
             cr = tf.cos(r)
@@ -372,11 +376,13 @@ class GaborModel(object):
             # Clip exponential inputs to prevent overflow
             exp_term = tf.clip_by_value(-b12/(2*s2) - b22/(2*t2), -88.0, 88.0)
             w = tf.exp(exp_term)
-            k = f*b1 + p
+            
+            # Compute phase for each RGB channel
+            k = f*b1[...,None,:] + p  # Add channel dimension
             ck = tf.cos(k)
             
-            # Compute Gabor output
-            self.gabor = h * w * ck
+            # Compute Gabor output for each RGB channel
+            self.gabor = h * w[...,None,:] * ck  # Add channel dimension to w
             self.approx = tf.reduce_sum(self.gabor, axis=4)
             
             if self.target is not None:
@@ -630,16 +636,6 @@ def snapshot(cur_gabor, cur_approx,
              full_iteration):
     """
     Save a snapshot of the current state to a PNG file.
-    
-    Parameters:
-    - cur_gabor: Current Gabor function output or None
-    - cur_approx: Current approximation
-    - opts: Options object
-    - inputs: Inputs tuple
-    - models: Models tuple
-    - loop_count: Current loop count
-    - model_start_idx: Current model start index
-    - full_iteration: Current full iteration count or string
     """
     if not opts.label_snapshot:
         outfile = '{}.png'.format(opts.snapshot_prefix)
@@ -653,6 +649,7 @@ def snapshot(cur_gabor, cur_approx,
     if cur_gabor is None:
         cur_gabor = np.zeros_like(cur_approx)
         
+    # Ensure proper scaling for RGB values
     cur_abserr = np.abs(cur_approx - inputs.input_image)
     cur_abserr = cur_abserr * inputs.weight_image
     cur_abserr = np.power(cur_abserr, 0.5) # boost low end to aid visualization
@@ -661,14 +658,21 @@ def snapshot(cur_gabor, cur_approx,
     
     if COLORMAP is None:
         COLORMAP = get_colormap()
-
         
     if not opts.preview_size:
+        # Scale RGB values to [0, 255] range
+        input_img = rescale(inputs.input_image, -1, 1)
+        approx_img = rescale(cur_approx, -1, 1)
+        gabor_img = rescale(cur_gabor, -1, 1)
+        error_img = rescale(cur_abserr, 0, 1.0, COLORMAP)
         
-        out_img = np.hstack(( rescale(inputs.input_image, -1, 1),
-                              rescale(cur_approx, -1, 1),
-                              rescale(cur_gabor, -1, 1),
-                              rescale(cur_abserr, 0, 1.0, COLORMAP) ))
+        out_img = np.hstack((input_img, approx_img, gabor_img, error_img))
+        
+        # Ensure output is in uint8 format
+        out_img = out_img.astype(np.uint8)
+        
+        # Save image
+        Image.fromarray(out_img).save(outfile)
 
     else:
         
