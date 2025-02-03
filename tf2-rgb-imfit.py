@@ -305,23 +305,22 @@ class GaborModel(object):
         self.max_row = ensemble_size if max_row is None else max_row
         
         # Set up parameter ranges with numerical safeguards
-        self.gmin = GABOR_RANGE[:,0].reshape(1,GABOR_NUM_PARAMS,1).copy()
-        self.gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1).copy()
+        self.gmin = GABOR_RANGE[:,0].reshape(1,GABOR_NUM_PARAMS,1)
+        self.gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1)
         
-        # Add small epsilon to prevent division by zero
-        self.eps = 1e-10
-        self.gmin[0,GABOR_PARAM_L,0] = self.eps  # Prevent division by zero in wavelength
-        self.gmin[0,GABOR_PARAM_S,0] = self.eps  # Prevent division by zero in sigma
-        self.gmin[0,GABOR_PARAM_T,0] = self.eps  # Prevent division by zero in theta
-            
         # Initialize parameters
         if params is not None:
             self.params = params
         else:
             if initializer is None:
+                # Create properly shaped min/max values for initialization
+                minval = np.tile(GABOR_RANGE[:,0], (num_parallel, 1, ensemble_size))
+                maxval = np.tile(GABOR_RANGE[:,1], (num_parallel, 1, ensemble_size))
+                
                 initializer = tf.keras.initializers.RandomUniform(
-                    minval=self.gmin,
-                    maxval=self.gmax)
+                    minval=minval,
+                    maxval=maxval)
+                
             self.params = tf.Variable(
                 initializer(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size)),
                 trainable=True, dtype=tf.float32,
