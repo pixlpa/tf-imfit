@@ -684,6 +684,11 @@ def snapshot(cur_gabor, cur_approx,
     if cur_gabor is None:
         cur_gabor = np.zeros_like(cur_approx)
         
+    # Print debug info
+    print("\nSnapshot debug:")
+    print(f"cur_gabor range: {cur_gabor.min():.3f} to {cur_gabor.max():.3f}")
+    print(f"cur_approx range: {cur_approx.min():.3f} to {cur_approx.max():.3f}")
+        
     # Ensure proper scaling for RGB values
     cur_abserr = np.abs(cur_approx - inputs.input_image)
     cur_abserr = cur_abserr * inputs.weight_image
@@ -695,36 +700,36 @@ def snapshot(cur_gabor, cur_approx,
         COLORMAP = get_colormap()
         
     if not opts.preview_size:
+        # Scale input image from [-1,1] to [0,255]
         input_img = rescale(inputs.input_image, -1, 1)
+        # Scale approximation from [-1,1] to [0,255]
         approx_img = rescale(cur_approx, -1, 1)
+        # Scale gabor from [-1,1] to [0,255]
         gabor_img = rescale(cur_gabor, -1, 1)
-        error_img = rescale(cur_abserr, 0, 1.0, COLORMAP)
+        # Scale error from [0,1] to [0,255] with colormap
+        error_img = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
+        
+        print(f"Scaled ranges:")
+        print(f"input_img: {input_img.min()} to {input_img.max()}")
+        print(f"approx_img: {approx_img.min()} to {approx_img.max()}")
+        print(f"gabor_img: {gabor_img.min()} to {gabor_img.max()}")
+        print(f"error_img: {error_img.min()} to {error_img.max()}")
         
         out_img = np.hstack((input_img, approx_img, gabor_img, error_img))
         
     else:
-        
         max_rowval = min(model_start_idx, opts.num_models)
-
-        # Update max_row value
         inputs.max_row.assign(max_rowval)
-        
-        # Get preview image directly
         preview_image = models.preview.approx.numpy()[0]
-
         ph, pw = preview_image.shape[:2]
-            
         preview_image = rescale(preview_image, -1, 1)
-
-        err_image = rescale(cur_abserr, 0, 1.0, COLORMAP)
+        err_image = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
         err_image = Image.fromarray(err_image, 'RGB')
         err_image = err_image.resize((pw, ph), resample=Image.NEAREST)
         err_image = np.array(err_image)
-
         out_img = np.hstack((preview_image, err_image))
 
     out_img = Image.fromarray(out_img, 'RGB')
-
     out_img.save(outfile)
 
 ######################################################################
