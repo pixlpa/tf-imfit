@@ -344,28 +344,36 @@ class GaborModel(object):
                                           self.gmin, self.gmax)
             
             # Extract parameters
-            u = self.cparams[:,None,None,None,GABOR_PARAM_U,:]
-            v = self.cparams[:,None,None,None,GABOR_PARAM_V,:]
-            r = self.cparams[:,None,None,None,GABOR_PARAM_R,:]
-            l = tf.maximum(self.cparams[:,None,None,None,GABOR_PARAM_L,:], self.eps)
-            t = tf.maximum(self.cparams[:,None,None,None,GABOR_PARAM_T,:], self.eps)
-            s = tf.maximum(self.cparams[:,None,None,None,GABOR_PARAM_S,:], self.eps)
+            u = self.cparams[:,GABOR_PARAM_U,:]
+            v = self.cparams[:,GABOR_PARAM_V,:]
+            r = self.cparams[:,GABOR_PARAM_R,:]
+            l = tf.maximum(self.cparams[:,GABOR_PARAM_L,:], self.eps)
+            t = tf.maximum(self.cparams[:,GABOR_PARAM_T,:], self.eps)
+            s = tf.maximum(self.cparams[:,GABOR_PARAM_S,:], self.eps)
             
-            # RGB color parameters (3 channels)
-            h = tf.reshape(self.cparams[:,None,None,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:], 
-                          [-1, 1, 1, 3, self.max_row])  # Reshape to handle RGB
-            p = tf.reshape(self.cparams[:,None,None,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:],
-                          [-1, 1, 1, 3, self.max_row])  # Phase for each channel
+            # Extract RGB parameters
+            h = self.cparams[:,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]  # [batch, 3, models]
+            p = self.cparams[:,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]  # [batch, 3, models]
+            
+            # Add necessary dimensions for broadcasting
+            u = u[:,None,None,None,:]  # [batch, 1, 1, 1, models]
+            v = v[:,None,None,None,:]
+            r = r[:,None,None,None,:]
+            l = l[:,None,None,None,:]
+            t = t[:,None,None,None,:]
+            s = s[:,None,None,None,:]
+            h = h[:,None,None,:,:]  # [batch, 1, 1, 3, models]
+            p = p[:,None,None,:,:]
 
-            # Compute Gabor function with safeguards
+            # Compute Gabor function
             cr = tf.cos(r)
             sr = tf.sin(r)
             f = np.float32(2*np.pi) / l
-            s2 = s*s + self.eps  # Add eps to prevent division by zero
-            t2 = t*t + self.eps  # Add eps to prevent division by zero
+            s2 = s*s + self.eps
+            t2 = t*t + self.eps
             
-            xp = self.x - u
-            yp = self.y - v
+            xp = self.x - u  # self.x is [1, 1, w, 1, 1]
+            yp = self.y - v  # self.y is [1, h, 1, 1, 1]
             
             b1 = cr*xp + sr*yp
             b2 = -sr*xp + cr*yp
@@ -373,17 +381,14 @@ class GaborModel(object):
             b12 = b1*b1
             b22 = b2*b2
             
-            # Clip exponential inputs to prevent overflow
             exp_term = tf.clip_by_value(-b12/(2*s2) - b22/(2*t2), -88.0, 88.0)
-            w = tf.exp(exp_term)
+            w = tf.exp(exp_term)  # [batch, h, w, 1, models]
             
-            # Compute phase for each RGB channel
-            k = f*b1[...,None,:] + p  # Add channel dimension
-            ck = tf.cos(k)
+            k = f*b1 + p  # Broadcasting handles the RGB channels
+            ck = tf.cos(k)  # [batch, h, w, 3, models]
             
-            # Compute Gabor output for each RGB channel
-            self.gabor = h * w[...,None,:] * ck  # Add channel dimension to w
-            self.approx = tf.reduce_sum(self.gabor, axis=4)
+            self.gabor = h * w * ck  # [batch, h, w, 3, models]
+            self.approx = tf.reduce_sum(self.gabor, axis=4)  # [batch, h, w, 3]
             
             if self.target is not None:
                 self._compute_losses()
