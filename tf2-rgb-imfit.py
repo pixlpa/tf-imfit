@@ -582,7 +582,7 @@ def load_params(opts, inputs, models, state):
         models.full.params.assign(state.params[None,:])
     
     snapshot(None, approx,
-             opts, inputs, models, None,
+             opts, inputs, models,
              -1, nparams, '')
     
     print('initial loss is {}'.format(prev_best_loss))
@@ -618,7 +618,19 @@ def snapshot(cur_gabor, cur_approx,
              opts, inputs, models,
              loop_count, model_start_idx,
              full_iteration):
-
+    """
+    Save a snapshot of the current state to a PNG file.
+    
+    Parameters:
+    - cur_gabor: Current Gabor function output or None
+    - cur_approx: Current approximation
+    - opts: Options object
+    - inputs: Inputs tuple
+    - models: Models tuple
+    - loop_count: Current loop count
+    - model_start_idx: Current model start index
+    - full_iteration: Current full iteration count or string
+    """
     if not opts.label_snapshot:
         outfile = '{}.png'.format(opts.snapshot_prefix)
     elif isinstance(full_iteration, int):
@@ -710,9 +722,8 @@ def full_optimize(opts, inputs, models, state,
             
             print('  loss at iter {:6d} is {}'.format(i+1, cur_loss))
 
-            snapshot(None,
-                     cur_approx,
-                     opts, inputs, models, None,
+            snapshot(None, cur_approx,
+                     opts, inputs, models,
                      loop_count, model_start_idx, i)
 
     # Get final values
@@ -724,9 +735,8 @@ def full_optimize(opts, inputs, models, state,
 
     print('  new final loss is now  {}'.format(final_loss))
 
-    snapshot(None,
-             final_approx,
-             opts, inputs, models, None,
+    snapshot(None, final_approx,
+             opts, inputs, models,
              loop_count, model_start_idx, opts.full_iter-1)
 
     if final_loss < prev_best_loss:
@@ -822,7 +832,7 @@ def local_optimize(opts, inputs, models, state,
 
     snapshot(new_approx,
              cur_approx + new_approx,
-             opts, inputs, models, None,
+             opts, inputs, models,
              loop_count, model_start_idx+1, '')
 
     if prev_best_loss is None or new_loss < prev_best_loss:
