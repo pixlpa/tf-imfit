@@ -15,30 +15,37 @@ class GaborLayer(nn.Module):
     def __init__(self, num_gabors=256):
         super().__init__()
         
-        # Initialize parameters with even better defaults
-        self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1]
-        self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1]
-        self.theta = nn.Parameter(torch.rand(num_gabors) * np.pi)  # [0, π]
-        # Wider range of initial sizes
-        self.sigma = nn.Parameter(torch.randn(num_gabors) * 1.0 - 1.0)  # log-space, more varied sizes
-        self.lambda_ = nn.Parameter(torch.randn(num_gabors) * 0.7)  # log-space, more varied frequencies
-        self.psi = nn.Parameter(torch.randn(num_gabors,3) * 2 * np.pi)  # [0, 2π]
-        self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.4)  # slightly elliptical Gabors
-        # Initialize amplitudes with color correlation
-        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.06)
-        self.dropout = nn.Dropout(p=0.01)  # Add dropout
+        # All parameters normalized/scale-independent:
+        self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1] position
+        self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1] position
+        self.theta = nn.Parameter(torch.rand(num_gabors) * np.pi)  # [0, π] rotation
+        
+        # Convert size parameters to relative/normalized form
+        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 1.0 - 1.0)  # relative to image size
+        self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 0.7)  # relative frequency
+        
+        self.psi = nn.Parameter(torch.randn(num_gabors,3) * 2 * np.pi)  # [0, 2π] phase
+        self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.4)  # aspect ratio
+        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.06)  # strength
+        self.dropout = nn.Dropout(p=0.01)
 
     def forward(self, grid_x, grid_y, temperature=1.0, dropout_active=True):
+        # Get image dimensions from grid
+        H, W = grid_x.shape
+        image_size = max(H, W)
+        
         # Convert parameters to proper ranges
         u = self.u * 2 - 1  # [-1, 1]
         v = self.v * 2 - 1  # [-1, 1] 
         theta = self.theta * 2 * np.pi  # [0, 2π]
-        sigma = torch.exp(self.sigma)  # (0, ∞)
-        lambda_ = torch.exp(self.lambda_)  # (0, ∞)
-        psi = self.psi * 2 * np.pi  # [0, 2π]
-        gamma = torch.exp(self.gamma)  # (0, ∞)
-        amplitude = self.amplitude  # [0, 1] for each channel
-
+        
+        # Convert relative parameters to absolute
+        sigma = torch.exp(self.rel_sigma) * (image_size / 32)  # Scale relative to image size
+        freq = torch.exp(self.rel_freq) * (32 / image_size)    # Inverse scale for frequency
+        lambda_ = 1.0 / freq  # Convert frequency to wavelength
+        
+        gamma = torch.exp(self.gamma)
+        
         # Add random noise during training
         if self.training:
             u = u + torch.randn_like(u) * 0.0002 * temperature
@@ -55,10 +62,10 @@ class GaborLayer(nn.Module):
         gaussian = torch.exp(-(x_rot**2 + (gamma[:,None,None] * y_rot)**2) / (2 * sigma[:,None,None]**2))
         
         # Modified: handle psi for each color channel separately
-        sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / lambda_[:, None, None, None] + psi[:, :, None, None])
+        sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / lambda_[:, None, None, None] + self.psi[:, :, None, None])
         
         # Compute Gabor functions for each color channel
-        gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
+        gabors = self.amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
         
         # Apply dropout during training if requested
         if dropout_active and self.training:
@@ -211,8 +218,8 @@ class ImageFitter:
                 self.model.u.data[idx] = (torch.rand(num_mutate, device=device) * 2 - 1)
                 self.model.v.data[idx] = (torch.rand(num_mutate, device=device) * 2 - 1)
                 self.model.theta.data[idx] = (torch.rand(num_mutate, device=device) * np.pi)
-                self.model.sigma.data[idx] = (torch.randn(num_mutate, device=device) * 0.7 - 1.0)
-                self.model.lambda_.data[idx] = (torch.randn(num_mutate, device=device) * 0.7)
+                self.model.rel_sigma.data[idx] = (torch.randn(num_mutate, device=device) * 0.7 - 1.0)
+                self.model.rel_freq.data[idx] = (torch.randn(num_mutate, device=device) * 0.7)
                 self.model.psi.data[idx] = (torch.randn(num_mutate, 3, device=device) * 2 * np.pi)
                 self.model.gamma.data[idx] = (torch.randn(num_mutate, device=device) * 0.2)
                 self.model.amplitude.data[idx] = (torch.randn(num_mutate, 3, device=device) * 0.05)
@@ -371,8 +378,8 @@ class ImageFitter:
                 'u': self.model.u.cpu().tolist(),
                 'v': self.model.v.cpu().tolist(),
                 'theta': self.model.theta.cpu().tolist(),
-                'sigma': self.model.sigma.cpu().tolist(),
-                'lambda': self.model.lambda_.cpu().tolist(),
+                'rel_sigma': self.model.rel_sigma.cpu().tolist(),
+                'rel_freq': self.model.rel_freq.cpu().tolist(),
                 'psi': self.model.psi.cpu().tolist(),
                 'gamma': self.model.gamma.cpu().tolist(),
                 'amplitude': self.model.amplitude.cpu().tolist()
@@ -384,8 +391,8 @@ class ImageFitter:
                     f.write(f"Gabor {i}:\n")
                     f.write(f"  Position (u, v): ({params['u'][i]:.4f}, {params['v'][i]:.4f})\n")
                     f.write(f"  Orientation (θ): {params['theta'][i]:.4f}\n")
-                    f.write(f"  Size (σ): {params['sigma'][i]:.4f}\n")
-                    f.write(f"  Wavelength (λ): {params['lambda'][i]:.4f}\n")
+                    f.write(f"  Size (σ): {params['rel_sigma'][i]:.4f}\n")
+                    f.write(f"  Wavelength (λ): {1.0 / params['rel_freq'][i]:.4f}\n")
                     f.write(f"  Phase (ψ): {[f'{a:.4f}' for a in params['psi'][i]]}\n")
                     f.write(f"  Aspect ratio (γ): {params['gamma'][i]:.4f}\n")
                     f.write(f"  Amplitude (RGB): {[f'{a:.4f}' for a in params['amplitude'][i]]}\n")
