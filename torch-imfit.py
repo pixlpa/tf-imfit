@@ -64,19 +64,14 @@ class GaborLayer(nn.Module):
         # Modified: handle psi for each color channel separately
         sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / lambda_[:, None, None, None] + self.psi[:, :, None, None])
         
-        # Start with grey background (0.5 for all channels)
-        result = torch.ones(3, grid_x.shape[0], grid_x.shape[1], device=grid_x.device) * 0.5
-        
         # Compute Gabor functions for each color channel
         gabors = self.amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
         
-        # Add Gabors to grey background
-        result = result + torch.sum(gabors, dim=0)
+        # Apply dropout during training if requested
+        if dropout_active and self.training:
+            gabors = self.dropout(gabors)
         
-        # Ensure output stays in valid range
-        result = torch.clamp(result, 0, 1)
-        
-        return result
+        return torch.sum(gabors, dim=0)  # Returns shape [3, H, W]
 
 class ImageFitter:
     def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 
@@ -397,7 +392,7 @@ class ImageFitter:
                     f.write(f"  Position (u, v): ({params['u'][i]:.4f}, {params['v'][i]:.4f})\n")
                     f.write(f"  Orientation (θ): {params['theta'][i]:.4f}\n")
                     f.write(f"  Size (σ): {params['rel_sigma'][i]:.4f}\n")
-                    f.write(f"  Frequency: {params['rel_freq'][i]:.4f}\n")
+                    f.write(f"  Wavelength (λ): {1.0 / params['rel_freq'][i]:.4f}\n")
                     f.write(f"  Phase (ψ): {[f'{a:.4f}' for a in params['psi'][i]]}\n")
                     f.write(f"  Aspect ratio (γ): {params['gamma'][i]:.4f}\n")
                     f.write(f"  Amplitude (RGB): {[f'{a:.4f}' for a in params['amplitude'][i]]}\n")
