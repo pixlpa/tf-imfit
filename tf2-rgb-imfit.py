@@ -740,7 +740,11 @@ def snapshot(cur_gabor, cur_approx,
         inputs.max_row.assign(max_rowval)
         preview_image = models.preview.approx.numpy()[0]
         ph, pw = preview_image.shape[:2]
+        
+        print(f"Preview before rescale: {preview_image.min():.3f} to {preview_image.max():.3f}")
         preview_image = rescale(preview_image, -1, 1)
+        print(f"Preview after rescale: {preview_image.min()} to {preview_image.max()}")
+        
         err_image = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
         err_image = Image.fromarray(err_image, 'RGB')
         err_image = err_image.resize((pw, ph), resample=Image.NEAREST)
