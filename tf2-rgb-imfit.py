@@ -617,7 +617,7 @@ def load_params(opts, inputs, models, state):
     inputs.max_row.assign(nparams)
 
     # Get the results directly from the model
-    gabor = models.full.gabor.numpy()[0]
+    gabor = models.full.gabor.numpy()[0]  # Get gabor values
     approx = models.full.approx.numpy()[0]
     err_loss = float(models.full.err_loss)
     con_losses = models.full.con_losses.numpy()[0]
@@ -631,7 +631,8 @@ def load_params(opts, inputs, models, state):
     if opts.preview_size:
         models.preview.params.assign(new_params)
     
-    snapshot(None, approx,
+    # Pass gabor values to snapshot instead of None
+    snapshot(gabor, approx,
              opts, inputs, models,
              -1, nparams, '')
     
@@ -767,11 +768,6 @@ def full_optimize(opts, inputs, models, state,
         'params': final_state['params'].numpy()
     }
     
-    # Debug print shapes
-    print("\nArray shapes:")
-    print(f"  loss_per_fit shape: {results['loss_per_fit'].shape}")
-    print(f"  con_losses shape: {results['con_losses'].shape}")
-    
     # Find best fit using per-fit losses
     fidx = results['loss_per_fit'].argmin()
     
@@ -785,6 +781,14 @@ def full_optimize(opts, inputs, models, state,
         con_losses = float(results['con_losses'][fidx])  # Direct access if it's 1D
         
     new_loss = loss_per_fit + con_losses
+    
+    # Get the best gabor and approx for snapshot
+    best_gabor = results['gabor'][fidx]  # This should be [h, w, 3, models]
+    best_approx = results['approx'][fidx]  # This should be [h, w, 3]
+    
+    # Create snapshot with the best results
+    snapshot(best_gabor, best_approx, opts, inputs, models,
+            loop_count, model_start_idx, '')
     
     print("\nFull optimization complete:")
     print(f"  Previous loss: {prev_best_loss}")
