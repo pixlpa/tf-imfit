@@ -16,19 +16,31 @@ class GaborLayer(nn.Module):
         super().__init__()
         self.base_scale = base_scale
         
-        # Initialize parameters with more controlled ranges
+        # Initialize parameters with proper ranges
         self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1]
         self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1]
         self.theta = nn.Parameter(torch.rand(num_gabors) * np.pi)  # [0, π]
-        
-        # Convert size parameters to relative/normalized form
-        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 1.0 - 1.0)  # relative to image size
-        self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 0.7)  # relative frequency
-        
-        self.psi = nn.Parameter(torch.randn(num_gabors,3) * 2 * np.pi)  # [0, 2π] phase
-        self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.4)  # aspect ratio
-        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.06)  # strength
+        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 0.5)  # smaller variance
+        self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 0.5)   # smaller variance
+        self.psi = nn.Parameter(torch.randn(num_gabors, 3) * np.pi)   # phase
+        self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.4)      # aspect ratio
+        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.06)
         self.dropout = nn.Dropout(p=0.01)
+
+    def load_state_dict(self, state_dict, strict=True):
+        """Override to enforce parameter ranges when loading"""
+        # Clamp parameters to valid ranges before loading
+        with torch.no_grad():
+            state_dict['u'].clamp_(-1, 1)
+            state_dict['v'].clamp_(-1, 1)
+            state_dict['theta'].clamp_(0, np.pi)
+            state_dict['rel_sigma'].clamp_(-3, 3)
+            state_dict['rel_freq'].clamp_(-3, 3)
+            state_dict['psi'].clamp_(-2*np.pi, 2*np.pi)
+            state_dict['gamma'].clamp_(-2, 2)
+            state_dict['amplitude'].clamp_(-0.5, 0.5)
+        
+        return super().load_state_dict(state_dict, strict)
 
     def forward(self, grid_x, grid_y, temperature=1.0, dropout_active=True):
         # Get image dimensions from grid
