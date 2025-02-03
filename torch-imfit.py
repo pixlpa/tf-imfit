@@ -12,13 +12,14 @@ import scipy.signal
 from torchvision.transforms.functional import gaussian_blur
 
 class GaborLayer(nn.Module):
-    def __init__(self, num_gabors=256):
+    def __init__(self, num_gabors=256, base_scale=32):
         super().__init__()
+        self.base_scale = base_scale
         
-        # All parameters normalized/scale-independent:
-        self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1] position
-        self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1] position
-        self.theta = nn.Parameter(torch.rand(num_gabors) * np.pi)  # [0, π] rotation
+        # Initialize parameters with more controlled ranges
+        self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1]
+        self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1]
+        self.theta = nn.Parameter(torch.rand(num_gabors) * np.pi)  # [0, π]
         
         # Convert size parameters to relative/normalized form
         self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 1.0 - 1.0)  # relative to image size
@@ -39,10 +40,14 @@ class GaborLayer(nn.Module):
         v = self.v * 2 - 1  # [-1, 1] 
         theta = self.theta * 2 * np.pi  # [0, 2π]
         
-        # Convert relative parameters to absolute
-        sigma = torch.exp(self.rel_sigma) * (image_size / 32)  # Scale relative to image size
-        freq = torch.exp(self.rel_freq) * (32 / image_size)    # Inverse scale for frequency
-        lambda_ = 1.0 / freq  # Convert frequency to wavelength
+        # More controlled scaling of size and frequency
+        base_size = image_size / self.base_scale
+        
+        # Scale sigma relative to image size
+        sigma = base_size * torch.exp(self.rel_sigma.clamp(-3, 3))
+        
+        # Scale wavelength relative to sigma to maintain appearance
+        wavelength = sigma * torch.exp(self.rel_freq.clamp(-3, 3))
         
         gamma = torch.exp(self.gamma)
         
