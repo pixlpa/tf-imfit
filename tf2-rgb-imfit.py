@@ -554,19 +554,23 @@ def setup_models(opts, inputs, state):
 # losses that need to persist across loops.
 
 def setup_state(opts, inputs):
+    # Initialize parameters randomly within their valid ranges
+    params = np.zeros((GABOR_NUM_PARAMS, opts.num_models), dtype=np.float32)
+    for i in range(GABOR_NUM_PARAMS):
+        params[i] = np.random.uniform(
+            GABOR_RANGE[i,0], 
+            GABOR_RANGE[i,1], 
+            opts.num_models
+        )
+    print("Initial params min/max:", params.min(), params.max())
     
     state = StateTuple(
-        
-        params=np.zeros((GABOR_NUM_PARAMS, opts.num_models),
-                        dtype=np.float32),
-        
+        params=params,
         gabor=np.zeros(inputs.input_image.shape + (opts.num_models,),
                        dtype=np.float32),
-
         con_loss=np.zeros(opts.num_models, dtype=np.float32)
-
     )
-
+    print("State params min/max:", state.params.min(), state.params.max())
     return state
 
 ######################################################################
@@ -579,6 +583,7 @@ def copy_state(state):
 # Load weights from file.
 
 def load_params(opts, inputs, models, state):
+    print("Before load - state params min/max:", state.params.min(), state.params.max())
     if opts.input is not None:
         iparams = np.genfromtxt(opts.input, dtype=np.float32, delimiter=',')
         nparams = len(iparams)
@@ -603,7 +608,9 @@ def load_params(opts, inputs, models, state):
 
     # Update the full model's parameters using tf.Variable.assign
     new_params = tf.constant(state.params[None,:], dtype=tf.float32)
+    print("New params min/max:", new_params.numpy().min(), new_params.numpy().max())
     models.full.params.assign(new_params)
+    print("After assign - model params min/max:", models.full.params.numpy().min(), models.full.params.numpy().max())
 
     # Set the target and max_row
     inputs.target_tensor.assign(inputs.input_image)
