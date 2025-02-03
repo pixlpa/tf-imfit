@@ -781,22 +781,18 @@ def full_optimize(opts, inputs, models, state,
     fidx = results['loss_per_fit'].argmin()
     
     # Get the best results
-    loss_per_fit = float(results['loss_per_fit'][fidx].item())  # Convert to scalar using .item()
-    
-    # Handle con_losses based on its shape
-    if results['con_losses'].ndim > 1:
-        con_losses = float(results['con_losses'][fidx].sum())  # Sum if it's multi-dimensional
-    else:
-        con_losses = float(results['con_losses'][fidx])  # Direct access if it's 1D
-        
+    loss_per_fit = float(results['loss_per_fit'][fidx].item())
+    con_losses = float(results['con_losses'][fidx].item())
     new_loss = loss_per_fit + con_losses
     
-    # Get the best gabor and approx for snapshot
+    # Get the best gabor and approx
     best_gabor = results['gabor'][fidx]  # This should be [h, w, 3, models]
     best_approx = results['approx'][fidx]  # This should be [h, w, 3]
     
     # Create snapshot with the best results
-    snapshot(best_gabor, best_approx, opts, inputs, models,
+    # Note: best_approx already includes all gabor functions
+    snapshot(best_gabor, best_approx,
+            opts, inputs, models,
             loop_count, model_start_idx, '')
     
     print("\nFull optimization complete:")
@@ -887,7 +883,6 @@ def local_optimize(opts, inputs, models, state,
 
     # Get the best results
     new_loss = results['loss_per_fit'][fidx] + cur_con_losses
-    new_approx = results['approx'][fidx]  # Should be [h, w, 3]
     new_gabor = results['gabor'][fidx,...,0]  # Should be [h, w, 3]
     new_params = results['params'][fidx]
     new_con_loss = results['con_losses'][fidx]
@@ -899,8 +894,8 @@ def local_optimize(opts, inputs, models, state,
         models.full.params.assign(tmpparams[None,:])
 
     # Create snapshot with current state
-    snapshot(new_gabor,
-             cur_approx + new_gabor,  # Add new gabor to current approximation
+    total_approx = cur_approx + new_gabor  # Add new gabor to current approximation
+    snapshot(new_gabor, total_approx,
              opts, inputs, models,
              loop_count, model_start_idx+1, '')
 
