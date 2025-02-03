@@ -351,7 +351,7 @@ class GaborModel(object):
             t = tf.maximum(self.cparams[:,GABOR_PARAM_T,:], self.eps)
             s = tf.maximum(self.cparams[:,GABOR_PARAM_S,:], self.eps)
             
-            # Extract RGB parameters and ensure proper scaling
+            # Extract RGB parameters
             h = self.cparams[:,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]  # [batch, 3, models]
             p = self.cparams[:,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]  # [batch, 3, models]
             
@@ -364,9 +364,9 @@ class GaborModel(object):
             s = s[:,None,None,None,:]
             h = h[:,None,None,:,:]  # [batch, 1, 1, 3, models]
             p = p[:,None,None,:,:]
-
-            # Scale RGB amplitudes to [0,1] range
-            h = tf.nn.sigmoid(h)
+            
+            # Scale RGB amplitudes to [-1,1] range
+            h = 2.0 * tf.nn.sigmoid(h) - 1.0
             
             # Compute Gabor function
             cr = tf.cos(r)
@@ -390,8 +390,8 @@ class GaborModel(object):
             k = f*b1 + p
             ck = tf.cos(k)  # Oscillation [-1,1]
             
-            # Combine components with proper scaling
-            self.gabor = h * w * ck  # Result should be in [-1,1] range
+            # Combine components with proper scaling for RGB
+            self.gabor = h * w * ck  # Result should be in [-1,1] range per channel
             self.approx = tf.reduce_sum(self.gabor, axis=4)
             
             # Ensure output is in valid range
