@@ -202,7 +202,7 @@ class ImageFitter:
             with torch.no_grad():
                 # Randomly select 5% of Gabors to mutate
                 num_gabors = self.model.amplitude.shape[0]
-                num_mutate = max(1, int(0.0025 * num_gabors))
+                num_mutate = max(1, int(0.001 * num_gabors))
                 idx = np.random.choice(num_gabors, num_mutate, replace=False)
                 
                 device = self.model.u.device  # Get the current device
@@ -299,8 +299,8 @@ class ImageFitter:
         if self.optimization_phase == 'global':
             # In global phase, focus more on structural similarity
             total_loss = (
-                0.6 * pixel_loss +
-                0.3 * structural_loss +
+                0.7 * pixel_loss +
+                0.2 * structural_loss +
                 0.1 * edge_loss
             )
         else:
