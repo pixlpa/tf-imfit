@@ -20,12 +20,12 @@ class GaborLayer(nn.Module):
         self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-1, 1]
         self.theta = nn.Parameter(torch.rand(num_gabors) * np.pi)  # [0, π]
         # Wider range of initial sizes
-        self.sigma = nn.Parameter(torch.randn(num_gabors) * 0.7 - 1.0)  # log-space, more varied sizes
-        self.lambda_ = nn.Parameter(torch.randn(num_gabors) * 0.7)  # log-space, more varied frequencies
+        self.sigma = nn.Parameter(torch.randn(num_gabors) * 1.0 - 1.0)  # log-space, more varied sizes
+        self.lambda_ = nn.Parameter(torch.randn(num_gabors) * 1.0)  # log-space, more varied frequencies
         self.psi = nn.Parameter(torch.randn(num_gabors,3) * 2 * np.pi)  # [0, 2π]
-        self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.2)  # slightly elliptical Gabors
+        self.gamma = nn.Parameter(torch.randn(num_gabors) * 0.3)  # slightly elliptical Gabors
         # Initialize amplitudes with color correlation
-        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.05)
+        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.1)
         self.dropout = nn.Dropout(p=0.001)  # Add dropout
 
     def forward(self, grid_x, grid_y, temperature=1.0, dropout_active=True):
