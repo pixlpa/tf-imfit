@@ -834,6 +834,13 @@ def local_optimize(opts, inputs, models, state,
                   "min:", tf.reduce_min(models.local.gabor).numpy(),
                   "max:", tf.reduce_max(models.local.gabor).numpy(),
                   "mean:", tf.reduce_mean(models.local.gabor).numpy())
+            print("Parameter stats:",
+                  "min:", tf.reduce_min(models.local.params).numpy(),
+                  "max:", tf.reduce_max(models.local.params).numpy(),
+                  "mean:", tf.reduce_mean(models.local.params).numpy())
+            print("Shapes:",
+                  "gabor:", models.local.gabor.shape,
+                  "params:", models.local.params.shape)
 
     # Get results
     results = {
@@ -848,7 +855,7 @@ def local_optimize(opts, inputs, models, state,
 
     new_loss = results['loss'][fidx] + cur_con_losses
     new_approx = results['approx'][fidx]
-    new_gabor = results['gabor'][fidx]
+    new_gabor = results['gabor'][fidx,...,0]  # Remove the last dimension
     new_params = results['params'][fidx]
     new_con_loss = results['con_losses'][fidx]
 
@@ -858,7 +865,7 @@ def local_optimize(opts, inputs, models, state,
         models.full.params.assign(tmpparams[None,:])
 
     snapshot(new_gabor,
-             cur_approx + new_gabor,
+             cur_approx + new_gabor,  # Now shapes should match
              opts, inputs, models,
              loop_count, model_start_idx+1, '')
 
