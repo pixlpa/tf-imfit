@@ -448,7 +448,9 @@ class GaborModel(object):
             'loss': loss,
             'gabor': self.gabor,
             'approx': self.approx,
-            'params': self.params
+            'params': self.params,
+            'err_loss_per_fit': self.err_loss_per_fit,
+            'con_loss_per_fit': self.con_loss_per_fit
         }
 
     def get_current_state(self):
@@ -460,7 +462,9 @@ class GaborModel(object):
             'approx': self.approx,
             'params': self.params,
             'err_loss': self.err_loss,
-            'con_losses': self.con_losses
+            'err_loss_per_fit': self.err_loss_per_fit,
+            'con_losses': self.con_losses,
+            'con_loss_per_fit': self.con_loss_per_fit
         }
 
 ######################################################################
