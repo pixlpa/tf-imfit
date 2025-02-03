@@ -792,22 +792,23 @@ def local_optimize(opts, inputs, models, state,
     if prev_best_loss is not None:
         print('  loss before local fit is', prev_best_loss)
         
+    # Set the target tensor
+    inputs.target_tensor.assign(cur_target)
+    
     # Initialize parameters
     if is_replace and opts.copy_quantity:
         # Get current randomly initialized values
         pvalues = models.local.params.numpy()
 
-        # Load in existing model values, slightly perturbed.
+        # Load in existing model values, slightly perturbed
         rparams = randomize(state.params[:,model_idx],
-                            opts.perturb_amount,
-                            opts.copy_quantity)
+                           opts.perturb_amount,
+                           opts.copy_quantity)
 
         pvalues[:opts.copy_quantity] = rparams[:,:,None]
             
-        # Update tensor with data set above
+        # Update tensor with perturbed values
         models.local.params.assign(pvalues)
-
-    inputs.target_tensor.assign(cur_target)
 
     # Training loop
     for i in range(opts.local_iter):
@@ -821,7 +822,8 @@ def local_optimize(opts, inputs, models, state,
             # Forward pass - use the model's loss directly
             loss = models.local.loss
             
-            print(f"Loss value: {loss}")
+            if i % 100 == 0:  # Print progress every 100 iterations
+                print(f"  Iteration {i}, Loss: {float(loss)}")
         
         # Get gradients
         grads = tape.gradient(loss, trainable_vars)
@@ -829,8 +831,6 @@ def local_optimize(opts, inputs, models, state,
         # Apply gradients if they exist
         if grads is not None:
             models.local.opt.apply_gradients([(grads, trainable_vars)])
-            if i % 100 == 0:  # Print progress every 100 iterations
-                print(f"  Iteration {i}, Loss: {float(loss)}")
         else:
             print(f"Warning: Gradients are None at iteration {i}!")
             print(f"Trainable vars shape: {trainable_vars.shape}")
@@ -858,8 +858,8 @@ def local_optimize(opts, inputs, models, state,
         tmpparams[:,model_idx] = new_params[:,0]
         models.full.params.assign(tmpparams[None,:])
 
-    snapshot(new_approx,
-             cur_approx + new_approx,
+    snapshot(new_gabor,
+             cur_approx + new_gabor,
              opts, inputs, models,
              loop_count, model_start_idx+1, '')
 
@@ -867,7 +867,6 @@ def local_optimize(opts, inputs, models, state,
         do_update = True
     else:
         rel_change = (prev_best_loss - new_loss) / prev_best_loss
-
         if not opts.anneal_temp:
             print('  not better than', prev_best_loss, 'skipping update')
             do_update = False
