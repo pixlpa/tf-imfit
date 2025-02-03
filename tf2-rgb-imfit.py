@@ -810,11 +810,14 @@ def local_optimize(opts, inputs, models, state,
             print(f"cur_output shape: {cur_output.shape}")
             print(f"cur_target shape: {cur_target.shape}")
             
-            # Ensure shapes match before subtraction
-            if cur_output.shape != cur_target.shape:
-                # Reshape or broadcast as needed
-                cur_target = tf.broadcast_to(cur_target, cur_output.shape)
-                print(f"Reshaped target shape: {cur_target.shape}")
+            # Reshape target to match output shape:
+            # 1. Add batch dimension (200)
+            # 2. Add final singleton dimension (1)
+            cur_target = tf.expand_dims(cur_target, axis=0)  # Add batch dim
+            cur_target = tf.expand_dims(cur_target, axis=-1)  # Add final dim
+            cur_target = tf.tile(cur_target, [200, 1, 1, 1, 1])  # Repeat for batch size
+            
+            print(f"Reshaped target shape: {cur_target.shape}")
             
             # Compute loss using tf.reduce_mean
             diff = cur_output - cur_target
@@ -825,15 +828,13 @@ def local_optimize(opts, inputs, models, state,
         # Get gradients
         grads = tape.gradient(loss, models.local.params)
         
-        # Print gradient info for debugging
-        for grad, var in zip(grads, models.local.params):
-            if grad is None:
-                print(f"Gradient is None for variable {var.name}")
-            else:
-                print(f"Gradient stats for {var.name}: mean={tf.reduce_mean(grad)}, var={tf.math.reduce_variance(grad)}")
-        
-        # Apply gradients
-        models.local.opt.apply_gradients(zip(grads, [models.local.params]))
+        # Apply gradients if they exist
+        if any(g is not None for g in grads):
+            models.local.opt.apply_gradients(
+                zip(grads, models.local.params)
+            )
+        else:
+            print("Warning: All gradients are None!")
 
         if i % 100 == 0:  # Print progress every 100 iterations
             print(f"  Iteration {i}, Loss: {float(loss)}")
