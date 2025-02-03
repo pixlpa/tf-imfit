@@ -742,12 +742,12 @@ def snapshot(cur_gabor, cur_approx,
         print(f"current_model: {current_model}")
         print(f"opts.num_models: {opts.num_models}")
         
-        # Create a new parameter array with the current model in the first position
+        # Create a new parameter array with all models up to current
         preview_params = np.zeros_like(models.full.params.numpy())
-        preview_params[:,:,0] = models.full.params.numpy()[:,:,current_model]  # Put current model in first position
+        preview_params[:,:,:current_model+1] = models.full.params.numpy()[:,:,:current_model+1]
         
-        # Set preview to show just this one model
-        inputs.max_row.assign(1)
+        # Set preview to show all models up to current
+        inputs.max_row.assign(current_model + 1)
         models.preview.params.assign(preview_params)
         
         # Force a forward pass to update the preview
@@ -757,7 +757,7 @@ def snapshot(cur_gabor, cur_approx,
         print(f"preview model params shape: {models.preview.params.shape}")
         print(f"preview model params range: {models.preview.params.numpy().min():.3f} to {models.preview.params.numpy().max():.3f}")
         print(f"preview approx shape: {preview_image.shape}")
-        print(f"Current model params: {preview_params[:,:,0].min():.3f} to {preview_params[:,:,0].max():.3f}")
+        print(f"Number of active models: {current_model + 1}")
         
         err_image = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
         err_image = Image.fromarray(err_image, 'RGB')
