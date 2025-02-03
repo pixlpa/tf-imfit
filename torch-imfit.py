@@ -56,7 +56,6 @@ class GaborLayer(nn.Module):
         # Ensure positive sigma with safe scaling
         sigma = base_size * (0.5 + 0.5 * torch.tanh(self.rel_sigma.clamp(-5, 5)))
         
-        
         # Safe aspect ratio
         gamma = 0.5 + 0.5 * torch.sigmoid(self.gamma.clamp(-5, 5))
         
@@ -79,9 +78,10 @@ class GaborLayer(nn.Module):
             min=-80, max=80
         ))
         
-        # Safe sinusoid computation
+        # Safe sinusoid computation with frequency scaling
+        freq = torch.exp(self.rel_freq.clamp(-100, 100))  # Positive frequency scaling
         phase = self.psi.clamp(-np.pi, np.pi)
-        sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] * self.rel_freq[:, None, None, None] + 
+        sinusoid = torch.cos(2 * np.pi * freq[:,None,None,None] * x_rot[:, None, :, :] + 
                            phase[:, :, None, None])
         
         # Safe amplitude scaling
@@ -93,7 +93,7 @@ class GaborLayer(nn.Module):
             gabors = self.dropout(gabors)
         
         result = torch.sum(gabors, dim=0)
-        result = torch.clamp(result, 0, 1)
+        result = torch.clamp(result, -1, 1)  # Clamp to normalized range
         
         return result
 
