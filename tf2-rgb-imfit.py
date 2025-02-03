@@ -647,6 +647,14 @@ def rescale(idata, imin, imax, cmap=None):
 ######################################################################
 # Save a snapshot of the current state to a PNG file
 
+def create_progress_bar(current, total, width=200, height=20):
+    """Create a visual progress bar"""
+    bar = np.zeros((height, width, 3), dtype=np.uint8)
+    progress = int((current / total) * width)
+    bar[:, :progress, 1] = 255  # Green for completed
+    bar[:, progress:, 0] = 128  # Red for remaining
+    return bar
+
 def snapshot(cur_gabor, cur_approx,
              opts, inputs, models,
              loop_count, model_start_idx,
@@ -731,6 +739,10 @@ def snapshot(cur_gabor, cur_approx,
     out_img = Image.fromarray(out_img, 'RGB')
 
     out_img.save(outfile)
+
+    # Add progress bar
+    progress_bar = create_progress_bar(model_start_idx, opts.num_models)
+    out_img = np.vstack((progress_bar, out_img))
 
 ######################################################################
 # Perform an optimization on the full joint model (expensive/slow).
