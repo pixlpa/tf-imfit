@@ -307,21 +307,19 @@ class GaborModel(object):
             
         # Parameter tensor could be passed in or created here
         if params is not None:
-
             self.params = params
-
         else:
-
             if initializer is None:
-                initializer = tf.random_uniform_initializer(minval=gmin,
-                                                            maxval=gmax,
-                                                            dtype=tf.float32)
+                # Updated initializer syntax for TF2
+                initializer = tf.random.uniform_initializer(minval=gmin,
+                                                          maxval=gmax)
 
             # n x 12 x e
-            self.params = tf.Variable(tf.random.uniform(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
-                                minval=gmin, maxval=gmax, dtype=tf.float32),
-                                trainable=True,
-                                name='params')
+            self.params = tf.Variable(
+                initializer(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
+                           dtype=tf.float32),
+                trainable=True,
+                name='params')
 
         gmin[:,:GABOR_PARAM_L,:] = -np.inf
         gmax[:,:GABOR_PARAM_L,:] =  np.inf
@@ -732,8 +730,8 @@ def full_optimize(opts, inputs, models, state,
 
     if final_loss < prev_best_loss:
         state.params[:,:max_rowval] = final_params
-        state.gabor[:,:,:,:max_rowval] = final_gabor
-        state.con_loss[:max_rowval] = final_con_losses
+        state.gabor[:,:,:,:max_rowval] = final_gabor[:,:,:,:max_rowval]
+        state.con_loss[:max_rowval] = final_con_losses[:max_rowval]
         prev_best_loss = final_loss
 
     print()
