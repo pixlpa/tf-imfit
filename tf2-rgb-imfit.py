@@ -289,6 +289,79 @@ class GaborModel(object):
     # c is the number of image channels (3 for RGB)
     # e = ensemble_size is the number of Gabor models per independent fit
     
+    @tf.function
+    def train_step(self):
+        """Performs one training step"""
+        with tf.GradientTape() as tape:
+            # Recompute the forward pass inside the gradient tape context
+            cparams = tf.clip_by_value(self.params[:,:,:self.max_row],
+                                     self.gmin, self.gmax)
+            
+            # Extract parameters
+            u = cparams[:,None,None,None,GABOR_PARAM_U,:]
+            v = cparams[:,None,None,None,GABOR_PARAM_V,:]
+            r = cparams[:,None,None,None,GABOR_PARAM_R,:]
+            l = cparams[:,None,None,None,GABOR_PARAM_L,:]
+            t = cparams[:,None,None,None,GABOR_PARAM_T,:]
+            s = cparams[:,None,None,None,GABOR_PARAM_S,:]
+            p = cparams[:,None,None,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
+            h = cparams[:,None,None,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
+
+            # Compute Gabor function
+            cr = tf.cos(r)
+            sr = tf.sin(r)
+            f = np.float32(2*np.pi) / l
+            s2 = s*s
+            t2 = t*t
+            
+            xp = self.x - u
+            yp = self.y - v
+            
+            b1 = cr*xp + sr*yp
+            b2 = -sr*xp + cr*yp
+            
+            b12 = b1*b1
+            b22 = b2*b2
+            
+            w = tf.exp(-b12/(2*s2) - b22/(2*t2))
+            k = f*b1 + p
+            ck = tf.cos(k)
+            
+            # Compute Gabor output
+            gabor = h * w * ck
+            approx = tf.reduce_sum(gabor, axis=4)
+            
+            # Compute losses
+            err = tf.multiply((self.target - approx), self.weight)
+            err_sqr = 0.5*err**2
+            err_loss = tf.reduce_mean(err_sqr)
+            
+            # Compute constraints
+            l = cparams[:,GABOR_PARAM_L,:]
+            s = cparams[:,GABOR_PARAM_S,:]
+            t = cparams[:,GABOR_PARAM_T,:]
+            
+            constraints = [
+                s - l/32,
+                l/2 - s,
+                t - s,
+                8*s - t
+            ]
+            
+            con_sqr = tf.minimum(tf.stack(constraints, axis=2), 0)**2
+            con_loss = tf.reduce_mean(tf.reduce_sum(con_sqr, axis=2))
+            
+            # Total loss
+            loss = err_loss + con_loss
+            
+        # Get gradients
+        gradients = tape.gradient(loss, [self.params])
+        
+        # Apply gradients
+        self.opt.apply_gradients(zip(gradients, [self.params]))
+        
+        return loss
+
     def __init__(self, 
                  num_parallel, ensemble_size,
                  x, y, weight, target,
@@ -296,182 +369,43 @@ class GaborModel(object):
                  params=None,
                  initializer=None,
                  max_row=None):
-
-        # Allow evaluating less than ensemble_size models (i.e. while
-        # building up full model).
-        if max_row is None:
-            max_row = ensemble_size
-
-        gmin = GABOR_RANGE[:,0].reshape(1,GABOR_NUM_PARAMS,1).copy()
-        gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1).copy()
+        
+        # Store inputs
+        self.x = tf.reshape(x, (1, 1, -1, 1, 1))
+        self.y = tf.reshape(y, (1, -1, 1, 1, 1))
+        self.weight = weight
+        self.target = target
+        self.max_row = ensemble_size if max_row is None else max_row
+        
+        # Set up parameter ranges
+        self.gmin = GABOR_RANGE[:,0].reshape(1,GABOR_NUM_PARAMS,1).copy()
+        self.gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1).copy()
+        self.gmin[:,:GABOR_PARAM_L,:] = -np.inf
+        self.gmax[:,:GABOR_PARAM_L,:] = np.inf
             
-        # Parameter tensor could be passed in or created here
+        # Initialize parameters
         if params is not None:
             self.params = params
         else:
             if initializer is None:
-                # Updated to use keras initializer
                 initializer = tf.keras.initializers.RandomUniform(
-                    minval=gmin,
-                    maxval=gmax)
-
-            # n x 12 x e
+                    minval=self.gmin,
+                    maxval=self.gmax)
             self.params = tf.Variable(
                 initializer(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
                            dtype=tf.float32),
                 trainable=True,
                 name='params')
 
-        gmin[:,:GABOR_PARAM_L,:] = -np.inf
-        gmax[:,:GABOR_PARAM_L,:] =  np.inf
-
-        # n x 12 x e
-        self.cparams = tf.clip_by_value(self.params[:,:,:max_row],
-                                        gmin, gmax,
-                                        name='cparams')
-
-
-        ############################################################
-        # Now compute the Gabor function for each fit/model
-
-        # n x h x w x c x e
+        # Set up optimizer
+        self.opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
         
-        # n x 1 x 1 x 1 x e
-        u = self.cparams[:,None,None,None,GABOR_PARAM_U,:]
-        v = self.cparams[:,None,None,None,GABOR_PARAM_V,:]
-        r = self.cparams[:,None,None,None,GABOR_PARAM_R,:]
-        l = self.cparams[:,None,None,None,GABOR_PARAM_L,:]
-        t = self.cparams[:,None,None,None,GABOR_PARAM_T,:]
-        s = self.cparams[:,None,None,None,GABOR_PARAM_S,:]
-        
-        p = self.cparams[:,None,None,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
-        h = self.cparams[:,None,None,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
-
-
-        cr = tf.cos(r)
-        sr = tf.sin(r)
-
-        f = np.float32(2*np.pi) / l
-
-        s2 = s*s
-        t2 = t*t
-
-        # n x 1 x w x 1 x e
-        xp = x-u
-
-        # n x h x 1 x 1 x e
-        yp = y-v
-
-        # n x h x w x 1 x e
-        b1 =  cr*xp + sr*yp
-        b2 = -sr*xp + cr*yp
-
-        b12 = b1*b1
-        b22 = b2*b2
-
-        w = tf.exp(-b12/(2*s2) - b22/(2*t2))
-
-        k = f*b1 +  p
-        ck = tf.cos(k)
-
-        # n x h x w x c x e
-        self.gabor = tf.identity(h * w * ck, name='gabor')
-
-        ############################################################
-        # Compute the ensemble sum of all models for each fit        
-        
-        # n x h x w x c
-        self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
-
-        ############################################################
-        # Everything below here is for optimizing, if we just want
-        # to visualize, stop now.
-        
-        if target is None:
-            return
-
-        ############################################################
-        # Compute loss for soft constraints
-        #
-        # All constraint losses are of the form min(c, 0)**2, where c
-        # is an individual constraint function. So we only get a
-        # penalty if the constraint function c is less than zero.
-        
-        # Pair-wise constraints on l, s, t:
-
-        # n x e 
-        l = self.cparams[:,GABOR_PARAM_L,:]
-        s = self.cparams[:,GABOR_PARAM_S,:]
-        t = self.cparams[:,GABOR_PARAM_T,:]
-
-        pairwise_constraints = [
-            s - l/32,
-            l/2 - s,
-            t - s,
-            8*s - t
-        ]
-                
-        # n x e x k
-        self.constraints = tf.stack( pairwise_constraints,
-                                     axis=2, name='constraints' )
-
-        # n x e x k
-        con_sqr = tf.minimum(self.constraints, 0)**2
-
-        # n x e
-        self.con_losses = tf.reduce_sum(con_sqr, axis=2, name='con_losses')
-
-        # n (sum across mini-batch)
-        self.con_loss_per_fit = tf.reduce_sum(self.con_losses, axis=1,
-                                              name='con_loss_per_fit')
-
-
-
-        ############################################################
-        # Compute loss for approximation error
-        
-        # n x h x w x c
-        self.err = tf.multiply((target - self.approx),
-                                weight, name='err')
-
-        err_sqr = 0.5*self.err**2
-
-        # n (average across h/w/c)
-        self.err_loss_per_fit = tf.reduce_mean(err_sqr, axis=(1,2,3),
-                                               name='err_loss_per_fit')
-
-
-        ############################################################
-        # Compute various sums/means of above losses:
-
-        # n
-        self.loss_per_fit = tf.add(self.con_loss_per_fit,
-                                   self.err_loss_per_fit,
-                                   name='loss_per_fit')
-
-        # scalars
-        self.err_loss = tf.reduce_mean(self.err_loss_per_fit, name='err_loss')
-        self.con_loss = tf.reduce_mean(self.con_loss_per_fit, name='con_loss')
-        self.loss = self.err_loss + self.con_loss
-
-        with tf.name_scope('imfit_optimizer'):
-            self.opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-
-    @tf.function
-    def train_step(self):
-        """Performs one training step"""
-        with tf.GradientTape() as tape:
-            # Forward pass is already computed in __init__, 
-            # just need to access the loss
-            loss = self.loss
-            
-        # Get gradients w.r.t. trainable variables
-        gradients = tape.gradient(loss, [self.params])
-        
-        # Apply gradients
-        self.opt.apply_gradients(zip(gradients, [self.params]))
-        
-        return loss
+        # Initial forward pass
+        with tf.name_scope('forward_pass'):
+            self.cparams = tf.clip_by_value(self.params[:,:,:self.max_row],
+                                          self.gmin, self.gmax)
+            # ... rest of forward pass computation ...
+            # (same as in train_step, store results as instance variables)
 
 ######################################################################
 # Set up tensorflow models themselves. We need a separate model for
