@@ -647,8 +647,12 @@ def rescale(idata, imin, imax, cmap=None):
 ######################################################################
 # Save a snapshot of the current state to a PNG file
 
-def create_progress_bar(current, total, width=200, height=20):
-    """Create a visual progress bar"""
+def create_progress_bar(current, total, width=None, height=20):
+    """Create a visual progress bar that matches the width of the output image"""
+    if width is None:
+        # Default width should match the output image width
+        width = 816  # This should match the total width of all horizontally stacked images
+        
     bar = np.zeros((height, width, 3), dtype=np.uint8)
     progress = int((current / total) * width)
     bar[:, :progress, 1] = 255  # Green for completed
@@ -694,27 +698,17 @@ def snapshot(cur_gabor, cur_approx,
         COLORMAP = get_colormap()
         
     if not opts.preview_size:
-        # Scale RGB values to [0, 255] range
         input_img = rescale(inputs.input_image, -1, 1)
         approx_img = rescale(cur_approx, -1, 1)
         gabor_img = rescale(cur_gabor, -1, 1)
         error_img = rescale(cur_abserr, 0, 1.0, COLORMAP)
         
-        # Print debug info
-        print("Debug - Scaled image ranges:")
-        print("Input image:", input_img.min(), "to", input_img.max())
-        print("Approx image:", approx_img.min(), "to", approx_img.max())
-        print("Gabor image:", gabor_img.min(), "to", gabor_img.max())
-        print("Error image:", error_img.min(), "to", error_img.max())
-        
         out_img = np.hstack((input_img, approx_img, gabor_img, error_img))
         
-        # Ensure output is in uint8 format
-        out_img = out_img.astype(np.uint8)
+        # Create progress bar with matching width
+        progress_bar = create_progress_bar(model_start_idx, opts.num_models, 
+                                         width=out_img.shape[1])
         
-        # Save image
-        Image.fromarray(out_img).save(outfile)
-
     else:
         
         max_rowval = min(model_start_idx, opts.num_models)
@@ -735,14 +729,17 @@ def snapshot(cur_gabor, cur_approx,
         err_image = np.array(err_image)
 
         out_img = np.hstack((preview_image, err_image))
+        
+        # Create progress bar with matching width
+        progress_bar = create_progress_bar(model_start_idx, opts.num_models,
+                                         width=out_img.shape[1])
     
+    # Add progress bar
+    out_img = np.vstack((progress_bar, out_img))
+
     out_img = Image.fromarray(out_img, 'RGB')
 
     out_img.save(outfile)
-
-    # Add progress bar
-    progress_bar = create_progress_bar(model_start_idx, opts.num_models)
-    out_img = np.vstack((progress_bar, out_img))
 
 ######################################################################
 # Perform an optimization on the full joint model (expensive/slow).
