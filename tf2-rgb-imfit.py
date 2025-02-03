@@ -496,13 +496,15 @@ def setup_models(opts, inputs):
     y_tensor = tf.constant(inputs.y.reshape(1,-1,1,1,1))
 
     with tf.name_scope('full'):
-
         full = GaborModel(1, opts.num_models,
                           x_tensor, y_tensor,
                           weight_tensor, inputs.target_tensor,
                           learning_rate=opts.full_learning_rate,
                           max_row = inputs.max_row,
-                          initializer=tf.zeros_initializer())
+                          initializer=tf.random_uniform_initializer(
+                              minval=GABOR_RANGE[:,0],
+                              maxval=GABOR_RANGE[:,1]
+                          ))
     
     with tf.name_scope('local'):
         
