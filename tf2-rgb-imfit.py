@@ -443,7 +443,25 @@ class GaborModel(object):
         if gradients[0] is not None:
             self.opt.apply_gradients(zip(gradients, [self.params]))
         
-        return loss
+        # Return values needed for monitoring
+        return {
+            'loss': loss,
+            'gabor': self.gabor,
+            'approx': self.approx,
+            'params': self.params
+        }
+
+    def get_current_state(self):
+        """Get current model state without using @tf.function"""
+        self._forward_pass()
+        return {
+            'loss': self.loss,
+            'gabor': self.gabor,
+            'approx': self.approx,
+            'params': self.params,
+            'err_loss': self.err_loss,
+            'con_losses': self.con_losses
+        }
 
 ######################################################################
 # Set up tensorflow models themselves. We need a separate model for
@@ -789,29 +807,34 @@ def local_optimize(opts, inputs, models, state,
     # Training loop
     for i in range(opts.local_iter):
         # Use the model's train_step method
-        loss = models.local.train_step()
+        result = models.local.train_step()
         
         if i % 100 == 0:  # Print progress every 100 iterations
-            print(f"  Iteration {i}, Loss: {float(loss)}")
+            # Get current state for monitoring
+            current_state = models.local.get_current_state()
+            print(f"  Iteration {i}, Loss: {float(result['loss'])}")
             print("Gabor output stats:", 
-                  "min:", tf.reduce_min(models.local.gabor).numpy(),
-                  "max:", tf.reduce_max(models.local.gabor).numpy(),
-                  "mean:", tf.reduce_mean(models.local.gabor).numpy())
+                  "min:", tf.reduce_min(current_state['gabor']).numpy(),
+                  "max:", tf.reduce_max(current_state['gabor']).numpy(),
+                  "mean:", tf.reduce_mean(current_state['gabor']).numpy())
             print("Parameter stats:",
-                  "min:", tf.reduce_min(models.local.params).numpy(),
-                  "max:", tf.reduce_max(models.local.params).numpy(),
-                  "mean:", tf.reduce_mean(models.local.params).numpy())
+                  "min:", tf.reduce_min(current_state['params']).numpy(),
+                  "max:", tf.reduce_max(current_state['params']).numpy(),
+                  "mean:", tf.reduce_mean(current_state['params']).numpy())
             print("Shapes:",
-                  "gabor:", models.local.gabor.shape,
-                  "params:", models.local.params.shape)
+                  "gabor:", current_state['gabor'].shape,
+                  "params:", current_state['params'].shape)
 
-    # Get results
+    # Get final state
+    final_state = models.local.get_current_state()
+    
+    # Use final state values for the rest of the function
     results = {
-        'loss': models.local.loss_per_fit.numpy(),
-        'con_losses': models.local.con_losses.numpy(),
-        'approx': models.local.approx.numpy(),
-        'gabor': models.local.gabor.numpy(),
-        'params': models.local.cparams.numpy()
+        'loss': final_state['loss'],
+        'con_losses': final_state['con_losses'],
+        'approx': final_state['approx'],
+        'gabor': final_state['gabor'],
+        'params': final_state['params']
     }
 
     fidx = results['loss'].argmin()
