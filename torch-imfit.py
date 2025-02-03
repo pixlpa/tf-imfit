@@ -94,6 +94,18 @@ class GaborLayer(nn.Module):
         
         return torch.sum(gabors, dim=0)  # Returns shape [3, H, W]
 
+    def enforce_parameter_ranges(self):
+        """Enforce valid parameter ranges"""
+        with torch.no_grad():
+            self.u.clamp_(-1, 1)
+            self.v.clamp_(-1, 1)
+            self.theta.clamp_(0, np.pi)
+            self.rel_sigma.clamp_(-3, 3)
+            self.rel_freq.clamp_(-3, 3)
+            self.psi.clamp_(-2*np.pi, 2*np.pi)
+            self.gamma.clamp_(-2, 2)
+            self.amplitude.clamp_(-0.5, 0.5)
+
 class ImageFitter:
     def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 
                  device='cuda' if torch.cuda.is_available() else 'cpu', init=None,
@@ -345,49 +357,37 @@ class ImageFitter:
         return total_loss
 
     def train_step(self, iteration, max_iterations):
-        """Training step with state verification"""
-        if iteration == 0:
-            print("\nParameters before first training step:")
-            for name, param in self.model.named_parameters():
-                print(f"{name}: range [{param.min():.3f}, {param.max():.3f}]")
+        # Update temperature
+        self.update_temperature(iteration, max_iterations)
         
         # Switch to local phase at the specified split point
         if iteration == int(max_iterations * self.phase_split):
             self.switch_to_local_phase()
         
+        # Zero gradients
         self.optimizer.zero_grad()
         
-        # Update temperature
-        self.update_temperature(iteration, max_iterations)
-        
-        # Forward pass with current temperature
+        # Forward pass
         output = self.model(
             self.grid_x, 
             self.grid_y, 
             temperature=self.current_temp,
-            dropout_active=(iteration < max_iterations * 0.8)  # Disable dropout near end
+            dropout_active=(iteration < max_iterations * 0.8)
         )
         
-        if iteration == 0:
-            print("\nParameters after model forward in first step:")
-            for name, param in self.model.named_parameters():
-                print(f"{name}: range [{param.min():.3f}, {param.max():.3f}]")
-        
         # Calculate loss
-        loss = self.weighted_loss(output, self.target, self.weights)
+        weights = self.get_phase_specific_weights()
+        loss = self.weighted_loss(output, self.target, weights)
         
-        # Add random mutation
-        self.mutate_parameters()
-        
+        # Backward pass and optimize
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
         self.optimizer.step()
-        self.scheduler.step(loss)
         
-        # Save best state (only when temperature is low)
-        if self.current_temp < 0.5 and loss.item() < self.best_loss:
-            self.best_loss = loss.item()
-            self.best_state = {k: v.clone() for k, v in self.model.state_dict().items()}
+        # Enforce parameter ranges after optimization step
+        self.model.enforce_parameter_ranges()
+        
+        # Update learning rate
+        self.scheduler.step(loss)
         
         return loss.item()
 
