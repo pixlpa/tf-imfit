@@ -346,8 +346,16 @@ class GaborModel(object):
     def _forward_pass(self):
         """Compute forward pass with numerical safeguards"""
         with tf.name_scope('forward_pass'):
-            self.cparams = tf.clip_by_value(self.params[:,:,:self.max_row],
-                                          self.gmin, self.gmax)
+            # Reshape gmin and gmax for broadcasting
+            gmin = tf.reshape(self.gmin, [1, GABOR_NUM_PARAMS, 1])
+            gmax = tf.reshape(self.gmax, [1, GABOR_NUM_PARAMS, 1])
+            
+            # Clip parameters
+            self.cparams = tf.clip_by_value(
+                self.params[:,:,:self.max_row],
+                clip_value_min=gmin,
+                clip_value_max=gmax
+            )
             
             # Extract parameters
             u = self.cparams[:,GABOR_PARAM_U,:]
@@ -374,7 +382,7 @@ class GaborModel(object):
             # Compute Gabor function
             cr = tf.cos(r)
             sr = tf.sin(r)
-            f = np.float32(2*np.pi) / l
+            f = tf.cast(2*np.pi, tf.float32) / l
             s2 = s*s
             t2 = t*t
             
