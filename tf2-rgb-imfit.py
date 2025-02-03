@@ -974,14 +974,8 @@ def main():
             # Done with this mini-ensemble
             model_start_idx += 1
 
-            # Debug print for condition check
-            print(f"Checking save condition: model_start_idx={model_start_idx}, "
-                  f"opts.num_models={opts.num_models}, "
-                  f"loop_count={loop_count}, "
-                  f"opts.full_every={opts.full_every}, "
-                  f"(loop_count + 1) % opts.full_every = {(loop_count + 1) % opts.full_every}")
-                  
-            if ( model_start_idx >= opts.num_models and
+    
+            if ( model_start_idx >= opts.num_models or
                  (loop_count + 1) % opts.full_every == 0 ):
 
                 # Do a full optimization
