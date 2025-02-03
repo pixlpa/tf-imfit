@@ -515,10 +515,7 @@ def setup_models(opts, inputs):
                           weight_tensor, inputs.target_tensor,
                           learning_rate=opts.full_learning_rate,
                           max_row = inputs.max_row,
-                          initializer=tf.random_uniform_initializer(
-                              minval=GABOR_RANGE[:,0],
-                              maxval=GABOR_RANGE[:,1]
-                          ))
+                          params=tf.constant(state.params[None,:]))
     
     with tf.name_scope('local'):
         
