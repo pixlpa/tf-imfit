@@ -42,12 +42,12 @@ GABOR_RANGE = np.array([
     [ -np.pi, np.pi ],
     [ -np.pi, np.pi ],
     [ -np.pi, np.pi ],
-    [ 0, 4 ],
-    [ 0, 4 ],
-    [ 0, 2 ],
-    [ 0, 2 ],
-    [ 0, 2 ],
-    [ 0, 2 ] ])
+    [ 0, 1 ],
+    [ 0, 1 ],
+    [ 0, 1 ],
+    [ 0, 1 ],
+    [ 0, 1 ],
+    [ 0, 1 ] ])
 
 ######################################################################
 # Parse a duration string
@@ -365,6 +365,9 @@ class GaborModel(object):
             h = h[:,None,None,:,:]  # [batch, 1, 1, 3, models]
             p = p[:,None,None,:,:]
 
+            # Scale the RGB amplitudes to be positive
+            h = tf.nn.sigmoid(h)  # Ensure RGB amplitudes are between 0 and 1
+            
             # Compute Gabor function
             cr = tf.cos(r)
             sr = tf.sin(r)
@@ -372,8 +375,8 @@ class GaborModel(object):
             s2 = s*s + self.eps
             t2 = t*t + self.eps
             
-            xp = self.x - u  # self.x is [1, 1, w, 1, 1]
-            yp = self.y - v  # self.y is [1, h, 1, 1, 1]
+            xp = self.x - u
+            yp = self.y - v
             
             b1 = cr*xp + sr*yp
             b2 = -sr*xp + cr*yp
@@ -382,13 +385,17 @@ class GaborModel(object):
             b22 = b2*b2
             
             exp_term = tf.clip_by_value(-b12/(2*s2) - b22/(2*t2), -88.0, 88.0)
-            w = tf.exp(exp_term)  # [batch, h, w, 1, models]
+            w = tf.exp(exp_term)
             
-            k = f*b1 + p  # Broadcasting handles the RGB channels
-            ck = tf.cos(k)  # [batch, h, w, 3, models]
+            k = f*b1 + p  # Phase for each RGB channel
+            ck = tf.cos(k)  # Oscillation for each RGB channel
             
-            self.gabor = h * w * ck  # [batch, h, w, 3, models]
-            self.approx = tf.reduce_sum(self.gabor, axis=4)  # [batch, h, w, 3]
+            # Scale the output to be in [-1, 1] range
+            self.gabor = 2.0 * h * w * ck - 1.0
+            self.approx = tf.reduce_sum(self.gabor, axis=4)
+
+            # Ensure output is in valid range
+            self.approx = tf.clip_by_value(self.approx, -1.0, 1.0)
             
             if self.target is not None:
                 self._compute_losses()
