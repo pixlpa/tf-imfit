@@ -747,9 +747,13 @@ def snapshot(cur_gabor, cur_approx,
         # Force preview model to update
         models.preview.params.assign(models.full.params.numpy())
         
+        # Force a forward pass to update the preview
+        _ = models.preview._forward_pass()
+        
         preview_image = models.preview.approx.numpy()[0]
         print(f"preview model params shape: {models.preview.params.shape}")
         print(f"preview model params range: {models.preview.params.numpy().min():.3f} to {models.preview.params.numpy().max():.3f}")
+        print(f"preview approx shape: {preview_image.shape}")
         
         ph, pw = preview_image.shape[:2]
         print(f"Preview before rescale: {preview_image.min():.3f} to {preview_image.max():.3f}")
