@@ -42,12 +42,12 @@ GABOR_RANGE = np.array([
     [ -np.pi, np.pi ],
     [ -np.pi, np.pi ],
     [ -np.pi, np.pi ],
-    [ 0, 1 ],
-    [ 0, 1 ],
-    [ 0, 1 ],
-    [ 0, 1 ],
-    [ 0, 1 ],
-    [ 0, 1 ] ])
+    [ 0, 4 ],
+    [ 0, 4 ],
+    [ 0, 2 ],
+    [ 0, 2 ],
+    [ 0, 2 ],
+    [ 0, 2 ] ])
 
 ######################################################################
 # Parse a duration string
@@ -298,8 +298,8 @@ class GaborModel(object):
                  max_row=None):
         
         # Store inputs
-        self.x = tf.reshape(x, (1, 1, -1, 1, 1))
-        self.y = tf.reshape(y, (1, -1, 1, 1, 1))
+        self.x = x
+        self.y = y
         self.weight = weight
         self.target = target
         self.max_row = ensemble_size if max_row is None else max_row
@@ -309,7 +309,7 @@ class GaborModel(object):
         self.gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1).copy()
         
         # Add small epsilon to prevent division by zero
-        self.eps = 1e-7
+        self.eps = 1e-10
         self.gmin[0,GABOR_PARAM_L,0] = self.eps  # Prevent division by zero in wavelength
         self.gmin[0,GABOR_PARAM_S,0] = self.eps  # Prevent division by zero in sigma
         self.gmin[0,GABOR_PARAM_T,0] = self.eps  # Prevent division by zero in theta
@@ -324,7 +324,7 @@ class GaborModel(object):
                     maxval=self.gmax)
             self.params = tf.Variable(
                 initializer(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size)),
-                trainable=True,
+                trainable=True, dtype=tf.float32,
                 name='params'
             )
 
