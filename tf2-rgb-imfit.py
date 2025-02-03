@@ -767,17 +767,31 @@ def full_optimize(opts, inputs, models, state,
         'params': final_state['params'].numpy()
     }
     
+    # Debug print shapes
+    print("\nArray shapes:")
+    print(f"  loss_per_fit shape: {results['loss_per_fit'].shape}")
+    print(f"  con_losses shape: {results['con_losses'].shape}")
+    
     # Find best fit using per-fit losses
     fidx = results['loss_per_fit'].argmin()
     
     # Get the best results
     loss_per_fit = float(results['loss_per_fit'][fidx].item())  # Convert to scalar using .item()
-    con_losses = float(results['con_losses'][fidx].item())      # Convert to scalar using .item()
+    
+    # Handle con_losses based on its shape
+    if results['con_losses'].ndim > 1:
+        con_losses = float(results['con_losses'][fidx].sum())  # Sum if it's multi-dimensional
+    else:
+        con_losses = float(results['con_losses'][fidx])  # Direct access if it's 1D
+        
     new_loss = loss_per_fit + con_losses
     
     print("\nFull optimization complete:")
     print(f"  Previous loss: {prev_best_loss}")
     print(f"  New loss: {new_loss}")
+    print(f"  Loss components:")
+    print(f"    Per-fit loss: {loss_per_fit}")
+    print(f"    Constraint loss: {con_losses}")
     print(f"  Improvement: {prev_best_loss - new_loss if prev_best_loss is not None else 'N/A'}")
     
     # Update state with best parameters if improved
