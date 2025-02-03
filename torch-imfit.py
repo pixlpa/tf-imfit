@@ -181,12 +181,12 @@ class ImageFitter:
         self.best_state = None
         
         # Add temperature scheduling
-        self.initial_temp = 0.2
+        self.initial_temp = 1
         self.min_temp = 0.00000001
         self.current_temp = self.initial_temp
         
         # Add mutation probability
-        self.mutation_prob = 0.001
+        self.mutation_prob = 0.01
         
         # Add phase tracking
         self.optimization_phase = 'global'  # 'global' or 'local'
@@ -299,15 +299,15 @@ class ImageFitter:
         if self.optimization_phase == 'global':
             # In global phase, focus more on structural similarity
             total_loss = (
-                0.4 * pixel_loss +
-                0.4 * structural_loss +
-                0.2 * edge_loss
+                0.2 * pixel_loss +
+                0.7 * structural_loss +
+                0.1 * edge_loss
             )
         else:
             # In local phase, increase weight of edge and pixel losses
             total_loss = (
-                0.3 * pixel_loss +
-                0.3 * structural_loss +
+                0.4 * pixel_loss +
+                0.2 * structural_loss +
                 0.4 * edge_loss
             )
         
