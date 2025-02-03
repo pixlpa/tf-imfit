@@ -457,6 +457,22 @@ class GaborModel(object):
         with tf.name_scope('imfit_optimizer'):
             self.opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
+    @tf.function
+    def train_step(self):
+        """Performs one training step"""
+        with tf.GradientTape() as tape:
+            # Forward pass is already computed in __init__, 
+            # just need to access the loss
+            loss = self.loss
+            
+        # Get gradients w.r.t. trainable variables
+        gradients = tape.gradient(loss, [self.params])
+        
+        # Apply gradients
+        self.opt.apply_gradients(zip(gradients, [self.params]))
+        
+        return loss
+
 ######################################################################
 # Set up tensorflow models themselves. We need a separate model for
 # each combination of inputs/dimensions to optimize.
@@ -708,31 +724,19 @@ def full_optimize(opts, inputs, models, state,
     inputs.target_tensor.assign(inputs.input_image)
 
     for i in range(opts.full_iter):
-        with tf.GradientTape() as tape:
-            # Get trainable variables
-            trainable_vars = models.full.params
-            
-            # Ensure variables are being watched
-            tape.watch(trainable_vars)
-            
-            # Forward pass
-            loss = models.full.loss
-            
-        # Get gradients
-        grads = tape.gradient(loss, trainable_vars)
+        # Use the model's train_step method
+        loss = models.full.train_step()
         
-        # Apply gradients if they exist
-        if grads is not None:
-            models.full.opt.apply_gradients([(grads, trainable_vars)])
-        else:
-            print("Warning: Gradients are None!")
-
         if ((i+1) % 1000 == 0 and (i+1) < opts.full_iter):
             # Get current values
             cur_loss = float(loss)
             cur_approx = models.full.approx.numpy()[0]
             
             print('  loss at iter {:6d} is {}'.format(i+1, cur_loss))
+            print("Gabor output stats:", 
+                  "min:", tf.reduce_min(models.full.gabor).numpy(),
+                  "max:", tf.reduce_max(models.full.gabor).numpy(),
+                  "mean:", tf.reduce_mean(models.full.gabor).numpy())
 
             snapshot(None, cur_approx,
                      opts, inputs, models,
@@ -812,29 +816,15 @@ def local_optimize(opts, inputs, models, state,
 
     # Training loop
     for i in range(opts.local_iter):
-        with tf.GradientTape() as tape:
-            # Get trainable variables
-            trainable_vars = models.local.params
-            
-            # Ensure variables are being watched
-            tape.watch(trainable_vars)
-            
-            # Forward pass - use the model's loss directly
-            loss = models.local.loss
-            
-            if i % 100 == 0:  # Print progress every 100 iterations
-                print(f"  Iteration {i}, Loss: {float(loss)}")
+        # Use the model's train_step method
+        loss = models.local.train_step()
         
-        # Get gradients
-        grads = tape.gradient(loss, trainable_vars)
-        
-        # Apply gradients if they exist
-        if grads is not None:
-            models.local.opt.apply_gradients([(grads, trainable_vars)])
-        else:
-            print(f"Warning: Gradients are None at iteration {i}!")
-            print(f"Trainable vars shape: {trainable_vars.shape}")
-            print(f"Loss value: {float(loss)}")
+        if i % 100 == 0:  # Print progress every 100 iterations
+            print(f"  Iteration {i}, Loss: {float(loss)}")
+            print("Gabor output stats:", 
+                  "min:", tf.reduce_min(models.local.gabor).numpy(),
+                  "max:", tf.reduce_max(models.local.gabor).numpy(),
+                  "mean:", tf.reduce_mean(models.local.gabor).numpy())
 
     # Get results
     results = {
