@@ -661,6 +661,15 @@ def snapshot(cur_gabor, cur_approx,
     if cur_gabor is None:
         cur_gabor = np.zeros_like(cur_approx)
         
+    # Print debug info
+    print("Debug - Image shapes and ranges:")
+    print("Input image:", inputs.input_image.shape, 
+          "range:", inputs.input_image.min(), "to", inputs.input_image.max())
+    print("Current approx:", cur_approx.shape, 
+          "range:", cur_approx.min(), "to", cur_approx.max())
+    print("Current gabor:", cur_gabor.shape, 
+          "range:", cur_gabor.min(), "to", cur_gabor.max())
+        
     # Ensure proper scaling for RGB values
     cur_abserr = np.abs(cur_approx - inputs.input_image)
     cur_abserr = cur_abserr * inputs.weight_image
@@ -677,6 +686,13 @@ def snapshot(cur_gabor, cur_approx,
         approx_img = rescale(cur_approx, -1, 1)
         gabor_img = rescale(cur_gabor, -1, 1)
         error_img = rescale(cur_abserr, 0, 1.0, COLORMAP)
+        
+        # Print debug info
+        print("Debug - Scaled image ranges:")
+        print("Input image:", input_img.min(), "to", input_img.max())
+        print("Approx image:", approx_img.min(), "to", approx_img.max())
+        print("Gabor image:", gabor_img.min(), "to", gabor_img.max())
+        print("Error image:", error_img.min(), "to", error_img.max())
         
         out_img = np.hstack((input_img, approx_img, gabor_img, error_img))
         
@@ -850,7 +866,7 @@ def local_optimize(opts, inputs, models, state,
     
     # Convert tensors to numpy arrays
     results = {
-        'loss_per_fit': final_state['err_loss_per_fit'].numpy(),  # Per-fit losses
+        'loss_per_fit': final_state['err_loss_per_fit'].numpy(),
         'con_losses': final_state['con_losses'].numpy(),
         'approx': final_state['approx'].numpy(),
         'gabor': final_state['gabor'].numpy(),
@@ -860,46 +876,26 @@ def local_optimize(opts, inputs, models, state,
     # Find best fit using per-fit losses
     fidx = results['loss_per_fit'].argmin()
 
+    # Get the best results
     new_loss = results['loss_per_fit'][fidx] + cur_con_losses
-    new_approx = results['approx'][fidx]
-    new_gabor = results['gabor'][fidx,...,0]  # Remove the last dimension
+    new_approx = results['approx'][fidx]  # Should be [h, w, 3]
+    new_gabor = results['gabor'][fidx,...,0]  # Should be [h, w, 3]
     new_params = results['params'][fidx]
     new_con_loss = results['con_losses'][fidx]
 
+    # Update preview if needed
     if opts.preview_size:
         tmpparams = state.params.copy()
         tmpparams[:,model_idx] = new_params[:,0]
         models.full.params.assign(tmpparams[None,:])
 
+    # Create snapshot
     snapshot(new_gabor,
-             cur_approx + new_gabor,
+             new_approx,  # This should be the current approximation
              opts, inputs, models,
              loop_count, model_start_idx+1, '')
 
-    if prev_best_loss is None or new_loss < prev_best_loss:
-        do_update = True
-    else:
-        rel_change = (prev_best_loss - new_loss) / prev_best_loss
-        if not opts.anneal_temp:
-            print('  not better than', prev_best_loss, 'skipping update')
-            do_update = False
-        else:
-            p_accept = np.exp(rel_change / opts.anneal_temp)
-            r = np.random.random()
-            do_update = (r < p_accept)
-            action = 'accepting' if do_update else 'rejecting'
-            print('  {} relative increase of {}, p={}'.format(
-                action, -rel_change, p_accept))
-    
-    if do_update:
-        prev_best_loss = new_loss
-        state.params[:,model_idx] = new_params[:,0]        
-        state.gabor[:,:,:,model_idx] = new_gabor[:,:,:,0]
-        state.con_loss[model_idx] = new_con_loss
-
-    print()
-
-    return prev_best_loss
+    return new_loss, new_params[:,0], new_con_loss
 
 ######################################################################
 
@@ -988,7 +984,7 @@ def main():
 
             # Do a big parallel optimization for a bunch of random
             # model initializations
-            prev_best_loss = local_optimize(opts, inputs, models,
+            prev_best_loss, new_params, new_con_loss = local_optimize(opts, inputs, models,
                                             state,  # removed sess parameter
                                             cur_approx, cur_con_losses,
                                             cur_target,
