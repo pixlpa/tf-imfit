@@ -323,9 +323,10 @@ class GaborModel(object):
                     minval=self.gmin,
                     maxval=self.gmax)
             self.params = tf.Variable(
-                initializer(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
+                initializer(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size)),
                 trainable=True,
-                name='params')
+                name='params'
+            )
 
         # Set up optimizer with gradient clipping
         self.opt = tf.keras.optimizers.Adam(
