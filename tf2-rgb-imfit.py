@@ -828,15 +828,16 @@ def local_optimize(opts, inputs, models, state,
     # Get final state
     final_state = models.local.get_current_state()
     
-    # Use final state values for the rest of the function
+    # Convert tensors to numpy arrays
     results = {
-        'loss': final_state['loss'],
-        'con_losses': final_state['con_losses'],
-        'approx': final_state['approx'],
-        'gabor': final_state['gabor'],
-        'params': final_state['params']
+        'loss': final_state['loss'].numpy(),
+        'con_losses': final_state['con_losses'].numpy(),
+        'approx': final_state['approx'].numpy(),
+        'gabor': final_state['gabor'].numpy(),
+        'params': final_state['params'].numpy()
     }
 
+    # Now we can use numpy operations
     fidx = results['loss'].argmin()
 
     new_loss = results['loss'][fidx] + cur_con_losses
