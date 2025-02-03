@@ -771,7 +771,9 @@ def full_optimize(opts, inputs, models, state,
     fidx = results['loss_per_fit'].argmin()
     
     # Get the best results
-    new_loss = float(results['loss_per_fit'][fidx] + results['con_losses'][fidx])  # Convert to scalar
+    loss_per_fit = float(results['loss_per_fit'][fidx].item())  # Convert to scalar using .item()
+    con_losses = float(results['con_losses'][fidx].item())      # Convert to scalar using .item()
+    new_loss = loss_per_fit + con_losses
     
     print("\nFull optimization complete:")
     print(f"  Previous loss: {prev_best_loss}")
