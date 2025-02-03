@@ -490,7 +490,12 @@ class GaborModel(object):
 # each combination of inputs/dimensions to optimize.
 
 def setup_models(opts, inputs):
-
+    # Validate dimensions
+    if opts.num_models <= 0:
+        raise ValueError("num_models must be positive")
+    if opts.num_local <= 0:
+        raise ValueError("num_local must be positive")
+        
     weight_tensor = tf.constant(inputs.weight_image)
 
     x_tensor = tf.constant(inputs.x.reshape(1,1,-1,1,1))
