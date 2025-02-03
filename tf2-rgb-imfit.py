@@ -1042,8 +1042,35 @@ def main():
         print('\ninterrupted by user, saving final state...')
         
         if opts.output is not None:
-            np.savetxt(opts.output, state.params.transpose(),
+            # Convert to numpy if it's a tensor
+            save_params = state.params.numpy() if tf.is_tensor(state.params) else state.params
+            print("\nSaving final state params:")
+            print("Shape:", save_params.shape)
+            print("Min/Max:", np.min(save_params), np.max(save_params))
+            
+            np.savetxt(opts.output, save_params.transpose(),
                        fmt='%f', delimiter=',')
+            
+            # Verify the save
+            loaded = np.loadtxt(opts.output, delimiter=',')
+            print("Verified final save - Shape:", loaded.shape)
+            print("Verified final save - Min/Max:", np.min(loaded), np.max(loaded))
+    
+    # Add final save after training completes
+    if opts.output is not None:
+        # Convert to numpy if it's a tensor
+        save_params = state.params.numpy() if tf.is_tensor(state.params) else state.params
+        print("\nSaving final trained params:")
+        print("Shape:", save_params.shape)
+        print("Min/Max:", np.min(save_params), np.max(save_params))
+        
+        np.savetxt(opts.output, save_params.transpose(),
+                   fmt='%f', delimiter=',')
+        
+        # Verify the save
+        loaded = np.loadtxt(opts.output, delimiter=',')
+        print("Verified final trained save - Shape:", loaded.shape)
+        print("Verified final trained save - Min/Max:", np.min(loaded), np.max(loaded))
 
 ######################################################################
 
