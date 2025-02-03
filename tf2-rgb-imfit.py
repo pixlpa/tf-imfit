@@ -5,24 +5,6 @@ from collections import namedtuple
 import tensorflow as tf
 import numpy as np
 from PIL import Image
-import traceback
-import json
-import copy
-from typing import Dict, Tuple, Optional
-try:
-    from tqdm import tqdm
-except ImportError:
-    def tqdm(x, *args, **kwargs):
-        return x
-try:
-    import imageio
-except ImportError:
-    print("Warning: imageio not installed. Image saving/loading may fail.")
-try:
-    import cv2
-except ImportError:
-    print("Warning: opencv-python not installed. Snapshot labels will be disabled.")
-import gc
 
 COLORMAP = None
 
@@ -285,215 +267,195 @@ def setup_inputs(opts):
     GABOR_RANGE[GABOR_PARAM_T, 0] = px
     GABOR_RANGE[GABOR_PARAM_S, 0] = px
     
-    target_tensor = tf.compat.v1.placeholder(tf.float32,
-                                   shape=input_image.shape,
-                                   name='target')
+    target_tensor = tf.Variable(np.zeros(input_image.shape, dtype=np.float32),
+                              trainable=False,
+                              name='target')
 
-    max_row = tf.compat.v1.placeholder(tf.int32, shape=(),
-                             name='max_row')
+    max_row = tf.Variable(0, trainable=False, dtype=tf.int32,
+                        name='max_row')
 
     return InputsTuple(input_image, weight_image,
                        x, y, target_tensor, max_row)
 
-
-def format_time(seconds):
-    """Format time in seconds to human readable string"""
-    if seconds < 60:
-        return f"{seconds:.1f}s"
-    minutes = seconds / 60
-    if minutes < 60:
-        return f"{minutes:.1f}m"
-    hours = minutes / 60
-    return f"{hours:.1f}h"
-
 ######################################################################
 # Encapsulate the tensorflow objects we need to run our fit.
 # Note we will create several of these (see main function below).
-class GaborModel:
-    def __init__(self, name, count, image_shape):
-        self.name = name
-        self.count = count
-        self.image_shape = image_shape
-        self.variables = {}
-        self.max_sigma = None
-        self.max_frequency = None
 
-        # Create variables with proper bounds
-        h, w = image_shape[:2]
-        self.variables.update({
-            # Position variables bounded by image dimensions
-            'pos_x': tf.Variable(tf.random.uniform([count], 0, w), 
-                               name=f'{name}/pos_x'),
-            'pos_y': tf.Variable(tf.random.uniform([count], 0, h), 
-                               name=f'{name}/pos_y'),
-            # Sigma (size) with reasonable bounds
-            'sigma': tf.Variable(tf.random.uniform([count], 1, 20), 
-                               name=f'{name}/sigma'),
-            # Theta (rotation) between 0 and pi
-            'theta': tf.Variable(tf.random.uniform([count], 0, np.pi), 
-                               name=f'{name}/theta'),
-            # Frequency with reasonable bounds
-            'frequency': tf.Variable(tf.random.uniform([count], 0.02, 0.5), 
-                                   name=f'{name}/frequency'),
-            # Phase between 0 and 2pi
-            'phase': tf.Variable(tf.random.uniform([count], 0, 2*np.pi), 
-                               name=f'{name}/phase'),
-            # Colors between 0 and 1
-            'colors': tf.Variable(tf.random.uniform([count, 3], 0, 1), 
-                                name=f'{name}/colors'),
-            # Amplitude between 0 and 1
-            'amplitude': tf.Variable(tf.random.uniform([count], 0, 1), 
-                                   name=f'{name}/amplitude'),
-            'scale': tf.Variable(tf.ones([count]), name=f'{name}/scale')
-        })
+class GaborModel(object):
+ 
+    # The Gabor function tensor we define will be n x h x w x c x e
+    # where n = num_parallel is the number of independent fits,
+    # h x w is the image size,
+    # c is the number of image channels (3 for RGB)
+    # e = ensemble_size is the number of Gabor models per independent fit
+    
+    def __init__(self, 
+                 num_parallel, ensemble_size,
+                 x, y, weight, target,
+                 learning_rate=0.0001,
+                 params=None,
+                 initializer=None,
+                 max_row=None):
 
-        # Property accessors
-        for name in self.variables:
-            setattr(self, name, self.variables[name])
+        # Allow evaluating less than ensemble_size models (i.e. while
+        # building up full model).
+        if max_row is None:
+            max_row = ensemble_size
+
+        gmin = GABOR_RANGE[:,0].reshape(1,GABOR_NUM_PARAMS,1).copy()
+        gmax = GABOR_RANGE[:,1].reshape(1,GABOR_NUM_PARAMS,1).copy()
             
-        # Pre-compute coordinate grid once during initialization
-        x_coords = tf.cast(tf.range(w), tf.float32)
-        y_coords = tf.cast(tf.range(h), tf.float32)
-        self.x_grid, self.y_grid = tf.meshgrid(x_coords, y_coords)
-        
-        print(f"Initialized GaborModel with {count} Gabors for image shape {image_shape}")
+        # Parameter tensor could be passed in or created here
+        if params is not None:
 
-    @property
-    def trainable_variables(self):
-        """Return list of all trainable variables"""
-        return list(self.variables.values())
+            self.params = params
 
-    @tf.function
-    def generate_gabor(self, x, y):
-        """Generate Gabor function values for given coordinates"""
-        # Use broadcasting for better performance
-        x = tf.expand_dims(x, -1)  # [..., 1]
-        y = tf.expand_dims(y, -1)  # [..., 1]
-        
-        # Center coordinates on Gabor positions (use broadcasting)
-        x_c = x - self.pos_x  # [..., count]
-        y_c = y - self.pos_y  # [..., count]
-        
-        # Pre-compute trig functions once
-        cos_theta = tf.cos(self.theta)
-        sin_theta = tf.sin(self.theta)
-        
-        # Rotate coordinates (vectorized)
-        x_r = x_c * cos_theta + y_c * sin_theta
-        y_r = -x_c * sin_theta + y_c * cos_theta
-        
-        # Compute Gabor function (vectorized)
-        gaussian = tf.exp(-(x_r**2 + y_r**2) / (2 * self.sigma**2))
-        sinusoid = tf.cos(2 * np.pi * self.frequency * x_r + self.phase)
-        
-        return gaussian * sinusoid * self.amplitude * self.scale
+        else:
 
-    @tf.function
-    def generate_image(self):
-        """Generate full image from all Gabor functions (optimized)"""
-        # Use pre-computed coordinate grid
-        gabor_values = self.generate_gabor(self.x_grid, self.y_grid)  # [h, w, count]
-        
-        # Multiply by colors and sum (optimized broadcasting)
-        colored_gabors = tf.expand_dims(gabor_values, -1) * self.colors  # [h, w, count, 3]
-        image = tf.reduce_sum(colored_gabors, axis=2)  # [h, w, 3]
-        
-        return tf.clip_by_value(image, 0.0, 1.0)
+            if initializer is None:
+                initializer = tf.random_uniform_initializer(minval=gmin,
+                                                            maxval=gmax,
+                                                            dtype=tf.float32)
 
-    def apply_constraints(self):
-        """Apply constraints to keep variables in valid ranges"""
-        h, w = self.image_shape[:2]
-        constraints = {
-            'pos_x': (0, w),
-            'pos_y': (0, h),
-            'sigma': (1, 20),
-            'theta': (0, np.pi),
-            'frequency': (0.02, 0.5),
-            'phase': (0, 2*np.pi),
-            'colors': (0, 1),
-            'amplitude': (0, 1),
-            'scale': (0, None)
-        }
-        
-        for name, (min_val, max_val) in constraints.items():
-            var = self.variables[name]
-            if min_val is not None:
-                var.assign(tf.maximum(var, min_val))
-            if max_val is not None:
-                var.assign(tf.minimum(var, max_val))
+            # n x 12 x e
+            self.params = tf.Variable(
+                tf.random.uniform(shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
+                                 minval=gmin, maxval=gmax, dtype=tf.float32)
 
-    def get_variable_values(self):
-        """Get current values of all variables"""
-        return {name: var.numpy() for name, var in self.variables.items()}
+        gmin[:,:GABOR_PARAM_L,:] = -np.inf
+        gmax[:,:GABOR_PARAM_L,:] =  np.inf
 
-    def set_variable_values(self, values):
-        """Set values for all variables"""
-        for name, value in values.items():
-            if name in self.variables:
-                self.variables[name].assign(value)
+        # n x 12 x e
+        self.cparams = tf.clip_by_value(self.params[:,:,:max_row],
+                                        gmin, gmax,
+                                        name='cparams')
 
-    def update_constraints(self, max_sigma=None, max_frequency=None):
-        """Update model constraints for curriculum learning"""
-        if max_sigma is not None:
-            self.variables['sigma'].assign(
-                tf.clip_by_value(self.variables['sigma'], 1.0, max_sigma))
-        
-        if max_frequency is not None:
-            self.variables['frequency'].assign(
-                tf.clip_by_value(self.variables['frequency'], 0.02, max_frequency))
 
-    def set_parameter_constraints(self, max_sigma=None, max_frequency=None):
-        """Set constraints on Gabor parameters"""
-        self.max_sigma = max_sigma
-        self.max_frequency = max_frequency
-        
-        # Apply constraints to current parameters
-        if max_sigma is not None:
-            self.sigma.assign(tf.clip_by_value(self.sigma, 0.1, max_sigma))
-            
-        if max_frequency is not None:
-            self.frequency.assign(tf.clip_by_value(self.frequency, 0.001, max_frequency))
-            
-        print(f"Applied constraints: max_sigma={max_sigma}, max_frequency={max_frequency}")
+        ############################################################
+        # Now compute the Gabor function for each fit/model
 
-    def call(self):
-        """Forward pass of the model"""
-        # Get target dimensions from image_shape
-        h, w = self.image_shape[:2]
+        # n x h x w x c x e
         
-        # Generate all Gabor components
-        components = []
-        for i in range(self.count):
-            x = self.pos_x[i]
-            y = self.pos_y[i]
-            sigma = self.sigma[i]
-            theta = self.theta[i]
-            frequency = self.frequency[i]
-            phase = self.phase[i]
-            amplitude = self.amplitude[i]
-            color = self.colors[i]  # RGB color for this Gabor
-            
-            # Generate Gabor component
-            component = self.generate_gabor(self.x_grid, self.y_grid)  # Shape: [height, width]
-            
-            # Apply color to component
-            colored_component = tf.expand_dims(component, -1) * color  # Shape: [height, width, 3]
-            components.append(colored_component)
-            
-        # Stack all components
-        components = tf.stack(components)  # Shape: [n_components, height, width, 3]
+        # n x 1 x 1 x 1 x e
+        u = self.cparams[:,None,None,None,GABOR_PARAM_U,:]
+        v = self.cparams[:,None,None,None,GABOR_PARAM_V,:]
+        r = self.cparams[:,None,None,None,GABOR_PARAM_R,:]
+        l = self.cparams[:,None,None,None,GABOR_PARAM_L,:]
+        t = self.cparams[:,None,None,None,GABOR_PARAM_T,:]
+        s = self.cparams[:,None,None,None,GABOR_PARAM_S,:]
         
-        # Sum all components to get final image
-        image = tf.reduce_sum(components, axis=0)  # Shape: [height, width, 3]
+        p = self.cparams[:,None,None,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
+        h = self.cparams[:,None,None,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
+
+
+        cr = tf.cos(r)
+        sr = tf.sin(r)
+
+        f = np.float32(2*np.pi) / l
+
+        s2 = s*s
+        t2 = t*t
+
+        # n x 1 x w x 1 x e
+        xp = x-u
+
+        # n x h x 1 x 1 x e
+        yp = y-v
+
+        # n x h x w x 1 x e
+        b1 =  cr*xp + sr*yp
+        b2 = -sr*xp + cr*yp
+
+        b12 = b1*b1
+        b22 = b2*b2
+
+        w = tf.exp(-b12/(2*s2) - b22/(2*t2))
+
+        k = f*b1 +  p
+        ck = tf.cos(k)
+
+        # n x h x w x c x e
+        self.gabor = tf.identity(h * w * ck, name='gabor')
+
+        ############################################################
+        # Compute the ensemble sum of all models for each fit        
         
-        # Add batch dimension
-        image = tf.expand_dims(image, axis=0)  # Shape: [1, height, width, 3]
+        # n x h x w x c
+        self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
+
+        ############################################################
+        # Everything below here is for optimizing, if we just want
+        # to visualize, stop now.
         
-        # Ensure correct spatial dimensions
-        if image.shape[1:3] != (h, w):
-            image = tf.image.resize(image, [h, w])
+        if target is None:
+            return
+
+        ############################################################
+        # Compute loss for soft constraints
+        #
+        # All constraint losses are of the form min(c, 0)**2, where c
+        # is an individual constraint function. So we only get a
+        # penalty if the constraint function c is less than zero.
         
-        return components, image
+        # Pair-wise constraints on l, s, t:
+
+        # n x e 
+        l = self.cparams[:,GABOR_PARAM_L,:]
+        s = self.cparams[:,GABOR_PARAM_S,:]
+        t = self.cparams[:,GABOR_PARAM_T,:]
+
+        pairwise_constraints = [
+            s - l/32,
+            l/2 - s,
+            t - s,
+            8*s - t
+        ]
+                
+        # n x e x k
+        self.constraints = tf.stack( pairwise_constraints,
+                                     axis=2, name='constraints' )
+
+        # n x e x k
+        con_sqr = tf.minimum(self.constraints, 0)**2
+
+        # n x e
+        self.con_losses = tf.reduce_sum(con_sqr, axis=2, name='con_losses')
+
+        # n (sum across mini-batch)
+        self.con_loss_per_fit = tf.reduce_sum(self.con_losses, axis=1,
+                                              name='con_loss_per_fit')
+
+
+
+        ############################################################
+        # Compute loss for approximation error
+        
+        # n x h x w x c
+        self.err = tf.multiply((target - self.approx),
+                                weight, name='err')
+
+        err_sqr = 0.5*self.err**2
+
+        # n (average across h/w/c)
+        self.err_loss_per_fit = tf.reduce_mean(err_sqr, axis=(1,2,3),
+                                               name='err_loss_per_fit')
+
+
+        ############################################################
+        # Compute various sums/means of above losses:
+
+        # n
+        self.loss_per_fit = tf.add(self.con_loss_per_fit,
+                                   self.err_loss_per_fit,
+                                   name='loss_per_fit')
+
+        # scalars
+        self.err_loss = tf.reduce_mean(self.err_loss_per_fit, name='err_loss')
+        self.con_loss = tf.reduce_mean(self.con_loss_per_fit, name='con_loss')
+        self.loss = self.err_loss + self.con_loss
+
+        with tf.name_scope('imfit_optimizer'):
+            self.opt = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
 ######################################################################
 # Set up tensorflow models themselves. We need a separate model for
@@ -506,7 +468,7 @@ def setup_models(opts, inputs):
     x_tensor = tf.constant(inputs.x.reshape(1,1,-1,1,1))
     y_tensor = tf.constant(inputs.y.reshape(1,-1,1,1,1))
 
-    with tf.compat.v1.variable_scope('full'):
+    with tf.name_scope('full'):
 
         full = GaborModel(1, opts.num_models,
                           x_tensor, y_tensor,
@@ -515,7 +477,7 @@ def setup_models(opts, inputs):
                           max_row = inputs.max_row,
                           initializer=tf.zeros_initializer())
     
-    with tf.compat.v1.variable_scope('local'):
+    with tf.name_scope('local'):
         
         local = GaborModel(opts.num_local, 1,
                            x_tensor, y_tensor,
@@ -530,7 +492,7 @@ def setup_models(opts, inputs):
 
         _, x_preview, y_preview = normalized_grid(preview_shape[:2])
         
-        with tf.compat.v1.variable_scope('preview'):
+        with tf.name_scope('preview'):
             preview = GaborModel(1, opts.num_models,
                                  x_preview.reshape(1,1,-1,1,1),
                                  y_preview.reshape(1,-1,1,1,1),
@@ -573,7 +535,7 @@ def copy_state(state):
 ######################################################################
 # Load weights from file.
 
-def load_params(opts, inputs, models, state, sess):
+def load_params(opts, inputs, models, state):
 
     if opts.input is not None:
         iparams = np.genfromtxt(opts.input, dtype=np.float32, delimiter=',')
@@ -597,31 +559,31 @@ def load_params(opts, inputs, models, state, sess):
 
     state.params[:,:nparams] = iparams.transpose()
 
-    models.full.params.load(state.params[None,:,:], sess)
+    # Update the full model's parameters
+    models.full.params.assign(state.params[None,:])
 
-    fetches = dict(gabor=models.full.gabor,
-                   approx=models.full.approx,
-                   err_loss=models.full.err_loss,
-                   loss=models.full.loss,
-                   con_losses=models.full.con_losses)
+    # Set the target and max_row
+    inputs.target_tensor.assign(inputs.input_image)
+    inputs.max_row.assign(nparams)
 
-    feed_dict = {inputs.target_tensor: inputs.input_image,
-                 inputs.max_row: nparams}
+    # Get the results directly from the model
+    gabor = models.full.gabor.numpy()[0]
+    approx = models.full.approx.numpy()[0]
+    err_loss = float(models.full.err_loss)
+    con_losses = models.full.con_losses.numpy()[0]
 
-    results = sess.run(fetches, feed_dict)
+    # Update state with results
+    state.gabor[:,:,:,:nparams] = gabor[:,:,:,:nparams]
+    state.con_loss[:nparams] = con_losses[:nparams]
 
-    state.gabor[:,:,:,:nparams] = results['gabor'][0, :, :, :, :nparams]
-    state.con_loss[:nparams] = results['con_losses'][0, :nparams]
-
-    cur_approx = results['approx'][0]
-
-    prev_best_loss = results['err_loss'] + state.con_loss[:nparams].sum()
+    prev_best_loss = err_loss + state.con_loss[:nparams].sum()
         
     if opts.preview_size:
-        models.full.params.load(state.params[None,:,:])
+        models.full.params.assign(state.params[None,:])
     
-    snapshot(None, cur_approx,
-             opts, inputs, models, sess, -1, nparams, '')
+    snapshot(None, approx,
+             opts, inputs, models, None,
+             -1, nparams, '')
     
     print('initial loss is {}'.format(prev_best_loss))
     print()
@@ -652,751 +614,644 @@ def rescale(idata, imin, imax, cmap=None):
 ######################################################################
 # Save a snapshot of the current state to a PNG file
 
-def snapshot(current_image, input_image, opts, iteration, extra_info=None):
-    """Save a snapshot of the current optimization state"""
-    if not opts.snapshot_prefix:
-        return
+def snapshot(cur_gabor, cur_approx,
+             opts, inputs, models,
+             loop_count, model_start_idx,
+             full_iteration):
+
+    if not opts.label_snapshot:
+        outfile = '{}.png'.format(opts.snapshot_prefix)
+    elif isinstance(full_iteration, int):
+        outfile = '{}{:04d}_{:06d}.png'.format(
+            opts.snapshot_prefix, loop_count+1, full_iteration+1)
+    else:
+        outfile = '{}{:04d}{}.png'.format(
+            opts.snapshot_prefix, loop_count+1, full_iteration)
+
+    if cur_gabor is None:
+        cur_gabor = np.zeros_like(cur_approx)
+        
+    cur_abserr = np.abs(cur_approx - inputs.input_image)
+    cur_abserr = cur_abserr * inputs.weight_image
+    cur_abserr = np.power(cur_abserr, 0.5) # boost low end to aid visualization
+
+    global COLORMAP
     
-    try:
-        # Create output directory if it doesn't exist
-        outdir = os.path.dirname(opts.snapshot_prefix)
-        if outdir and not os.path.exists(outdir):
-            os.makedirs(outdir, exist_ok=True)
+    if COLORMAP is None:
+        COLORMAP = get_colormap()
 
-        # Generate output filename with stage info if provided
-        if extra_info:
-            outfile = f'{opts.snapshot_prefix}-{int(iteration):06d}-{extra_info}.png'
-        else:
-            outfile = f'{opts.snapshot_prefix}-{int(iteration):06d}.png'
         
-        # Ensure we have numpy arrays
-        def to_numpy(x):
-            if isinstance(x, tf.Tensor):
-                return x.numpy()
-            if isinstance(x, np.ndarray):
-                return x
-            raise ValueError(f"Unsupported type for image: {type(x)}")
+    if not opts.preview_size:
         
-        try:
-            current_image_np = to_numpy(current_image)
-            input_image_np = to_numpy(input_image)
-        except Exception as e:
-            print(f"Error converting images to numpy: {e}")
-            return
+        out_img = np.hstack(( rescale(inputs.input_image, -1, 1),
+                              rescale(cur_approx, -1, 1),
+                              rescale(cur_gabor, -1, 1),
+                              rescale(cur_abserr, 0, 1.0, COLORMAP) ))
+
+    else:
         
-        # Ensure proper value range [0, 1]
-        current_image_np = np.clip(current_image_np, 0, 1)
-        input_image_np = np.clip(input_image_np, 0, 1)
-        
-        # Calculate error
-        error = np.abs(current_image_np - input_image_np)
-        
-        # Convert to uint8
-        current_image_uint8 = (current_image_np * 255).astype(np.uint8)
-        input_image_uint8 = (input_image_np * 255).astype(np.uint8)
-        error_uint8 = (error * 255).astype(np.uint8)
-        
-        # Create visualization
-        h, w = input_image_np.shape[:2]
-        canvas = np.zeros((h, w * 3, 3), dtype=np.uint8)
-        
-        # Original image
-        canvas[:, :w] = input_image_uint8
-        # Current approximation
-        canvas[:, w:w*2] = current_image_uint8
-        # Error visualization
-        canvas[:, w*2:] = error_uint8
-        
-        # Add labels if requested
-        if opts.label_snapshot:
-            try:
-                labels = ['Input', 'Current', 'Error']
-                for i, label in enumerate(labels):
-                    cv2.putText(canvas, label, (i*w + 10, 30),
-                              cv2.FONT_HERSHEY_SIMPLEX, 1,
-                              (255, 255, 255), 2)
-            except Exception as e:
-                print(f"Warning: Failed to add labels: {e}")
-        
-        # Save image
-        try:
-            imageio.imwrite(outfile, canvas)
-            print(f"Saved snapshot to {outfile}")
-        except Exception as e:
-            print(f"Failed to save snapshot: {e}")
-        
-    except Exception as e:
-        print(f"Error in snapshot function: {e}")
-        traceback.print_exc()
+        max_rowval = min(model_start_idx, opts.num_models)
+
+        feed_dict = { inputs.max_row: max_rowval }
+        preview_image = tf.keras.backend.eval(models.preview.approx)[0]
+
+        ph, pw = preview_image.shape[:2]
+            
+        preview_image = rescale(preview_image, -1, 1)
+
+        err_image = rescale(cur_abserr, 0, 1.0, COLORMAP)
+        err_image = Image.fromarray(err_image, 'RGB')
+        err_image = err_image.resize((pw, ph), resample=Image.NEAREST)
+        err_image = np.array(err_image)
+
+        out_img = np.hstack((preview_image, err_image))
+    
+    out_img = Image.fromarray(out_img, 'RGB')
+
+    out_img.save(outfile)
+
 ######################################################################
+# Perform an optimization on the full joint model (expensive/slow).
 
-class GaborOptimizer:
-    def __init__(self, model, input_image, learning_rate=0.01, **kwargs):
-        self.model = model
-        self.input_image = input_image
-        self.initial_learning_rate = learning_rate
-        self.current_learning_rate = learning_rate
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-        self.weights = kwargs.get('weights', None)
-        self.loss_history = []
-        self.best_loss = float('inf')
-        self.best_state = None
+def full_optimize(opts, inputs, models, state,
+                  loop_count,
+                  model_start_idx,
+                  prev_best_loss,
+                  rollback_loss):
 
-    def prepare_for_stage(self, stage, max_sigma, max_freq):
-        """Prepare optimizer for a new curriculum learning stage"""
-        # Update model constraints for this stage
-        self.model.set_parameter_constraints(
-            max_sigma=max_sigma,
-            max_frequency=max_freq
-        )
-        
-        # Reset best state tracking for new stage
-        self.best_loss = float('inf')
-        self.best_state = None
-        
-        print(f"Stage {stage}: max_sigma={max_sigma:.1f}, max_freq={max_freq:.3f}")
+    print('performing full optimization')
 
-    def optimization_step(self):
-        """Perform one optimization step"""
+    if rollback_loss is not None:
+        print('  best prev full loss is {}'.format(rollback_loss))
+    
+    print('  before full opt, loss: {}'.format(prev_best_loss))
+
+    models.full.params.assign(state.params[None,:])
+
+    max_rowval = min(model_start_idx, opts.num_models)
+    inputs.max_row.assign(max_rowval)
+    inputs.target_tensor.assign(inputs.input_image)
+
+    for i in range(opts.full_iter):
         with tf.GradientTape() as tape:
             # Forward pass
-            components, image = self.model.call()
+            loss = models.full.loss
             
-            # Calculate loss
-            loss = self.calculate_loss(image)
-            
-            # Compute gradients
-            gradients = tape.gradient(loss, self.model.trainable_variables)
-            
-            # Apply gradients
-            self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
-            
-            # Track best state
-            current_loss = loss.numpy()
-            if self.best_state is None or current_loss < self.best_loss:
-                self.best_loss = current_loss
-                self.best_state = [v.numpy() for v in self.model.trainable_variables]
-            
-            # Track loss history
-            self.loss_history.append(current_loss)
-            
-            return current_loss, components, image
+        # Compute gradients
+        grads = tape.gradient(loss, models.full.params)
+        
+        # Apply gradients
+        models.full.opt.apply_gradients([(grads, models.full.params)])
 
-    def calculate_loss(self, predicted_image):
-        """Calculate loss between predicted and target images"""
-        # Ensure input_image has batch dimension
-        if len(self.input_image.shape) == 3:
-            input_image = tf.expand_dims(self.input_image, axis=0)
-        else:
-            input_image = self.input_image
-        
-        # Print shapes for debugging
-        print(f"Input shape: {input_image.shape}, Predicted shape: {predicted_image.shape}")
-        
-        # Ensure same spatial dimensions
-        h, w = input_image.shape[1:3]
-        predicted_image = tf.image.resize(predicted_image, [h, w])
-        
-        # MSE loss
-        mse = tf.reduce_mean(tf.square(predicted_image - input_image))
-        
-        # Add regularization if weights provided
-        if self.weights is not None:
-            reg_loss = tf.reduce_sum([
-                w * tf.reduce_sum(tf.abs(v)) 
-                for w, v in zip(self.weights, self.model.trainable_variables)
-            ])
-            return mse + reg_loss
+        if ((i+1) % 1000 == 0 and (i+1) < opts.full_iter):
+            # Get current values
+            cur_loss = float(loss)
+            cur_approx = models.full.approx.numpy()[0]
             
-        return mse
+            print('  loss at iter {:6d} is {}'.format(i+1, cur_loss))
 
-class StateManager:
-    """Manages optimization state and recovery"""
-    def __init__(self, model, optimizer, save_dir):
-        self.model = model
-        self.optimizer = optimizer
-        self.save_dir = save_dir
-        self.best_state = None
-        self.best_loss = float('inf')
-        
-        if save_dir:
-            os.makedirs(save_dir, exist_ok=True)
+            snapshot(None,
+                     cur_approx,
+                     opts, inputs, models, None,
+                     loop_count, model_start_idx, i)
+
+    # Get final values
+    final_loss = float(models.full.loss)
+    final_gabor = models.full.gabor.numpy()[0]
+    final_approx = models.full.approx.numpy()[0]
+    final_params = models.full.cparams.numpy()[0]
+    final_con_losses = models.full.con_losses.numpy()[0]
+
+    print('  new final loss is now  {}'.format(final_loss))
+
+    snapshot(None,
+             final_approx,
+             opts, inputs, models, None,
+             loop_count, model_start_idx, opts.full_iter-1)
+
+    if final_loss < prev_best_loss:
+        state.params[:,:max_rowval] = final_params
+        state.gabor[:,:,:,:max_rowval] = final_gabor
+        state.con_loss[:max_rowval] = final_con_losses
+        prev_best_loss = final_loss
+
+    print()
+
+    return prev_best_loss
+
+######################################################################
+# Apply a small perturbation to the input parameters
+
+def randomize(params, rstdev, ncopy=None):
+
+    gmin = GABOR_RANGE[:,0]
+    gmax = GABOR_RANGE[:,1]
+    grng = gmax - gmin
+
+    pshape = params.shape
+
+    if ncopy is not None:
+        pshape = (ncopy,) + pshape
     
-    def save_checkpoint(self, stage, step, loss):
-        """Save optimization checkpoint"""
-        if not self.save_dir:
-            return
-        
-        checkpoint = {
-            'model_state': self.model.get_variable_values(),
-            'optimizer_learning_rate': self.optimizer.current_learning_rate,
-            'stage': stage,
-            'step': step,
-            'loss': loss,
-            'best_loss': self.best_loss
-        }
-        
-        checkpoint_path = os.path.join(
-            self.save_dir, f'checkpoint_stage{stage}_step{step}.npz')
-        
-        try:
-            np.savez_compressed(checkpoint_path, **checkpoint)
-            print(f"Saved checkpoint to {checkpoint_path}")
-        except Exception as e:
-            print(f"Failed to save checkpoint: {e}")
+    bump = np.random.normal(scale=rstdev, size=pshape)
+
     
-    def load_checkpoint(self, checkpoint_path):
-        """Load optimization checkpoint"""
-        try:
-            checkpoint = np.load(checkpoint_path, allow_pickle=True)
+    return params + bump*grng
+
+######################################################################
+# Optimize a bunch of randomly-initialized small ensembles in
+# parallel.
+
+def local_optimize(opts, inputs, models, state,
+                   cur_approx, cur_con_losses, cur_target,
+                   is_replace, model_idx, loop_count,
+                   model_start_idx, prev_best_loss):
+
+    if prev_best_loss is not None:
+        print('  loss before local fit is', prev_best_loss)
+        
+    # Initialize parameters
+    if is_replace and opts.copy_quantity:
+        # Get current randomly initialized values
+        pvalues = models.local.params.numpy()
+
+        # Load in existing model values, slightly perturbed.
+        rparams = randomize(state.params[:,model_idx],
+                            opts.perturb_amount,
+                            opts.copy_quantity)
+
+        pvalues[:opts.copy_quantity] = rparams[:,:,None]
             
-            # Restore model state
-            self.model.set_variable_values(checkpoint['model_state'].item())
+        # Update tensor with data set above
+        models.local.params.assign(pvalues)
+
+    inputs.target_tensor.assign(cur_target)
+
+    for i in range(opts.local_iter):
+        with tf.GradientTape() as tape:
+            # Forward pass
+            loss = models.local.loss
             
-            # Restore optimizer learning rate
-            self.optimizer.current_learning_rate = float(checkpoint['optimizer_learning_rate'])
-            self.optimizer.optimizer.learning_rate.assign(self.optimizer.current_learning_rate)
-            
-            # Restore other state variables
-            self.best_loss = float(checkpoint['best_loss'])
-            
-            print(f"Loaded checkpoint from {checkpoint_path}")
-            return (int(checkpoint['stage']), 
-                   int(checkpoint['step']),
-                   float(checkpoint['loss']))
-            
-        except Exception as e:
-            print(f"Failed to load checkpoint: {e}")
-            return None
-    
-    def update_best_state(self, loss):
-        """Update best state if current loss is better"""
-        if loss < self.best_loss:
-            self.best_loss = loss
-            self.best_state = self.model.get_variable_values()
-            return True
-        return False
-    
-    def restore_best_state(self):
-        """Restore model to best known state"""
-        if self.best_state is not None:
-            self.model.set_variable_values(self.best_state)
-            print(f"Restored best model state (loss: {self.best_loss:.6f})")
-            return True
-        return False
+        # Compute gradients
+        grads = tape.gradient(loss, models.local.params)
+        
+        # Apply gradients
+        models.local.opt.apply_gradients([(grads, models.local.params)])
 
-def setup_gpu_memory():
-    """Configure GPU memory growth to prevent OOM errors"""
-    try:
-        gpus = tf.config.list_physical_devices('GPU')
-        if not gpus:
-            print("No GPU devices found. Running on CPU.")
-            return False
+    # Get results
+    results = {
+        'loss': models.local.loss_per_fit.numpy(),
+        'con_losses': models.local.con_losses.numpy(),
+        'approx': models.local.approx.numpy(),
+        'gabor': models.local.gabor.numpy(),
+        'params': models.local.cparams.numpy()
+    }
 
-        # Enable memory growth for all GPUs
-        for gpu in gpus:
-            try:
-                # Enable memory growth
-                tf.config.experimental.set_memory_growth(gpu, True)
-                
-                # Set memory limit to 75% of available memory to be more conservative
-                memory_limit = int(0.75 * tf.config.experimental.get_device_details(gpu)['memory_limit'])
-                tf.config.set_logical_device_configuration(
-                    gpu,
-                    [tf.config.LogicalDeviceConfiguration(memory_limit=memory_limit)])
-                
-                print(f"Configured GPU {gpu.name}:")
-                print(f"- Memory growth enabled")
-                print(f"- Memory limit set to {memory_limit / 1024**2:.0f}MB")
-            except RuntimeError as e:
-                print(f"Error configuring {gpu}: {e}")
-                continue
+    fidx = results['loss'].argmin()
 
-        # Set mixed precision policy
-        try:
-            policy = tf.keras.mixed_precision.Policy('mixed_float16')
-            tf.keras.mixed_precision.set_global_policy(policy)
-            print("Enabled mixed precision training")
-        except Exception as e:
-            print(f"Warning: Could not enable mixed precision: {e}")
+    new_loss = results['loss'][fidx] + cur_con_losses
+    new_approx = results['approx'][fidx]
+    new_gabor = results['gabor'][fidx]
+    new_params = results['params'][fidx]
+    new_con_loss = results['con_losses'][fidx]
 
-        # Additional memory optimizations
-        tf.config.optimizer.set_jit(True)  # Enable XLA
-        os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
-        os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
-        
-        return True
-    except Exception as e:
-        print(f"GPU setup failed: {e}")
-        return False
+    if opts.preview_size:
+        tmpparams = state.params.copy()
+        tmpparams[:,model_idx] = new_params[:,0]
+        models.full.params.assign(tmpparams[None,:])
 
-def optimize_with_curriculum(input_image, opts, weights=None):
-    """Progressive optimization with curriculum learning"""
-    print("\nInitializing optimization...")
-    
-    # Setup GPU if available
-    using_gpu = setup_gpu_memory()
-    
-    try:
-        # Create model and optimizer with smaller batch size
-        model = GaborModel('gabor', count=opts.num_models, 
-                         image_shape=input_image.shape)
-        optimizer = GaborOptimizer(model, input_image, 
-                                 learning_rate=opts.learning_rate,
-                                 weights=weights)
-        
-        # Create state manager
-        state_manager = StateManager(
-            model, optimizer, 
-            save_dir=os.path.join(opts.output_dir, 'checkpoints'))
-        
-        # Load initial state if provided
-        if opts.load_state and os.path.exists(opts.load_state):
-            state_manager.load_checkpoint(opts.load_state)
-        
-        # Default curriculum learning stages
-        opts.sigma_schedules = [20.0, 10.0, 5.0, 2.0]
-        opts.frequency_schedules = [0.02, 0.05, 0.1, 0.2]
-        
-        total_steps = 0
-        start_time = datetime.now()
-        
-        try:
-            for stage, (max_sigma, max_freq) in enumerate(zip(
-                opts.sigma_schedules, opts.frequency_schedules)):
-                
-                print(f"\nStage {stage + 1}/{len(opts.sigma_schedules)}")
-                print(f"Max sigma: {max_sigma:.1f}, Max frequency: {max_freq:.3f}")
-                
-                # Prepare optimizer for new stage
-                optimizer.prepare_for_stage(stage + 1, max_sigma, max_freq)
-                
-                # Calculate iterations for this stage
-                stage_iterations = opts.total_iterations // len(opts.sigma_schedules)
-                
-                with tqdm(total=stage_iterations, desc=f"Stage {stage + 1}") as pbar:
-                    for step in range(stage_iterations):
-                        try:
-                            # Clear memory before optimization step
-                            if using_gpu and step % 10 == 0:
-                                tf.keras.backend.clear_session()
-                                gc.collect()
-                            
-                            # Optimization step
-                            loss, components, image = optimizer.optimization_step()
-                            
-                            # Update progress
-                            if step % 10 == 0:
-                                pbar.set_postfix(loss=f"{loss:.6f}")
-                                pbar.update(10)
-                            
-                        except tf.errors.ResourceExhaustedError:
-                            print("\nOOM error - attempting recovery...")
-                            cleanup_gpu_memory()
-                            if using_gpu:
-                                tf.keras.backend.clear_session()
-                                gc.collect()
-                            state_manager.restore_best_state()
-                            continue
-                            
-                        except Exception as e:
-                            print(f"\nError during optimization: {e}")
-                            traceback.print_exc()
-                            state_manager.restore_best_state()
-                            continue
-                            
-        except KeyboardInterrupt:
-            print("\nOptimization interrupted by user")
-            state_manager.restore_best_state()
-        
-        finally:
-            # Final cleanup
-            if using_gpu:
-                cleanup_gpu_memory()
-        
-        return model, state_manager.best_loss
-        
-    except Exception as e:
-        print(f"\nFatal error: {e}")
-        traceback.print_exc()
-        if using_gpu:
-            cleanup_gpu_memory()
-        raise
+    snapshot(new_approx,
+             cur_approx + new_approx,
+             opts, inputs, models, None,
+             loop_count, model_start_idx+1, '')
 
-def setup_argument_parser():
-    """Create and configure argument parser with all options."""
-    parser = argparse.ArgumentParser(
-        description='TF2 Gabor Image Fitting',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    
-    # Input/Output arguments
-    io_group = parser.add_argument_group('Input/Output')
-    io_group.add_argument('image', type=argparse.FileType('rb'),
-                         metavar='IMAGE.png',
-                         help='Input image to approximate')
-    io_group.add_argument('-w', '--weights', type=argparse.FileType('rb'),
-                         metavar='WEIGHTS.png',
-                         help='Optional weight image (grayscale)')
-    io_group.add_argument('-i', '--input', type=str,
-                         metavar='PARAMFILE.txt',
-                         help='Read initial parameters from file')
-    io_group.add_argument('-o', '--output', type=str,
-                         metavar='PARAMFILE.txt',
-                         help='Write final parameters to file')
-    io_group.add_argument('-s', '--max-size', type=int,
-                         metavar='N', default=128,
-                         help='Maximum size of image to load')
-    io_group.add_argument('--output-dir', type=str, default='results',
-                         help='Directory for output files')
-    
-    # Model configuration
-    model_group = parser.add_argument_group('Model Configuration')
-    model_group.add_argument('-n', '--num-models', type=int,
-                           metavar='N', default=256,
-                           help='Total number of models to fit')
-    model_group.add_argument('-L', '--num-local', type=int,
-                           metavar='N', default=200,
-                           help='Number of random guesses per local fit')
-    model_group.add_argument('-p', '--preview-size', type=int,
-                           metavar='N', default=0,
-                           help='Size of large preview image (0 to disable)')
-    model_group.add_argument('--learning-rate', type=float,
-                           default=0.01,
-                           help='Base learning rate for optimizer')
-    
-    # Optimization parameters
-    optim_group = parser.add_argument_group('Optimization')
-    optim_group.add_argument('-t', '--time-limit', type=parse_duration,
-                           metavar='LIMIT',
-                           help='Time limit (e.g. 1:30 or 1h30m)')
-    optim_group.add_argument('-T', '--total-iterations', type=int,
-                           metavar='N', default=1000,
-                           help='Total limit on outer loop iterations')
-    optim_group.add_argument('-f', '--full-iter', type=int,
-                           metavar='N', default=10000,
-                           help='Maximum iterations for joint optimization')
-    optim_group.add_argument('-l', '--local-iter', type=int,
-                           metavar='N', default=100,
-                           help='Maximum iterations per local fit')
-    optim_group.add_argument('-F', '--full-every', type=int,
-                           metavar='N', default=32,
-                           help='Perform joint optimization every N outer loops')
-    optim_group.add_argument('--local-lr', type=float,
-                           metavar='R', default=0.01,
-                           help='Learning rate for local optimization')
-    optim_group.add_argument('--full-lr', type=float,
-                           metavar='R', default=0.0005,
-                           help='Learning rate for full optimization')
-    
-    # Curriculum learning
-    curriculum_group = parser.add_argument_group('Curriculum Learning')
-    curriculum_group.add_argument('--sigma-schedule', type=float, nargs='+',
-                                default=[20.0, 10.0, 5.0, 2.0],
-                                help='Schedule of max sigma values')
-    curriculum_group.add_argument('--frequency-schedule', type=float, nargs='+',
-                                default=[0.02, 0.05, 0.1, 0.2],
-                                help='Schedule of max frequency values')
-    
-    # State management
-    state_group = parser.add_argument_group('State Management')
-    state_group.add_argument('--load-state', type=str,
-                           help='Load initial state from checkpoint file')
-    state_group.add_argument('--save-best', type=str,
-                           help='Save best model state to file')
-    state_group.add_argument('--checkpoint-dir', type=str,
-                           default='checkpoints',
-                           help='Directory for saving checkpoints')
-    
-    # Visualization
-    vis_group = parser.add_argument_group('Visualization')
-    vis_group.add_argument('-S', '--label-snapshot', action='store_true',
-                          help='Individually label snapshots')
-    vis_group.add_argument('-x', '--snapshot-prefix', type=str,
-                          metavar='BASENAME', default='out',
-                          help='Prefix for snapshot filenames')
-    vis_group.add_argument('--snapshot-frequency', type=int,
-                          default=1,
-                          help='Save snapshot every N iterations')
-    
-    return parser
-
-def validate_options(opts):
-    """Validate and normalize command line options.
-    
-    Args:
-        opts: Parsed command line arguments
-        
-    Returns:
-        opts: Validated and normalized options
-        
-    Raises:
-        ValueError: If options are invalid
-    """
-    # Validate numeric ranges
-    if opts.max_size <= 0:
-        raise ValueError("Maximum size must be positive")
-    if opts.num_models <= 0:
-        raise ValueError("Number of models must be positive")
-    if opts.num_local <= 0:
-        raise ValueError("Number of local fits must be positive")
-    if opts.local_learning_rate <= 0:
-        raise ValueError("Learning rates must be positive")
-    if opts.full_learning_rate <= 0:
-        raise ValueError("Learning rates must be positive")
-        
-    # Normalize copy quantity to fraction
-    if opts.copy_quantity < 0:
-        opts.copy_quantity = 0
-    elif opts.copy_quantity >= 1:
-        opts.copy_quantity = 1
+    if prev_best_loss is None or new_loss < prev_best_loss:
+        do_update = True
     else:
-        opts.copy_quantity = int(round(opts.copy_quantity * opts.num_local))
-        
-    # Normalize preview size
-    if opts.preview_size < 0:
-        opts.preview_size = 0
-        
-    # Create output directories if needed
-    if opts.output_dir:
-        os.makedirs(opts.output_dir, exist_ok=True)
-    if opts.snapshot_prefix:
-        os.makedirs(os.path.dirname(opts.snapshot_prefix), exist_ok=True)
-        
-    return opts
+        rel_change = (prev_best_loss - new_loss) / prev_best_loss
 
-def get_options():
-    """Parse and validate command line options.
+        if not opts.anneal_temp:
+            print('  not better than', prev_best_loss, 'skipping update')
+            do_update = False
+        else:
+            p_accept = np.exp(rel_change / opts.anneal_temp)
+            r = np.random.random()
+            do_update = (r < p_accept)
+            action = 'accepting' if do_update else 'rejecting'
+            print('  {} relative increase of {}, p={}'.format(
+                action, -rel_change, p_accept))
     
-    Returns:
-        opts: Validated command line options
-        
-    Raises:
-        SystemExit: If invalid options are provided
-    """
-    parser = setup_argument_parser()
-    opts = parser.parse_args()
-    
-    try:
-        opts = validate_options(opts)
-    except ValueError as e:
-        parser.error(str(e))
-        
-    return opts
+    if do_update:
+        prev_best_loss = new_loss
+        state.params[:,model_idx] = new_params[:,0]        
+        state.gabor[:,:,:,model_idx] = new_gabor[:,:,:,0]
+        state.con_loss[model_idx] = new_con_loss
 
-def create_output_directories(opts):
-    """Create necessary output directories"""
-    directories = []
-    if opts.snapshot_prefix:
-        directories.append(os.path.dirname(opts.snapshot_prefix))
-    if opts.output_dir:
-        directories.append(opts.output_dir)
-    
-    for directory in directories:
-        if directory and not os.path.exists(directory):
-            os.makedirs(directory, exist_ok=True)
-            print(f"Created directory: {directory}")
+    print()
 
-def load_input_image(path, weight_path=None, scale=1.0):
-    """Load and preprocess input image and optional weights with scaling"""
-    try:
-        # Load main image and normalize to [0, 1]
-        image = imageio.imread(path).astype(np.float32) / 255.0
-        
-        # Scale image if requested
-        if scale != 1.0:
-            h, w = image.shape[:2]
-            new_h, new_w = int(h * scale), int(w * scale)
-            image = tf.image.resize(image, (new_h, new_w)).numpy()
-        
-        # Ensure 3 channels (RGB)
-        if len(image.shape) == 2:
-            image = np.stack([image] * 3, axis=-1)
-        elif image.shape[-1] == 4:  # RGBA
-            image = image[..., :3]
-        
-        # Load and scale weights if provided
-        weights = None
-        if weight_path:
-            try:
-                weights = imageio.imread(weight_path).astype(np.float32) / 255.0
-                if len(weights.shape) > 2:  # Convert to greyscale if needed
-                    weights = np.mean(weights, axis=-1)
-                
-                # Scale weights to match image
-                if scale != 1.0:
-                    weights = tf.image.resize(weights[..., None], 
-                                           (new_h, new_w))[..., 0].numpy()
-                
-                print(f"Loaded weight image from {weight_path}")
-                print(f"Weight range: {weights.min():.3f} to {weights.max():.3f}")
-                
-            except Exception as e:
-                print(f"Warning: Failed to load weights, using uniform weights: {e}")
-                weights = None
-        
-        return image, weights
-        
-    except Exception as e:
-        raise RuntimeError(f"Failed to load image {path}: {e}")
+    return prev_best_loss
 
-def setup_gpu():
-    """Configure GPU and return True if GPU is available and configured"""
-    try:
-        # Check for GPU availability
-        gpus = tf.config.list_physical_devices('GPU')
-        if not gpus:
-            print("No GPU devices found. Running on CPU.")
-            return False
-
-        # Configure memory growth to prevent TF from taking all GPU memory
-        for gpu in gpus:
-            try:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            except RuntimeError as e:
-                print(f"Warning: Could not set memory growth for {gpu}: {e}")
-        
-            #set env variable for mem allocation
-        os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'
-        # Enable mixed precision for better GPU performance
-        try:
-            policy = tf.keras.mixed_precision.Policy('mixed_float16')
-            tf.keras.mixed_precision.set_global_policy(policy)
-            print("Mixed precision enabled")
-        except Exception as e:
-            print(f"Warning: Could not enable mixed precision: {e}")
-        
-        print(f"GPU(s) configured successfully:")
-        print(f"- Found {len(gpus)} GPU(s)")
-        print(f"- Memory growth enabled")
-        return True
-        
-    except Exception as e:
-        print(f"Warning: GPU configuration failed: {e}")
-        print("Falling back to CPU.")
-        return False
-
-def save_model_state(model, filename):
-    """Save model variables to text file in original format"""
-    try:
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        
-        # Get model state and flatten variables into a single array
-        state = model.get_variable_values()
-        flattened = []
-        for name in ['pos_x', 'pos_y', 'sigma', 'theta', 'frequency', 
-                    'phase', 'colors', 'amplitude', 'scale']:
-            value = state[name]
-            if len(value.shape) > 1:  # For colors array
-                value = value.reshape(-1)
-            flattened.extend(value)
-        
-        # Convert to numpy array and save
-        params = np.array(flattened)
-        np.savetxt(filename, params)
-        print(f"✓ Saved model state to {filename}")
-        
-    except Exception as e:
-        print(f"⚠️ Failed to save model state: {e}")
-        traceback.print_exc()
-
-def load_model_state(model, filename):
-    """Load model variables from text file in original format"""
-    try:
-        # Load the flattened parameters
-        params = np.loadtxt(filename)
-        
-        # Calculate sizes for each variable
-        num_gabors = model.count
-        sizes = {
-            'pos_x': num_gabors,
-            'pos_y': num_gabors,
-            'sigma': num_gabors,
-            'theta': num_gabors,
-            'frequency': num_gabors,
-            'phase': num_gabors,
-            'colors': num_gabors * 3,  # RGB values
-            'amplitude': num_gabors,
-            'scale': num_gabors
-        }
-        
-        # Split the parameters into variables
-        state = {}
-        start = 0
-        for name, size in sizes.items():
-            end = start + size
-            value = params[start:end]
-            
-            # Reshape colors back to 2D
-            if name == 'colors':
-                value = value.reshape(num_gabors, 3)
-                
-            state[name] = value
-            start = end
-        
-        # Verify we used all parameters
-        if start != len(params):
-            raise ValueError(f"Parameter count mismatch: expected {start}, got {len(params)}")
-        
-        # Set the variables
-        model.set_variable_values(state)
-        print(f"✓ Loaded model state from {filename}")
-        
-    except Exception as e:
-        print(f"⚠️ Failed to load model state: {e}")
-        traceback.print_exc()
-        raise
-
-def cleanup_gpu_memory():
-    """Clean up GPU memory after optimization"""
-    try:
-        # Clear TF session
-        tf.keras.backend.clear_session()
-        
-        # Garbage collection
-        gc.collect()
-        
-        # Clear CUDA cache
-        if tf.config.list_physical_devices('GPU'):
-            tf.config.experimental.reset_memory_stats('GPU:0')
-        
-        print("Cleaned up GPU memory")
-    except Exception as e:
-        print(f"Warning: Memory cleanup failed: {e}")
+######################################################################
 
 def main():
-    parser = setup_argument_parser()
-    opts = parser.parse_args()
-    # Debug print to verify arguments
-    print("\nParsed arguments:")
-    for arg in vars(opts):
-        print(f"{arg}: {getattr(opts, arg)}")
+    ############################################################
+    # Set up variables
     
-    # Configure GPU
-    using_gpu = setup_gpu()
+    opts = get_options()
+
+    inputs = setup_inputs(opts)
+    models = setup_models(opts, inputs)
+    state = setup_state(opts, inputs)
+
+    prev_best_loss = None
+    model_start_idx = 0
+
+    rollback_state = None
+    rollback_loss = None
+
+    ############################################################
+    # Get start time and load initial parameters
+    start_time = datetime.now()
     
+    # Parse input file
+    prev_best_loss, model_start_idx = load_params(opts, inputs,
+                                                  models, state)
+
+    if opts.input is not None:
+        loop_count = -1
+        if opts.time_limit != 0 and opts.total_iterations != 0:
+            prev_best_loss = full_optimize(opts, inputs, models, state,
+                                           None,  # removed sess parameter
+                                           loop_count,
+                                           model_start_idx,
+                                           prev_best_loss,
+                                           rollback_loss)
+
+    rollback_state = copy_state(state)
+    rollback_loss = prev_best_loss
+                
+    loop_count = 0
+                
+    # Optimization loop (hit Ctrl+C to quit)
     try:
-        # Load and preprocess input
-        input_image, weights = load_input_image(opts.image, opts.weights)
+        while True:
+            if opts.time_limit is not None:
+                elapsed = (datetime.now() - start_time).total_seconds()
+                if elapsed > opts.time_limit:
+                    print('exceeded time limit of {}s, quitting!'.format(
+                        opts.time_limit))
+                    break
+
+            if ( opts.total_iterations is not None and
+                 loop_count >= opts.total_iterations ):
+                print('reached {} outer loop iterations, quitting!'.format(
+                    opts.total_iterations))
+                break
+
+            print('iteration #{}, '.format(loop_count+1), end='')
+            
+            # Figure out which model(s) to replace or newly train
+            is_replace = (model_start_idx >= opts.num_models)
+            
+            if is_replace:
+                idx = np.arange(opts.num_models)
+                np.random.shuffle(idx)
+
+                model_idx = idx[-1]
+                rest_idx = idx[:-1]
+            else:
+                model_idx = model_start_idx
+                rest_idx = np.arange(model_start_idx)
+                print('training models', model_idx)
+
+            # Get the current approximation (sum of all Gabor functions
+            # from all models except the current ones)
+            cur_approx = state.gabor[:,:,:,rest_idx].sum(axis=3)
+ 
+            # The function to fit is the difference betw. input image
+            # and current approximation so far.
+            cur_target = inputs.input_image - cur_approx
+           
+            # Have to track constraint losses separately from
+            # approximation error losses
+            cur_con_losses = state.con_loss[rest_idx].sum()
+
+            # Do a big parallel optimization for a bunch of random
+            # model initializations
+            prev_best_loss = local_optimize(opts, inputs, models,
+                                            state, None,  # removed sess parameter
+                                            cur_approx, cur_con_losses,
+                                            cur_target,
+                                            is_replace, model_idx, 
+                                            loop_count,
+                                            model_start_idx,
+                                            prev_best_loss)
+
+            # Done with this mini-ensemble
+            model_start_idx += 1
+
+            if ( model_start_idx >= opts.num_models and
+                 (loop_count + 1) % opts.full_every == 0 ):
+
+                # Do a full optimization
+                prev_best_loss = full_optimize(opts, inputs, models, state,
+                                               None,  # removed sess parameter
+                                               loop_count,
+                                               model_start_idx,
+                                               prev_best_loss,
+                                               rollback_loss)
+                
+                if rollback_loss is None or prev_best_loss <= rollback_loss:
+                    rollback_loss = prev_best_loss
+                    rollback_state = copy_state(state)
+                    print('current loss of {} is best so far!\n'.format(
+                        rollback_loss))
+                else:
+                    print('cur. loss of {} is not better than prev. {}, '
+                          'rolling back!!!\n'.format(
+                        prev_best_loss, rollback_loss))
+                    prev_best_loss = rollback_loss
+                    state = copy_state(rollback_state)
+                    
+                if opts.output is not None:
+                    np.savetxt(opts.output, state.params.transpose(),
+                               fmt='%f', delimiter=',')
+                
+            # Finished with this loop iteration
+            loop_count += 1
+                
+    except KeyboardInterrupt:
+        print('\ninterrupted by user, saving final state...')
         
-        # Run optimization with curriculum learning
-        model, final_loss = optimize_with_curriculum(
-            input_image, opts, weights=weights)
-        
-        # Save final model
-        if opts.save_best:
-            save_model_state(model, opts.save_best)
-        
-        print(f"\nOptimization complete!")
-        print(f"Final loss: {final_loss:.6f}")
-        
-    except Exception as e:
-        print(f"Error: {e}")
-        traceback.print_exc()
-        return 1
-    
-    return 0
+        if opts.output is not None:
+            np.savetxt(opts.output, state.params.transpose(),
+                       fmt='%f', delimiter=',')
+
+######################################################################
+
+# from https://github.com/BIDS/colormap/blob/master/colormaps.py
+# licensed CC0
+_magma_data = [[0.001462, 0.000466, 0.013866],
+               [0.002258, 0.001295, 0.018331],
+               [0.003279, 0.002305, 0.023708],
+               [0.004512, 0.003490, 0.029965],
+               [0.005950, 0.004843, 0.037130],
+               [0.007588, 0.006356, 0.044973],
+               [0.009426, 0.008022, 0.052844],
+               [0.011465, 0.009828, 0.060750],
+               [0.013708, 0.011771, 0.068667],
+               [0.016156, 0.013840, 0.076603],
+               [0.018815, 0.016026, 0.084584],
+               [0.021692, 0.018320, 0.092610],
+               [0.024792, 0.020715, 0.100676],
+               [0.028123, 0.023201, 0.108787],
+               [0.031696, 0.025765, 0.116965],
+               [0.035520, 0.028397, 0.125209],
+               [0.039608, 0.031090, 0.133515],
+               [0.043830, 0.033830, 0.141886],
+               [0.048062, 0.036607, 0.150327],
+               [0.052320, 0.039407, 0.158841],
+               [0.056615, 0.042160, 0.167446],
+               [0.060949, 0.044794, 0.176129],
+               [0.065330, 0.047318, 0.184892],
+               [0.069764, 0.049726, 0.193735],
+               [0.074257, 0.052017, 0.202660],
+               [0.078815, 0.054184, 0.211667],
+               [0.083446, 0.056225, 0.220755],
+               [0.088155, 0.058133, 0.229922],
+               [0.092949, 0.059904, 0.239164],
+               [0.097833, 0.061531, 0.248477],
+               [0.102815, 0.063010, 0.257854],
+               [0.107899, 0.064335, 0.267289],
+               [0.113094, 0.065492, 0.276784],
+               [0.118405, 0.066479, 0.286321],
+               [0.123833, 0.067295, 0.295879],
+               [0.129380, 0.067935, 0.305443],
+               [0.135053, 0.068391, 0.315000],
+               [0.140858, 0.068654, 0.324538],
+               [0.146785, 0.068738, 0.334011],
+               [0.152839, 0.068637, 0.343404],
+               [0.159018, 0.068354, 0.352688],
+               [0.165308, 0.067911, 0.361816],
+               [0.171713, 0.067305, 0.370771],
+               [0.178212, 0.066576, 0.379497],
+               [0.184801, 0.065732, 0.387973],
+               [0.191460, 0.064818, 0.396152],
+               [0.198177, 0.063862, 0.404009],
+               [0.204935, 0.062907, 0.411514],
+               [0.211718, 0.061992, 0.418647],
+               [0.218512, 0.061158, 0.425392],
+               [0.225302, 0.060445, 0.431742],
+               [0.232077, 0.059889, 0.437695],
+               [0.238826, 0.059517, 0.443256],
+               [0.245543, 0.059352, 0.448436],
+               [0.252220, 0.059415, 0.453248],
+               [0.258857, 0.059706, 0.457710],
+               [0.265447, 0.060237, 0.461840],
+               [0.271994, 0.060994, 0.465660],
+               [0.278493, 0.061978, 0.469190],
+               [0.284951, 0.063168, 0.472451],
+               [0.291366, 0.064553, 0.475462],
+               [0.297740, 0.066117, 0.478243],
+               [0.304081, 0.067835, 0.480812],
+               [0.310382, 0.069702, 0.483186],
+               [0.316654, 0.071690, 0.485380],
+               [0.322899, 0.073782, 0.487408],
+               [0.329114, 0.075972, 0.489287],
+               [0.335308, 0.078236, 0.491024],
+               [0.341482, 0.080564, 0.492631],
+               [0.347636, 0.082946, 0.494121],
+               [0.353773, 0.085373, 0.495501],
+               [0.359898, 0.087831, 0.496778],
+               [0.366012, 0.090314, 0.497960],
+               [0.372116, 0.092816, 0.499053],
+               [0.378211, 0.095332, 0.500067],
+               [0.384299, 0.097855, 0.501002],
+               [0.390384, 0.100379, 0.501864],
+               [0.396467, 0.102902, 0.502658],
+               [0.402548, 0.105420, 0.503386],
+               [0.408629, 0.107930, 0.504052],
+               [0.414709, 0.110431, 0.504662],
+               [0.420791, 0.112920, 0.505215],
+               [0.426877, 0.115395, 0.505714],
+               [0.432967, 0.117855, 0.506160],
+               [0.439062, 0.120298, 0.506555],
+               [0.445163, 0.122724, 0.506901],
+               [0.451271, 0.125132, 0.507198],
+               [0.457386, 0.127522, 0.507448],
+               [0.463508, 0.129893, 0.507652],
+               [0.469640, 0.132245, 0.507809],
+               [0.475780, 0.134577, 0.507921],
+               [0.481929, 0.136891, 0.507989],
+               [0.488088, 0.139186, 0.508011],
+               [0.494258, 0.141462, 0.507988],
+               [0.500438, 0.143719, 0.507920],
+               [0.506629, 0.145958, 0.507806],
+               [0.512831, 0.148179, 0.507648],
+               [0.519045, 0.150383, 0.507443],
+               [0.525270, 0.152569, 0.507192],
+               [0.531507, 0.154739, 0.506895],
+               [0.537755, 0.156894, 0.506551],
+               [0.544015, 0.159033, 0.506159],
+               [0.550287, 0.161158, 0.505719],
+               [0.556571, 0.163269, 0.505230],
+               [0.562866, 0.165368, 0.504692],
+               [0.569172, 0.167454, 0.504105],
+               [0.575490, 0.169530, 0.503466],
+               [0.581819, 0.171596, 0.502777],
+               [0.588158, 0.173652, 0.502035],
+               [0.594508, 0.175701, 0.501241],
+               [0.600868, 0.177743, 0.500394],
+               [0.607238, 0.179779, 0.499492],
+               [0.613617, 0.181811, 0.498536],
+               [0.620005, 0.183840, 0.497524],
+               [0.626401, 0.185867, 0.496456],
+               [0.632805, 0.187893, 0.495332],
+               [0.639216, 0.189921, 0.494150],
+               [0.645633, 0.191952, 0.492910],
+               [0.652056, 0.193986, 0.491611],
+               [0.658483, 0.196027, 0.490253],
+               [0.664915, 0.198075, 0.488836],
+               [0.671349, 0.200133, 0.487358],
+               [0.677786, 0.202203, 0.485819],
+               [0.684224, 0.204286, 0.484219],
+               [0.690661, 0.206384, 0.482558],
+               [0.697098, 0.208501, 0.480835],
+               [0.703532, 0.210638, 0.479049],
+               [0.709962, 0.212797, 0.477201],
+               [0.716387, 0.214982, 0.475290],
+               [0.722805, 0.217194, 0.473316],
+               [0.729216, 0.219437, 0.471279],
+               [0.735616, 0.221713, 0.469180],
+               [0.742004, 0.224025, 0.467018],
+               [0.748378, 0.226377, 0.464794],
+               [0.754737, 0.228772, 0.462509],
+               [0.761077, 0.231214, 0.460162],
+               [0.767398, 0.233705, 0.457755],
+               [0.773695, 0.236249, 0.455289],
+               [0.779968, 0.238851, 0.452765],
+               [0.786212, 0.241514, 0.450184],
+               [0.792427, 0.244242, 0.447543],
+               [0.798608, 0.247040, 0.444848],
+               [0.804752, 0.249911, 0.442102],
+               [0.810855, 0.252861, 0.439305],
+               [0.816914, 0.255895, 0.436461],
+               [0.822926, 0.259016, 0.433573],
+               [0.828886, 0.262229, 0.430644],
+               [0.834791, 0.265540, 0.427671],
+               [0.840636, 0.268953, 0.424666],
+               [0.846416, 0.272473, 0.421631],
+               [0.852126, 0.276106, 0.418573],
+               [0.857763, 0.279857, 0.415496],
+               [0.863320, 0.283729, 0.412403],
+               [0.868793, 0.287728, 0.409303],
+               [0.874176, 0.291859, 0.406205],
+               [0.879464, 0.296125, 0.403118],
+               [0.884651, 0.300530, 0.400047],
+               [0.889731, 0.305079, 0.397002],
+               [0.894700, 0.309773, 0.393995],
+               [0.899552, 0.314616, 0.391037],
+               [0.904281, 0.319610, 0.388137],
+               [0.908884, 0.324755, 0.385308],
+               [0.913354, 0.330052, 0.382563],
+               [0.917689, 0.335500, 0.379915],
+               [0.921884, 0.341098, 0.377376],
+               [0.925937, 0.346844, 0.374959],
+               [0.929845, 0.352734, 0.372677],
+               [0.933606, 0.358764, 0.370541],
+               [0.937221, 0.364929, 0.368567],
+               [0.940687, 0.371224, 0.366762],
+               [0.944006, 0.377643, 0.365136],
+               [0.947180, 0.384178, 0.363701],
+               [0.950210, 0.390820, 0.362468],
+               [0.953099, 0.397563, 0.361438],
+               [0.955849, 0.404400, 0.360619],
+               [0.958464, 0.411324, 0.360014],
+               [0.960949, 0.418323, 0.359630],
+               [0.963310, 0.425390, 0.359469],
+               [0.965549, 0.432519, 0.359529],
+               [0.967671, 0.439703, 0.359810],
+               [0.969680, 0.446936, 0.360311],
+               [0.971582, 0.454210, 0.361030],
+               [0.973381, 0.461520, 0.361965],
+               [0.975082, 0.468861, 0.363111],
+               [0.976690, 0.476226, 0.364466],
+               [0.978210, 0.483612, 0.366025],
+               [0.979645, 0.491014, 0.367783],
+               [0.981000, 0.498428, 0.369734],
+               [0.982279, 0.505851, 0.371874],
+               [0.983485, 0.513280, 0.374198],
+               [0.984622, 0.520713, 0.376698],
+               [0.985693, 0.528148, 0.379371],
+               [0.986700, 0.535582, 0.382210],
+               [0.987646, 0.543015, 0.385210],
+               [0.988533, 0.550446, 0.388365],
+               [0.989363, 0.557873, 0.391671],
+               [0.990138, 0.565296, 0.395122],
+               [0.990871, 0.572706, 0.398714],
+               [0.991558, 0.580107, 0.402441],
+               [0.992196, 0.587502, 0.406299],
+               [0.992785, 0.594891, 0.410283],
+               [0.993326, 0.602275, 0.414390],
+               [0.993834, 0.609644, 0.418613],
+               [0.994309, 0.616999, 0.422950],
+               [0.994738, 0.624350, 0.427397],
+               [0.995122, 0.631696, 0.431951],
+               [0.995480, 0.639027, 0.436607],
+               [0.995810, 0.646344, 0.441361],
+               [0.996096, 0.653659, 0.446213],
+               [0.996341, 0.660969, 0.451160],
+               [0.996580, 0.668256, 0.456192],
+               [0.996775, 0.675541, 0.461314],
+               [0.996925, 0.682828, 0.466526],
+               [0.997077, 0.690088, 0.471811],
+               [0.997186, 0.697349, 0.477182],
+               [0.997254, 0.704611, 0.482635],
+               [0.997325, 0.711848, 0.488154],
+               [0.997351, 0.719089, 0.493755],
+               [0.997351, 0.726324, 0.499428],
+               [0.997341, 0.733545, 0.505167],
+               [0.997285, 0.740772, 0.510983],
+               [0.997228, 0.747981, 0.516859],
+               [0.997138, 0.755190, 0.522806],
+               [0.997019, 0.762398, 0.528821],
+               [0.996898, 0.769591, 0.534892],
+               [0.996727, 0.776795, 0.541039],
+               [0.996571, 0.783977, 0.547233],
+               [0.996369, 0.791167, 0.553499],
+               [0.996162, 0.798348, 0.559820],
+               [0.995932, 0.805527, 0.566202],
+               [0.995680, 0.812706, 0.572645],
+               [0.995424, 0.819875, 0.579140],
+               [0.995131, 0.827052, 0.585701],
+               [0.994851, 0.834213, 0.592307],
+               [0.994524, 0.841387, 0.598983],
+               [0.994222, 0.848540, 0.605696],
+               [0.993866, 0.855711, 0.612482],
+               [0.993545, 0.862859, 0.619299],
+               [0.993170, 0.870024, 0.626189],
+               [0.992831, 0.877168, 0.633109],
+               [0.992440, 0.884330, 0.640099],
+               [0.992089, 0.891470, 0.647116],
+               [0.991688, 0.898627, 0.654202],
+               [0.991332, 0.905763, 0.661309],
+               [0.990930, 0.912915, 0.668481],
+               [0.990570, 0.920049, 0.675675],
+               [0.990175, 0.927196, 0.682926],
+               [0.989815, 0.934329, 0.690198],
+               [0.989434, 0.941470, 0.697519],
+               [0.989077, 0.948604, 0.704863],
+               [0.988717, 0.955742, 0.712242],
+               [0.988367, 0.962878, 0.719649],
+               [0.988033, 0.970012, 0.727077],
+               [0.987691, 0.977154, 0.734536],
+               [0.987387, 0.984288, 0.742002],
+               [0.987053, 0.991438, 0.749504]]    
+
+def get_colormap():
+    return (np.array(_magma_data)*255).astype(np.uint8)
+
+######################################################################
 
 if __name__ == '__main__':
-    exit(main())
+    main()
