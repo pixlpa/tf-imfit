@@ -35,14 +35,15 @@ class GaborLayer(nn.Module):
         image_size = max(H, W)
         
         # Convert parameters to proper ranges
-        u = self.u * 2 - 1
-        v = self.v * 2 - 1
-        theta = self.theta * 2 * np.pi
+        u = self.u * 2 - 1  # [-1, 1]
+        v = self.v * 2 - 1  # [-1, 1] 
+        theta = self.theta * 2 * np.pi  # [0, 2π]
         
         # Convert relative parameters to absolute
-        sigma = torch.exp(self.rel_sigma) * (image_size / 32)
-        freq = torch.exp(self.rel_freq) * (32 / image_size)
-        lambda_ = 1.0 / freq
+        sigma = torch.exp(self.rel_sigma) * (image_size / 32)  # Scale relative to image size
+        freq = torch.exp(self.rel_freq) * (32 / image_size)    # Inverse scale for frequency
+        lambda_ = 1.0 / freq  # Convert frequency to wavelength
+        
         gamma = torch.exp(self.gamma)
         
         # Add random noise during training
@@ -50,7 +51,7 @@ class GaborLayer(nn.Module):
             u = u + torch.randn_like(u) * 0.0002 * temperature
             v = v + torch.randn_like(v) * 0.0002 * temperature
             theta = theta + torch.randn_like(theta) * 0.0002 * temperature
-        
+            
         # Compute rotated coordinates for each Gabor
         x_rot = (grid_x[None,:,:] - u[:,None,None]) * torch.cos(theta[:,None,None]) + \
                 (grid_y[None,:,:] - v[:,None,None]) * torch.sin(theta[:,None,None])
@@ -59,19 +60,17 @@ class GaborLayer(nn.Module):
 
         # Compute Gabor functions
         gaussian = torch.exp(-(x_rot**2 + (gamma[:,None,None] * y_rot)**2) / (2 * sigma[:,None,None]**2))
+        
+        # Modified: handle psi for each color channel separately
         sinusoid = torch.cos(2 * np.pi * x_rot[:, None, :, :] / lambda_[:, None, None, None] + self.psi[:, :, None, None])
         
-        # Scale amplitude to prevent overflow
-        amplitude = torch.tanh(self.amplitude) * 0.25  # Limit amplitude range
+        # Start with grey background (0.5 for all channels)
+        result = torch.ones(3, grid_x.shape[0], grid_x.shape[1], device=grid_x.device) * 0.5
         
-        # Start with grey background
-        result = torch.ones(3, H, W, device=grid_x.device) * 0.5
+        # Compute Gabor functions for each color channel
+        gabors = self.amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
         
-        # Compute and add Gabors
-        gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
-        if dropout_active and self.training:
-            gabors = self.dropout(gabors)
-        
+        # Add Gabors to grey background
         result = result + torch.sum(gabors, dim=0)
         
         # Ensure output stays in valid range
