@@ -815,7 +815,7 @@ def full_optimize(opts, inputs, models, state,
     
     # Get the best results
     loss_per_fit = float(results['loss_per_fit'][fidx])  # Should be a scalar
-    con_losses = float(results['con_losses'][fidx])  # Should be a scalar
+    con_losses = float(np.sum(results['con_losses'][fidx]))  # Sum all constraint losses
     new_loss = loss_per_fit + con_losses
     
     # Get the best gabor and approx
@@ -823,7 +823,6 @@ def full_optimize(opts, inputs, models, state,
     best_approx = results['approx'][fidx]  # This should be [h, w, 3]
     
     # Create snapshot with the best results
-    # Note: best_approx already includes all gabor functions
     snapshot(best_gabor, best_approx,
             opts, inputs, models,
             loop_count, model_start_idx, '')
