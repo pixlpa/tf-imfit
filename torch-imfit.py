@@ -467,6 +467,15 @@ class ImageFitter:
             
         self.model.load_state_dict(state_dict)
         print(f"Loaded model from {path}")
+        if self.output_dir:
+            self.save_image(os.path.join(self.output_dir, 'initial_result.png'))
+    
+    def save_image(self, path):
+        """Save the current image to a file"""
+        image = self.get_current_image()
+        image = np.transpose(image, (1, 2, 0))
+        image = np.clip(image * 255, 0, 255).astype(np.uint8)
+        Image.fromarray(image).save(path)
 
 def main():
     """Run Gabor image fitting on an input image."""
@@ -536,20 +545,12 @@ def main():
                 pbar.update(10)
             
             # Save intermediate results
-            if i % 100 == 0:
-                result = fitter.get_current_image()
-                result = np.transpose(result, (1, 2, 0))
-                result = np.clip(result * 255, 0, 255).astype(np.uint8)
-                img = Image.fromarray(result)
-                img.save(os.path.join(args.output_dir, f'result_{i:04d}.png'))
+            if i % 50 == 0:
+                fitter.save_image(os.path.join(args.output_dir, f'result_{i:04d}.png'))
     # Save final result
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)
-        final_result = fitter.get_current_image()
-        final_result = np.transpose(final_result, (1, 2, 0))
-        final_result = np.clip(final_result * 255, 0, 255).astype(np.uint8)
-        final_img = Image.fromarray(final_result)
-        final_img.save(os.path.join(args.output_dir, 'final_result.png'))
+        fitter.save_image(os.path.join(args.output_dir, 'final_result.png'))
         fitter.save_model(os.path.join(args.output_dir, 'saved_model.pth'))
         fitter.save_parameters_to_text(os.path.join(args.output_dir, 'parameters.txt'))
 
