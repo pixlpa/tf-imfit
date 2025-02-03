@@ -1024,13 +1024,16 @@ def main():
                     
                     # Convert to numpy if it's a tensor
                     save_params = state.params.numpy() if tf.is_tensor(state.params) else state.params
+                    print("After conversion - Min/Max:", np.min(save_params), np.max(save_params))
                     
                     np.savetxt(opts.output, save_params.transpose(),
                                fmt='%f', delimiter=',')
                     
                     # Verify the save
                     loaded = np.loadtxt(opts.output, delimiter=',')
+                    print("Verified saved file - Shape:", loaded.shape)
                     print("Verified saved file - Min/Max:", np.min(loaded), np.max(loaded))
+                    print("Verified saved file - First few values:", loaded.flatten()[:5])
                 
             # Finished with this loop iteration
             loop_count += 1
