@@ -1032,8 +1032,10 @@ def main():
     except KeyboardInterrupt:
         print("Interrupted. Saving final state and exiting...")
         if opts.output is not None:
-            np.savetxt(opts.output, state.params.transpose(),
-                       fmt='%f', delimiter=',')
+                    np.savetxt(opts.output, state.params.transpose(),
+                               fmt='%f', delimiter=',')
+    if opts.output is not None:
+        np.savetxt(opts.output, state.params.transpose(), fmt='%f', delimiter=',')
 ######################################################################
 
 # from https://github.com/BIDS/colormap/blob/master/colormaps.py
