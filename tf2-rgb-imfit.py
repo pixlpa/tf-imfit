@@ -271,7 +271,7 @@ def setup_inputs(opts):
         print('  {} {} {}'.format(opts.weights.name, weight_image.shape, weight_image.dtype))
         assert weight_image.size == input_image.size
     else:
-        weight_image = 1.0
+        weight_image = np.ones_like(input_image)
 
     # move to -1, 1 range for input image
     input_image = input_image * 2 - 1
@@ -1034,32 +1034,6 @@ def evaluate_fit_quality(target, approx, weight=None):
         'psnr': psnr,
         'correlation': correlation
     }
-
-def save_visualization(output_path, original, approximation, residual):
-    """Save a visualization of the fitting results"""
-    # Create a figure with three subplots
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
-    
-    # Plot original image
-    ax1.imshow(original)
-    ax1.set_title('Original')
-    ax1.axis('off')
-    
-    # Plot approximation
-    ax2.imshow(approximation)
-    ax2.set_title('Gabor Approximation')
-    ax2.axis('off')
-    
-    # Plot residual
-    residual_plot = ax3.imshow(residual, cmap='RdBu')
-    ax3.set_title('Residual')
-    ax3.axis('off')
-    plt.colorbar(residual_plot, ax=ax3)
-    
-    # Save figure
-    plt.tight_layout()
-    plt.savefig(output_path)
-    plt.close()
 
 if __name__ == '__main__':
     # Set random seeds for reproducibility
