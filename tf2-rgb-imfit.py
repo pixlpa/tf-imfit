@@ -700,7 +700,7 @@ def load_params(opts, inputs, models, state):
     approx = models.full.approx.numpy()[0]
     
     # Use .numpy() to convert the symbolic tensor to a float
-    err_loss = models.full.err_loss.numpy()
+    err_loss = float(models.full.err_loss.numpy())
     con_losses = models.full.con_losses.numpy()[0]
 
     # For initial case with no models, err_loss should be the MSE between target and zeros
