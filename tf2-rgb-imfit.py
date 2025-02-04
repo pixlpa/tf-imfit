@@ -381,7 +381,8 @@ class GaborModel(object):
         # Check input data shapes
         tf.print("Input image shape:", self.x.shape)
         tf.print("Input weight shape:", self.weight.shape)
-        tf.print("Input target shape:", self.target.shape)
+        if self.target is not None:
+            tf.print("Input target shape:", self.target.shape)
 
     def _forward_pass(self):
         with tf.name_scope('forward_pass'):
