@@ -958,41 +958,51 @@ def local_optimize(opts, inputs, models, state, current_model):
     optimizer = tf.keras.optimizers.Adam(learning_rate=current_lr)
     
     # Get initial loss
+    _ = models.local._forward_pass()  # Ensure initial computation
     loss = models.local.err_loss + models.local.con_losses[0]
     
     for iteration in range(opts.local_iter):
         # Optimization step
         with tf.GradientTape() as tape:
+            # Need to explicitly watch the parameters
+            tape.watch(models.local.params)
+            
+            # Forward pass inside gradient tape context
+            _ = models.local._forward_pass()
             err_loss = models.local.err_loss
             con_loss = models.local.con_losses[0]
             total_loss = err_loss + con_loss
             
-        grads = tape.gradient(total_loss, models.local.params)
-        optimizer.apply_gradients([(grads, models.local.params)])
-        
-        # Get current loss and parameters
-        current_loss = float(total_loss)
-        current_params = models.local.params.numpy()
-        
-        # Check for improvement
-        if current_loss < best_loss * 0.995:  # Allow for 0.5% improvement to count
-            best_loss = current_loss
-            best_params = current_params.copy()
-            stagnant_iterations = 0
+        # Compute gradients
+        grads = tape.gradient(total_loss, [models.local.params])
+        if grads[0] is not None:
+            optimizer.apply_gradients(zip(grads, [models.local.params]))
+            
+            # Get current loss and parameters
+            current_loss = float(total_loss)
+            current_params = models.local.params.numpy()
+            
+            # Check for improvement
+            if current_loss < best_loss * 0.995:  # Allow for 0.5% improvement to count
+                best_loss = current_loss
+                best_params = current_params.copy()
+                stagnant_iterations = 0
+            else:
+                stagnant_iterations += 1
+            
+            # Adjust learning rate if progress stagnates
+            if stagnant_iterations > opts.patience:
+                current_lr = max(current_lr * opts.lr_decay, min_lr)
+                stagnant_iterations = 0
+                print(f"    Local: Reducing learning rate to {current_lr}")
+                optimizer.learning_rate.assign(current_lr)
+            
+            # Early stopping
+            if current_lr <= min_lr and stagnant_iterations > opts.patience * 2:
+                print("    Local: Early stopping - no improvement with minimum learning rate")
+                break
         else:
-            stagnant_iterations += 1
-        
-        # Adjust learning rate if progress stagnates
-        if stagnant_iterations > opts.patience:
-            current_lr = max(current_lr * opts.lr_decay, min_lr)
-            stagnant_iterations = 0
-            print(f"    Local: Reducing learning rate to {current_lr}")
-            optimizer.learning_rate.assign(current_lr)
-        
-        # Early stopping
-        if current_lr <= min_lr and stagnant_iterations > opts.patience * 2:
-            print("    Local: Early stopping - no improvement with minimum learning rate")
-            break
+            print("    Warning: No gradients computed for this iteration")
     
     # Use the best parameters found
     if best_params is not None:
