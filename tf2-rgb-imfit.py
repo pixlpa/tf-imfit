@@ -621,6 +621,7 @@ def setup_state(opts, inputs):
         gabor=np.zeros(inputs.input_image.shape + (opts.num_models,),
                        dtype=np.float32),
         con_loss=np.zeros(opts.num_models, dtype=np.float32)
+    )
     print("State params min/max:", state.params.min(), state.params.max())
     return state
 
