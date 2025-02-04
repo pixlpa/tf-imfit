@@ -324,15 +324,19 @@ class GaborModel(object):
                 shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
                 dtype=tf.float32
             )
-            
+            tf.print("Random values before scaling:", random_values)
+
             # Scale and shift the random values to the desired ranges
-            ranges = tf.cast(GABOR_RANGE[:,1] - GABOR_RANGE[:,0], tf.float32)  # Range for each parameter
-            mins = tf.cast(GABOR_RANGE[:,0], tf.float32)  # Minimum for each parameter
-            
+            ranges = tf.cast(GABOR_RANGE[:, 1] - GABOR_RANGE[:, 0], tf.float32)
+            mins = tf.cast(GABOR_RANGE[:, 0], tf.float32)
+
+            tf.print("Ranges:", ranges)
+            tf.print("Minimums:", mins)
+
             # Reshape for broadcasting
             ranges = tf.reshape(ranges, [1, GABOR_NUM_PARAMS, 1])
             mins = tf.reshape(mins, [1, GABOR_NUM_PARAMS, 1])
-            
+
             # Scale random values to proper ranges and create Variable
             self.params = tf.Variable(
                 random_values * ranges + mins,
@@ -340,6 +344,7 @@ class GaborModel(object):
                 dtype=tf.float32,
                 name='params'
             )
+            tf.print("Initialized params:", self.params)
         
         # Set up parameter ranges for clipping
         self.gmin = tf.constant(GABOR_RANGE[:,0], dtype=tf.float32)
@@ -366,6 +371,15 @@ class GaborModel(object):
         # Initial forward pass
         self._forward_pass()
 
+        # Check for NaN values
+        if tf.reduce_any(tf.math.is_nan(self.params)):
+            print("Warning: NaN values detected in params!")
+
+        # Check input data shapes
+        tf.print("Input image shape:", self.x.shape)
+        tf.print("Input weight shape:", self.weight.shape)
+        tf.print("Input target shape:", self.target.shape)
+
     def _forward_pass(self):
         """Compute forward pass with numerical safeguards"""
         with tf.name_scope('forward_pass'):
@@ -381,6 +395,9 @@ class GaborModel(object):
                 clip_value_min=gmin,
                 clip_value_max=gmax
             )
+            
+            # After clipping
+            tf.print("Clipped params range:", tf.reduce_min(self.cparams), tf.reduce_max(self.cparams))
             
             # Extract parameters
             u = self.cparams[:,GABOR_PARAM_U,:]
@@ -637,8 +654,7 @@ def setup_state(opts, inputs):
         params=params,
         gabor=np.zeros(inputs.input_image.shape + (opts.num_models,),
                        dtype=np.float32),
-        con_loss=np.zeros(opts.num_models, dtype=np.float32)
-    )
+        con_loss=np.zeros(opts.num_models, dtype=np.float32))
     print("State params min/max:", state.params.min(), state.params.max())
     return state
 
