@@ -1020,7 +1020,6 @@ def main():
             # -----------------------------
             if (loop_count+1) % opts.full_every == 0:
                 print("Performing full joint optimization over all filters...")
-                inputs.target_tensor.assign(inputs.input_image)
                 prev_best_loss = full_optimize(opts, inputs, models, state,
                                                current_model, loop_count, prev_best_loss, optimizer)
 
