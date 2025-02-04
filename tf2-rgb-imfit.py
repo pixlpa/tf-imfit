@@ -702,7 +702,7 @@ def load_params(opts, inputs, models, state):
     # Ensure the loss is computed in the correct context
     models.full._compute_losses()  # Ensure losses are computed
     err_loss = models.full.err_loss  # This is still a symbolic tensor
-    con_losses = models.full.con_losses.numpy()[0]
+    con_losses = float(tf.make_ndarray(models.full.con_losses).numpy()[0])
 
     # Convert err_loss to a float after ensuring it's computed
     err_loss_value = float(tf.make_ndarray(err_loss))  # Use tf.make_ndarray if needed
