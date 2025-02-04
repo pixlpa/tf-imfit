@@ -762,14 +762,7 @@ def snapshot(cur_gabor, cur_approx,
     if cur_gabor is None or cur_gabor.size == 0:
         print("Creating zero gabor array")
         cur_gabor = np.zeros_like(cur_approx)
-    
-    print("\nSnapshot debug:")
-    print(f"cur_gabor shape: {cur_gabor.shape}")
-    print(f"cur_approx shape: {cur_approx.shape}")
-    print(f"cur_gabor range: {cur_gabor.min():.3f} to {cur_gabor.max():.3f}")
-    print(f"cur_approx range: {cur_approx.min():.3f} to {cur_approx.max():.3f}")
-    print(f"input_image range: {inputs.input_image.min():.3f} to {inputs.input_image.max():.3f}")
-        
+     
     # Calculate error
     cur_abserr = np.abs(cur_approx - inputs.input_image)
     cur_abserr = cur_abserr * inputs.weight_image
@@ -793,14 +786,11 @@ def snapshot(cur_gabor, cur_approx,
         print(f"gabor_img shape: {gabor_img.shape}, range: {gabor_img.min()} to {gabor_img.max()}")
         print(f"error_img shape: {error_img.shape}, range: {error_img.min()} to {error_img.max()}")
         
-        out_img = np.hstack((input_img, approx_img, gabor_img, error_img))
+        out_img = np.hstack((gabor_img, error_img))
         
     else:
         # Get current model index (subtract 1 since model_start_idx points to next model)
         current_model = max(0, model_start_idx - 1)
-        print(f"\nPreview debug:")
-        print(f"current_model: {current_model}")
-        print(f"opts.num_models: {opts.num_models}")
         
         # Create a new parameter array with all models up to current
         preview_params = np.zeros_like(models.full.params.numpy())
@@ -820,10 +810,6 @@ def snapshot(cur_gabor, cur_approx,
             print(f"Calculated initial loss: {initial_err:.6f}")
         
         preview_image = models.preview.approx.numpy()[0]
-        print(f"preview model params shape: {models.preview.params.shape}")
-        print(f"preview model params range: {models.preview.params.numpy().min():.3f} to {models.preview.params.numpy().max():.3f}")
-        print(f"preview approx shape: {preview_image.shape}")
-        print(f"Number of active models: {current_model + 1}")
         
         err_image = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
         err_image = Image.fromarray(err_image, 'RGB')
