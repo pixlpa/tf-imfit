@@ -699,20 +699,24 @@ def load_params(opts, inputs, models, state):
     gabor = models.full.gabor.numpy()[0]  # Get gabor values
     approx = models.full.approx.numpy()[0]
     
-    # Use .numpy() to convert the symbolic tensor to a float
-    err_loss = models.full.err_loss.numpy()
+    # Ensure the loss is computed in the correct context
+    models.full._compute_losses()  # Ensure losses are computed
+    err_loss = models.full.err_loss  # This is still a symbolic tensor
     con_losses = models.full.con_losses.numpy()[0]
+
+    # Convert err_loss to a float after ensuring it's computed
+    err_loss_value = float(err_loss)  # Use tf.make_ndarray if needed
 
     # For initial case with no models, err_loss should be the MSE between target and zeros
     if nparams == 0:
-        err_loss = float(tf.reduce_mean(inputs.input_image ** 2))
-        print(f"Initial error (no models): {err_loss}")
+        err_loss_value = float(tf.reduce_mean(inputs.input_image ** 2))
+        print(f"Initial error (no models): {err_loss_value}")
 
     # Update state with results
     state.gabor[:,:,:,:nparams] = gabor[:,:,:,:nparams]
     state.con_loss[:nparams] = con_losses[:nparams]
 
-    prev_best_loss = err_loss + state.con_loss[:nparams].sum()
+    prev_best_loss = err_loss_value + state.con_loss[:nparams].sum()
     
     if opts.preview_size:
         models.preview.params.assign(new_params)
