@@ -374,6 +374,8 @@ class GaborModel(object):
             gmax = tf.reshape(self.gmax, [1, GABOR_NUM_PARAMS, 1])
             
             # Clip parameters
+            if tf.size(self.params) == 0:
+                print("Warning: Parameters tensor is empty!")
             self.cparams = tf.clip_by_value(
                 self.params[:,:,:self.max_row],
                 clip_value_min=gmin,
