@@ -312,7 +312,7 @@ class GaborModel(object):
         self.weight = weight
         self.target = target
         self.max_row = ensemble_size if max_row is None else max_row
-        
+        self.iteration = 0
         # Initialize parameters
         if params is not None:
             # Convert params to Variable if it isn't already
@@ -781,10 +781,6 @@ def snapshot(cur_gabor, cur_approx,
         print("Creating zero gabor array")
         cur_gabor = np.zeros_like(cur_approx)
 
-    global COLORMAP
-    if COLORMAP is None:
-        COLORMAP = get_colormap()
-    
     # Rescale images for display:
     # We assume that both the target and the approximation are in [-1, 1].
     approx_img   = rescale(cur_approx, -1, 1)
