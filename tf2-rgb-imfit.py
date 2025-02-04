@@ -384,7 +384,6 @@ class GaborModel(object):
         tf.print("Input target shape:", self.target.shape)
 
     def _forward_pass(self):
-        """Compute forward pass with numerical safeguards"""
         with tf.name_scope('forward_pass'):
             # Reshape gmin and gmax for broadcasting
             gmin = tf.reshape(self.gmin, [1, GABOR_NUM_PARAMS, 1])
@@ -393,11 +392,7 @@ class GaborModel(object):
             # Clip parameters
             if tf.size(self.params) == 0:
                 print("Warning: Parameters tensor is empty!")
-            self.cparams = tf.clip_by_value(
-                self.params[:,:,:self.max_row],
-                clip_value_min=gmin,
-                clip_value_max=gmax
-            )
+            self.cparams = self.params
             
             # After clipping
             tf.print("Clipped params range:", tf.reduce_min(self.cparams), tf.reduce_max(self.cparams))
