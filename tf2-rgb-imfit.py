@@ -144,7 +144,7 @@ def get_options():
 
     parser.add_argument('-l', '--local-iter', type=int, metavar='N',
                         help='maximum # of iterations per local fit',
-                        default=100)
+                        default=20)
      
     parser.add_argument('-P', '--perturb-amount', type=float,
                         metavar='R', default=0.15,
@@ -894,7 +894,7 @@ def local_optimize(opts, inputs, models, state, current_model, loop_count):
         # Get initial loss
         _ = models.local._forward_pass()
         loss = models.local.err_loss + models.local.con_losses[0]
-        print(f"  loss before local fit is {float(loss):.9f}")
+        # print(f"  loss before local fit is {float(loss):.9f}")
         
         # Single optimization step with Adam
         with tf.GradientTape() as tape:
