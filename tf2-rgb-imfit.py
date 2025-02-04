@@ -440,70 +440,71 @@ class GaborModel(object):
                 self._compute_losses()
 
     def _compute_losses(self):
-        """Compute losses with numerical safeguards"""
-        # Compute error loss
+        """Improved loss computation with regularization"""
+        # Compute reconstruction error
         self.err = tf.multiply((self.target - self.approx), self.weight)
         err_sqr = 0.5 * self.err**2
         
+        # Add L2 regularization
+        l2_reg = 0.001 * tf.reduce_sum(tf.square(self.params))
+        
         # Per-fit error losses (average across h/w/c)
         self.err_loss_per_fit = tf.reduce_mean(err_sqr, axis=(1,2,3))
-        # Overall error loss
-        self.err_loss = tf.reduce_mean(self.err_loss_per_fit)
         
-        # Compute constraints
+        # Overall error loss with regularization
+        self.err_loss = tf.reduce_mean(self.err_loss_per_fit) + l2_reg
+        
+        # Compute constraints with improved numerical stability
         l = self.cparams[:,GABOR_PARAM_L,:]
         s = self.cparams[:,GABOR_PARAM_S,:]
         t = self.cparams[:,GABOR_PARAM_T,:]
         
+        # Soft constraints using smooth approximations
         constraints = [
-            s - l/32,
-            l/2 - s,
-            t - s,
-            8*s - t
+            tf.nn.softplus(-(s - l/32)),
+            tf.nn.softplus(-(l/2 - s)),
+            tf.nn.softplus(-(t - s)),
+            tf.nn.softplus(-(8*s - t))
         ]
         
-        # Stack constraints (n x e x k)
+        # Stack constraints
         self.constraints = tf.stack(constraints, axis=2)
         
-        # Compute squared constraints (n x e x k)
-        con_sqr = tf.minimum(self.constraints, 0)**2
-        
-        # Per-model constraint losses (n x e)
-        self.con_losses = tf.reduce_sum(con_sqr, axis=2)
-        
-        # Per-fit constraint losses (n)
+        # Compute constraint losses
+        self.con_losses = tf.reduce_sum(self.constraints, axis=2)
         self.con_loss_per_fit = tf.reduce_sum(self.con_losses, axis=1)
-        
-        # Overall constraint loss
         self.con_loss = tf.reduce_mean(self.con_loss_per_fit)
         
-        # Total loss per fit (n)
+        # Total loss
         self.loss_per_fit = self.err_loss_per_fit + self.con_loss_per_fit
-        
-        # Overall total loss
         self.loss = self.err_loss + self.con_loss
 
     @tf.function
     def train_step(self):
-        """Performs one training step with adaptive learning rate"""
+        """Improved training step with gradient handling"""
         with tf.GradientTape() as tape:
             self._forward_pass()
             loss = self.loss
-            
-        # Get gradients
+        
+        # Compute gradients
         gradients = tape.gradient(loss, [self.params])
+        
+        # Gradient clipping and normalization
         gradients = [tf.clip_by_norm(g, 1.0) if g is not None else g for g in gradients]
         
-        # Apply gradients if they exist and are not NaN
+        # Check for valid gradients
         if gradients[0] is not None:
+            # Normalize gradients
+            grad_norm = tf.linalg.global_norm(gradients)
+            if grad_norm > 0:
+                gradients = [g / (grad_norm + 1e-7) for g in gradients]
+            
+            # Apply gradients
             self.opt.apply_gradients(zip(gradients, [self.params]))
             
-        # Add random perturbation if we're stuck
-        if self.iterations_without_improvement > self.patience * 2:
-            noise = tf.random.normal(self.params.shape, stddev=0.01)
-            self.params.assign_add(noise)
-            self.iterations_without_improvement = 0
-            
+            # Update learning rate
+            self._update_learning_rate()
+        
         return {
             'loss': loss,
             'gabor': self.gabor,
@@ -512,28 +513,79 @@ class GaborModel(object):
             'err_loss_per_fit': self.err_loss_per_fit,
             'con_loss_per_fit': self.con_loss_per_fit
         }
+    def _update_learning_rate(self):
+        """Cosine decay with warm restarts"""
+        self.iteration += 1
+        
+        # Compute current position in restart cycle
+        cycle = tf.floor(self.iteration / self.restart_period)
+        current_iter = self.iteration % self.restart_period
+        
+        # Cosine decay with warm restarts
+        cosine_decay = 0.5 * (1 + tf.cos(np.pi * current_iter / self.restart_period))
+        new_lr = self.min_lr + (self.initial_lr - self.min_lr) * cosine_decay
+        
+        # Update optimizer learning rate
+        self.current_lr = new_lr
+        self.opt.learning_rate.assign(new_lr)
 
-    def adjust_learning_rate(self, current_loss):
-        """Adjust learning rate based on loss improvement"""
-        self.loss_history.append(current_loss)
-        
-        # Check if this is the best loss we've seen
-        if current_loss < self.best_loss * (1 - self.improvement_threshold):
-            self.best_loss = current_loss
-            self.iterations_without_improvement = 0
-        else:
-            self.iterations_without_improvement += 1
-        
-        # If we haven't improved for patience iterations, reduce learning rate
-        if self.iterations_without_improvement >= self.patience:
-            current_lr = self.opt.learning_rate.numpy()
-            if current_lr > self.min_lr:
-                new_lr = max(current_lr * self.lr_decay, self.min_lr)
-                self.opt.learning_rate.assign(new_lr)
-                print(f"Reducing learning rate to {new_lr:.6f}")
-                self.iterations_without_improvement = 0
-                
-        return self.iterations_without_improvement
+    def _forward_pass(self):
+        """Improved forward pass with better numerical stability"""
+        with tf.name_scope('forward_pass'):
+            # Clip parameters to valid ranges
+            self.cparams = tf.clip_by_value(self.params, self.gmin[:,None,None], self.gmax[:,None,None])
+            
+            # Extract parameters
+            u = self.cparams[:,GABOR_PARAM_U,:]
+            v = self.cparams[:,GABOR_PARAM_V,:]
+            r = self.cparams[:,GABOR_PARAM_R,:]
+            l = self.cparams[:,GABOR_PARAM_L,:]
+            t = self.cparams[:,GABOR_PARAM_T,:]
+            s = self.cparams[:,GABOR_PARAM_S,:]
+            
+            # Extract RGB parameters
+            h = self.cparams[:,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
+            p = self.cparams[:,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
+            
+            # Add dimensions for broadcasting
+            u = u[:,None,None,None,:]
+            v = v[:,None,None,None,:]
+            r = r[:,None,None,None,:]
+            l = l[:,None,None,None,:]
+            t = t[:,None,None,None,:]
+            s = s[:,None,None,None,:]
+            h = h[:,None,None,:,:]
+            p = p[:,None,None,:,:]
+            
+            # Compute Gabor function with improved numerical stability
+            cr = tf.cos(r)
+            sr = tf.sin(r)
+            f = tf.cast(2*np.pi, tf.float32) / tf.maximum(l, 1e-6)
+            s2 = tf.maximum(s*s, 1e-6)
+            t2 = tf.maximum(t*t, 1e-6)
+            
+            xp = self.x - u
+            yp = self.y - v
+            
+            b1 = cr*xp + sr*yp
+            b2 = -sr*xp + cr*yp
+            
+            b12 = b1*b1
+            b22 = b2*b2
+            
+            # Prevent numerical instability in exponential
+            exp_term = tf.clip_by_value(-b12/(2*s2) - b22/(2*t2), -88.0, 88.0)
+            w = tf.exp(exp_term)
+            
+            k = f*b1 + p
+            ck = tf.cos(k)
+            
+            # Combine components
+            self.gabor = tf.identity(h * w * ck, name='gabor')
+            self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
+            
+            if self.target is not None:
+                self._compute_losses()
 
     def reset_optimization(self):
         """Reset optimization state"""
@@ -911,354 +963,187 @@ def local_optimize(opts, inputs, models, state, current_model, loop_count):
 ######################################################################
 
 def main():
-    # Set up command-line options, image inputs, initial state, and models.
+    # Set up command-line options, image inputs, and models
     opts = get_options()
     inputs = setup_inputs(opts)
     state = setup_state(opts, inputs)
     models = setup_models(opts, inputs, state)
 
-    # Set the target to the original input image.
-    inputs.target_tensor.assign(inputs.input_image)
-
-    # If initial parameter files were provided, load them.
-    prev_best_loss, initial_filter_count = load_params(opts, inputs, models, state)
-
-    # Starting filter count is the number already in the state.
-    current_model = initial_filter_count
-    # Create the optimizer for the full optimization phase.
-    optimizer = tf.keras.optimizers.Adam(learning_rate=opts.full_learning_rate)
-
+    # Initialize tracking variables
+    current_model = 0
     loop_count = 0
+    best_loss = float('inf')
     start_time = datetime.now()
-
+    
     try:
         while True:
-            # Exit if time or iteration limits are reached.
+            # Check termination conditions
             if opts.time_limit is not None:
                 elapsed = (datetime.now() - start_time).total_seconds()
                 if elapsed > opts.time_limit:
-                    print('Exceeded time limit, quitting!')
+                    print('Time limit reached!')
                     break
+                    
             if opts.total_iterations is not None and loop_count >= opts.total_iterations:
-                print(f"Reached {opts.total_iterations} iterations, quitting!")
+                print(f'Iteration limit ({opts.total_iterations}) reached!')
                 break
 
-            print(f"Iteration #{loop_count+1}:")
+            print(f"\nIteration #{loop_count+1}:")
 
-            # -----------------------------
-            # 1. Compute the residual image.
-            # -----------------------------
+            # 1. Compute residual
             if current_model > 0:
-                # Sum the output of all filters added so far.
-                current_approx = state.gabor[:,:,:,:current_model].sum(axis=3)
-                residual = inputs.input_image - current_approx
+                current_approx = tf.reduce_sum(state.gabor[:,:,:,:current_model], axis=3)
+                residual = inputs.input_image - current_approx.numpy()
             else:
-                # If no model has been added yet, the residual is the full image.
                 residual = inputs.input_image
 
-            # For local optimization we want to fit the candidate filter
-            # to the residual (i.e. the part not explained by earlier filters).
+            # Update target for local optimization
             inputs.target_tensor.assign(residual)
 
-            # -----------------------------
-            # 2. Local (per-filter) optimization.
-            # -----------------------------
-            # Optimize a single candidate filter against the residual image.
-            print(f"Performing local optimization for filter {current_model+1} / {opts.num_models}")
-            local_loss = local_optimize(opts, inputs, models, state, current_model, loop_count)
-            print(f"Local loss (filter {current_model+1}): {local_loss:.9f}")
+            # 2. Local optimization phase
+            print(f"Performing local optimization for model {current_model+1}/{opts.num_models}")
+            
+            # Reset local model for new optimization
+            models.local.reset_optimization()
+            
+            best_local_loss = float('inf')
+            best_local_params = None
+            
+            # Run multiple local optimization attempts
+            for attempt in range(opts.local_iter):
+                result = models.local.train_step()
+                current_loss = float(result['loss'])
+                
+                if current_loss < best_local_loss:
+                    best_local_loss = current_loss
+                    best_local_params = result['params'].numpy()
+                
+                if attempt % 5 == 0:
+                    print(f"  Local step {attempt}: loss = {current_loss:.6f}")
 
-            # Assume that local_optimize (directly or via snapshot())
-            # updates state.gabor and state.params for the candidate filter.
-            current_model += 1
-            if current_model >= opts.num_models:
-                current_model = opts.num_models -1
+            # Update state with best local result
+            if best_local_params is not None:
+                state.params[:, current_model] = best_local_params[0,:,0]
+                current_model = min(current_model + 1, opts.num_models - 1)
 
-            # -----------------------------
-            # 3. Occasional full (joint) optimization.
-            # -----------------------------
-            if (loop_count+1) % opts.full_every == 0:
-                print("Performing full joint optimization over all filters...")
-                prev_best_loss = full_optimize(opts, inputs, models, state,
-                                               current_model, loop_count, prev_best_loss, optimizer)
-                if opts.output is not None:
-                    np.savetxt(opts.output, state.params.transpose(),
-                               fmt='%f', delimiter=',')
+            # 3. Periodic full optimization
+            if (loop_count + 1) % opts.full_every == 0:
+                print("\nPerforming full joint optimization...")
+                
+                # Reset full model for optimization
+                models.full.reset_optimization()
+                
+                for i in range(opts.full_iter):
+                    result = models.full.train_step()
+                    current_loss = float(result['loss'])
+                    
+                    if current_loss < best_loss:
+                        best_loss = current_loss
+                        # Update state with improved parameters
+                        state.params = result['params'].numpy()[0]
+                        
+                        # Save intermediate result
+                        if opts.output is not None:
+                            np.savetxt(opts.output, state.params.transpose(), 
+                                     fmt='%f', delimiter=',')
+                    
+                    if i % 50 == 0:
+                        print(f"  Full step {i}: loss = {current_loss:.6f}")
+
+                # Update preview and create snapshot
+                if opts.preview_size:
+                    models.preview.params.assign(models.full.params)
+                    _ = models.preview._forward_pass()
+                
+                snapshot(result['gabor'].numpy()[0], 
+                        result['approx'].numpy()[0],
+                        opts, inputs, models,
+                        loop_count, 'full')
 
             loop_count += 1
 
     except KeyboardInterrupt:
-        print("Interrupted. Saving final state and exiting...")
+        print("\nOptimization interrupted by user!")
+    finally:
+        # Save final results
         if opts.output is not None:
-                    np.savetxt(opts.output, state.params.transpose(),
-                               fmt='%f', delimiter=',')
-    if opts.output is not None:
-        np.savetxt(opts.output, state.params.transpose(), fmt='%f', delimiter=',')
-######################################################################
+            print(f"\nSaving final parameters to {opts.output}")
+            np.savetxt(opts.output, state.params.transpose(), fmt='%f', delimiter=',')
+            
+        # Create final snapshot
+        final_result = models.full.get_current_state()
+        snapshot(final_result['gabor'].numpy()[0],
+                final_result['approx'].numpy()[0],
+                opts, inputs, models,
+                loop_count, 'final')
+        
+        print("\nOptimization completed!")
+        print(f"Final loss: {float(final_result['loss']):.6f}")
+        print(f"Total iterations: {loop_count}")
+        print(f"Total time: {(datetime.now() - start_time).total_seconds():.1f}s")
 
-# from https://github.com/BIDS/colormap/blob/master/colormaps.py
-# licensed CC0
-_magma_data = [[0.001462, 0.000466, 0.013866],
-               [0.002258, 0.001295, 0.018331],
-               [0.003279, 0.002305, 0.023708],
-               [0.004512, 0.003490, 0.029965],
-               [0.005950, 0.004843, 0.037130],
-               [0.007588, 0.006356, 0.044973],
-               [0.009426, 0.008022, 0.052844],
-               [0.011465, 0.009828, 0.060750],
-               [0.013708, 0.011771, 0.068667],
-               [0.016156, 0.013840, 0.076603],
-               [0.018815, 0.016026, 0.084584],
-               [0.021692, 0.018320, 0.092610],
-               [0.024792, 0.020715, 0.100676],
-               [0.028123, 0.023201, 0.108787],
-               [0.031696, 0.025765, 0.116965],
-               [0.035520, 0.028397, 0.125209],
-               [0.039608, 0.031090, 0.133515],
-               [0.043830, 0.033830, 0.141886],
-               [0.048062, 0.036607, 0.150327],
-               [0.052320, 0.039407, 0.158841],
-               [0.056615, 0.042160, 0.167446],
-               [0.060949, 0.044794, 0.176129],
-               [0.065330, 0.047318, 0.184892],
-               [0.069764, 0.049726, 0.193735],
-               [0.074257, 0.052017, 0.202660],
-               [0.078815, 0.054184, 0.211667],
-               [0.083446, 0.056225, 0.220755],
-               [0.088155, 0.058133, 0.229922],
-               [0.092949, 0.059904, 0.239164],
-               [0.097833, 0.061531, 0.248477],
-               [0.102815, 0.063010, 0.257854],
-               [0.107899, 0.064335, 0.267289],
-               [0.113094, 0.065492, 0.276784],
-               [0.118405, 0.066479, 0.286321],
-               [0.123833, 0.067295, 0.295879],
-               [0.129380, 0.067935, 0.305443],
-               [0.135053, 0.068391, 0.315000],
-               [0.140858, 0.068654, 0.324538],
-               [0.146785, 0.068738, 0.334011],
-               [0.152839, 0.068637, 0.343404],
-               [0.159018, 0.068354, 0.352688],
-               [0.165308, 0.067911, 0.361816],
-               [0.171713, 0.067305, 0.370771],
-               [0.178212, 0.066576, 0.379497],
-               [0.184801, 0.065732, 0.387973],
-               [0.191460, 0.064818, 0.396152],
-               [0.198177, 0.063862, 0.404009],
-               [0.204935, 0.062907, 0.411514],
-               [0.211718, 0.061992, 0.418647],
-               [0.218512, 0.061158, 0.425392],
-               [0.225302, 0.060445, 0.431742],
-               [0.232077, 0.059889, 0.437695],
-               [0.238826, 0.059517, 0.443256],
-               [0.245543, 0.059352, 0.448436],
-               [0.252220, 0.059415, 0.453248],
-               [0.258857, 0.059706, 0.457710],
-               [0.265447, 0.060237, 0.461840],
-               [0.271994, 0.060994, 0.465660],
-               [0.278493, 0.061978, 0.469190],
-               [0.284951, 0.063168, 0.472451],
-               [0.291366, 0.064553, 0.475462],
-               [0.297740, 0.066117, 0.478243],
-               [0.304081, 0.067835, 0.480812],
-               [0.310382, 0.069702, 0.483186],
-               [0.316654, 0.071690, 0.485380],
-               [0.322899, 0.073782, 0.487408],
-               [0.329114, 0.075972, 0.489287],
-               [0.335308, 0.078236, 0.491024],
-               [0.341482, 0.080564, 0.492631],
-               [0.347636, 0.082946, 0.494121],
-               [0.353773, 0.085373, 0.495501],
-               [0.359898, 0.087831, 0.496778],
-               [0.366012, 0.090314, 0.497960],
-               [0.372116, 0.092816, 0.499053],
-               [0.378211, 0.095332, 0.500067],
-               [0.384299, 0.097855, 0.501002],
-               [0.390384, 0.100379, 0.501864],
-               [0.396467, 0.102902, 0.502658],
-               [0.402548, 0.105420, 0.503386],
-               [0.408629, 0.107930, 0.504052],
-               [0.414709, 0.110431, 0.504662],
-               [0.420791, 0.112920, 0.505215],
-               [0.426877, 0.115395, 0.505714],
-               [0.432967, 0.117855, 0.506160],
-               [0.439062, 0.120298, 0.506555],
-               [0.445163, 0.122724, 0.506901],
-               [0.451271, 0.125132, 0.507198],
-               [0.457386, 0.127522, 0.507448],
-               [0.463508, 0.129893, 0.507652],
-               [0.469640, 0.132245, 0.507809],
-               [0.475780, 0.134577, 0.507921],
-               [0.481929, 0.136891, 0.507989],
-               [0.488088, 0.139186, 0.508011],
-               [0.494258, 0.141462, 0.507988],
-               [0.500438, 0.143719, 0.507920],
-               [0.506629, 0.145958, 0.507806],
-               [0.512831, 0.148179, 0.507648],
-               [0.519045, 0.150383, 0.507443],
-               [0.525270, 0.152569, 0.507192],
-               [0.531507, 0.154739, 0.506895],
-               [0.537755, 0.156894, 0.506551],
-               [0.544015, 0.159033, 0.506159],
-               [0.550287, 0.161158, 0.505719],
-               [0.556571, 0.163269, 0.505230],
-               [0.562866, 0.165368, 0.504692],
-               [0.569172, 0.167454, 0.504105],
-               [0.575490, 0.169530, 0.503466],
-               [0.581819, 0.171596, 0.502777],
-               [0.588158, 0.173652, 0.502035],
-               [0.594508, 0.175701, 0.501241],
-               [0.600868, 0.177743, 0.500394],
-               [0.607238, 0.179779, 0.499492],
-               [0.613617, 0.181811, 0.498536],
-               [0.620005, 0.183840, 0.497524],
-               [0.626401, 0.185867, 0.496456],
-               [0.632805, 0.187893, 0.495332],
-               [0.639216, 0.189921, 0.494150],
-               [0.645633, 0.191952, 0.492910],
-               [0.652056, 0.193986, 0.491611],
-               [0.658483, 0.196027, 0.490253],
-               [0.664915, 0.198075, 0.488836],
-               [0.671349, 0.200133, 0.487358],
-               [0.677786, 0.202203, 0.485819],
-               [0.684224, 0.204286, 0.484219],
-               [0.690661, 0.206384, 0.482558],
-               [0.697098, 0.208501, 0.480835],
-               [0.703532, 0.210638, 0.479049],
-               [0.709962, 0.212797, 0.477201],
-               [0.716387, 0.214982, 0.475290],
-               [0.722805, 0.217194, 0.473316],
-               [0.729216, 0.219437, 0.471279],
-               [0.735616, 0.221713, 0.469180],
-               [0.742004, 0.224025, 0.467018],
-               [0.748378, 0.226377, 0.464794],
-               [0.754737, 0.228772, 0.462509],
-               [0.761077, 0.231214, 0.460162],
-               [0.767398, 0.233705, 0.457755],
-               [0.773695, 0.236249, 0.455289],
-               [0.779968, 0.238851, 0.452765],
-               [0.786212, 0.241514, 0.450184],
-               [0.792427, 0.244242, 0.447543],
-               [0.798608, 0.247040, 0.444848],
-               [0.804752, 0.249911, 0.442102],
-               [0.810855, 0.252861, 0.439305],
-               [0.816914, 0.255895, 0.436461],
-               [0.822926, 0.259016, 0.433573],
-               [0.828886, 0.262229, 0.430644],
-               [0.834791, 0.265540, 0.427671],
-               [0.840636, 0.268953, 0.424666],
-               [0.846416, 0.272473, 0.421631],
-               [0.852126, 0.276106, 0.418573],
-               [0.857763, 0.279857, 0.415496],
-               [0.863320, 0.283729, 0.412403],
-               [0.868793, 0.287728, 0.409303],
-               [0.874176, 0.291859, 0.406205],
-               [0.879464, 0.296125, 0.403118],
-               [0.884651, 0.300530, 0.400047],
-               [0.889731, 0.305079, 0.397002],
-               [0.894700, 0.309773, 0.393995],
-               [0.899552, 0.314616, 0.391037],
-               [0.904281, 0.319610, 0.388137],
-               [0.908884, 0.324755, 0.385308],
-               [0.913354, 0.330052, 0.382563],
-               [0.917689, 0.335500, 0.379915],
-               [0.921884, 0.341098, 0.377376],
-               [0.925937, 0.346844, 0.374959],
-               [0.929845, 0.352734, 0.372677],
-               [0.933606, 0.358764, 0.370541],
-               [0.937221, 0.364929, 0.368567],
-               [0.940687, 0.371224, 0.366762],
-               [0.944006, 0.377643, 0.365136],
-               [0.947180, 0.384178, 0.363701],
-               [0.950210, 0.390820, 0.362468],
-               [0.953099, 0.397563, 0.361438],
-               [0.955849, 0.404400, 0.360619],
-               [0.958464, 0.411324, 0.360014],
-               [0.960949, 0.418323, 0.359630],
-               [0.963310, 0.425390, 0.359469],
-               [0.965549, 0.432519, 0.359529],
-               [0.967671, 0.439703, 0.359810],
-               [0.969680, 0.446936, 0.360311],
-               [0.971582, 0.454210, 0.361030],
-               [0.973381, 0.461520, 0.361965],
-               [0.975082, 0.468861, 0.363111],
-               [0.976690, 0.476226, 0.364466],
-               [0.978210, 0.483612, 0.366025],
-               [0.979645, 0.491014, 0.367783],
-               [0.981000, 0.498428, 0.369734],
-               [0.982279, 0.505851, 0.371874],
-               [0.983485, 0.513280, 0.374198],
-               [0.984622, 0.520713, 0.376698],
-               [0.985693, 0.528148, 0.379371],
-               [0.986700, 0.535582, 0.382210],
-               [0.987646, 0.543015, 0.385210],
-               [0.988533, 0.550446, 0.388365],
-               [0.989363, 0.557873, 0.391671],
-               [0.990138, 0.565296, 0.395122],
-               [0.990871, 0.572706, 0.398714],
-               [0.991558, 0.580107, 0.402441],
-               [0.992196, 0.587502, 0.406299],
-               [0.992785, 0.594891, 0.410283],
-               [0.993326, 0.602275, 0.414390],
-               [0.993834, 0.609644, 0.418613],
-               [0.994309, 0.616999, 0.422950],
-               [0.994738, 0.624350, 0.427397],
-               [0.995122, 0.631696, 0.431951],
-               [0.995480, 0.639027, 0.436607],
-               [0.995810, 0.646344, 0.441361],
-               [0.996096, 0.653659, 0.446213],
-               [0.996341, 0.660969, 0.451160],
-               [0.996580, 0.668256, 0.456192],
-               [0.996775, 0.675541, 0.461314],
-               [0.996925, 0.682828, 0.466526],
-               [0.997077, 0.690088, 0.471811],
-               [0.997186, 0.697349, 0.477182],
-               [0.997254, 0.704611, 0.482635],
-               [0.997325, 0.711848, 0.488154],
-               [0.997351, 0.719089, 0.493755],
-               [0.997351, 0.726324, 0.499428],
-               [0.997341, 0.733545, 0.505167],
-               [0.997285, 0.740772, 0.510983],
-               [0.997228, 0.747981, 0.516859],
-               [0.997138, 0.755190, 0.522806],
-               [0.997019, 0.762398, 0.528821],
-               [0.996898, 0.769591, 0.534892],
-               [0.996727, 0.776795, 0.541039],
-               [0.996571, 0.783977, 0.547233],
-               [0.996369, 0.791167, 0.553499],
-               [0.996162, 0.798348, 0.559820],
-               [0.995932, 0.805527, 0.566202],
-               [0.995680, 0.812706, 0.572645],
-               [0.995424, 0.819875, 0.579140],
-               [0.995131, 0.827052, 0.585701],
-               [0.994851, 0.834213, 0.592307],
-               [0.994524, 0.841387, 0.598983],
-               [0.994222, 0.848540, 0.605696],
-               [0.993866, 0.855711, 0.612482],
-               [0.993545, 0.862859, 0.619299],
-               [0.993170, 0.870024, 0.626189],
-               [0.992831, 0.877168, 0.633109],
-               [0.992440, 0.884330, 0.640099],
-               [0.992089, 0.891470, 0.647116],
-               [0.991688, 0.898627, 0.654202],
-               [0.991332, 0.905763, 0.661309],
-               [0.990930, 0.912915, 0.668481],
-               [0.990570, 0.920049, 0.675675],
-               [0.990175, 0.927196, 0.682926],
-               [0.989815, 0.934329, 0.690198],
-               [0.989434, 0.941470, 0.697519],
-               [0.989077, 0.948604, 0.704863],
-               [0.988717, 0.955742, 0.712242],
-               [0.988367, 0.962878, 0.719649],
-               [0.988033, 0.970012, 0.727077],
-               [0.987691, 0.977154, 0.734536],
-               [0.987387, 0.984288, 0.742002],
-               [0.987053, 0.991438, 0.749504]]    
+def evaluate_fit_quality(target, approx, weight=None):
+    """Evaluate the quality of the fit with multiple metrics"""
+    if weight is None:
+        weight = np.ones_like(target)
+        
+    # Compute weighted MSE
+    mse = np.mean(weight * (target - approx)**2)
+    
+    # Compute PSNR
+    max_val = target.max() - target.min()
+    psnr = 20 * np.log10(max_val) - 10 * np.log10(mse)
+    
+    # Compute weighted correlation coefficient
+    weighted_target = weight * target
+    weighted_approx = weight * approx
+    correlation = np.corrcoef(weighted_target.flatten(), weighted_approx.flatten())[0,1]
+    
+    return {
+        'mse': mse,
+        'psnr': psnr,
+        'correlation': correlation
+    }
 
-def get_colormap():
-    return (np.array(_magma_data)*255).astype(np.uint8)
-
-######################################################################
+def save_visualization(output_path, original, approximation, residual):
+    """Save a visualization of the fitting results"""
+    # Create a figure with three subplots
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5))
+    
+    # Plot original image
+    ax1.imshow(original)
+    ax1.set_title('Original')
+    ax1.axis('off')
+    
+    # Plot approximation
+    ax2.imshow(approximation)
+    ax2.set_title('Gabor Approximation')
+    ax2.axis('off')
+    
+    # Plot residual
+    residual_plot = ax3.imshow(residual, cmap='RdBu')
+    ax3.set_title('Residual')
+    ax3.axis('off')
+    plt.colorbar(residual_plot, ax=ax3)
+    
+    # Save figure
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 
 if __name__ == '__main__':
+    # Set random seeds for reproducibility
+    np.random.seed(42)
+    tf.random.set_seed(42)
+    
+    # Enable memory growth for GPU if available
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            print(e)
+    
+    # Run main optimization
     main()
