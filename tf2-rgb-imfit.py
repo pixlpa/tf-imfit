@@ -609,11 +609,22 @@ def setup_state(opts, inputs):
     # Initialize parameters randomly within their valid ranges
     params = np.zeros((GABOR_NUM_PARAMS, opts.num_models), dtype=np.float32)
     for i in range(GABOR_NUM_PARAMS):
-        params[i] = np.random.uniform(
-            GABOR_RANGE[i,0], 
-            GABOR_RANGE[i,1], 
-            opts.num_models
-        )
+        if GABOR_PARAM_H0 <= i < GABOR_PARAM_H0+3:
+            # For h parameters, create a broader dynamic range via a normal distribution.
+            center = (GABOR_RANGE[i, 0] + GABOR_RANGE[i, 1]) / 2.0
+            range_width = GABOR_RANGE[i, 1] - GABOR_RANGE[i, 0]
+            # Adjust the scale factor (here, range_width/2) to be larger if needed.
+            params[i] = np.clip(
+                np.random.normal(loc=center, scale=range_width/2.0, size=opts.num_models),
+                GABOR_RANGE[i, 0],
+                GABOR_RANGE[i, 1]
+            )
+        else:
+            params[i] = np.random.uniform(
+                GABOR_RANGE[i, 0],
+                GABOR_RANGE[i, 1],
+                opts.num_models
+            )
     print("Initial params min/max:", params.min(), params.max())
     
     state = StateTuple(
