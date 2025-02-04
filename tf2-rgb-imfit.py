@@ -705,7 +705,7 @@ def load_params(opts, inputs, models, state):
     con_losses = models.full.con_losses.numpy()[0]
 
     # Convert err_loss to a float after ensuring it's computed
-    err_loss_value = float(err_loss)  # Use tf.make_ndarray if needed
+    err_loss_value = float(tf.make_ndarray(err_loss))  # Use tf.make_ndarray if needed
 
     # For initial case with no models, err_loss should be the MSE between target and zeros
     if nparams == 0:
