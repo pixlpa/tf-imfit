@@ -115,7 +115,7 @@ def get_options():
     parser.add_argument('-T', '--total-iterations', type=int,
                         metavar='N',
                         help='total limit on outer loop iterations',
-                        default=None)
+                        default=1000)
 
     parser.add_argument('-F', '--full-every', type=int, metavar='N',
                         default=32,
@@ -128,11 +128,11 @@ def get_options():
 
     parser.add_argument('-r', '--local-learning-rate', type=float, metavar='R',
                         help='learning rate for local opt.',
-                        default=0.02)
+                        default=0.001)
 
     parser.add_argument('-R', '--full-learning-rate', type=float, metavar='R',
                         help='learning rate for full opt.',
-                        default=0.001)
+                        default=0.0005)
     
     parser.add_argument('-n', '--num-models', type=int, metavar='N',
                         help='total number of models to fit',
@@ -387,9 +387,6 @@ class GaborModel(object):
             if tf.size(self.params) == 0:
                 print("Warning: Parameters tensor is empty!")
             self.cparams = self.params
-            
-            # After clipping
-            tf.print("Clipped params range:", tf.reduce_min(self.cparams), tf.reduce_max(self.cparams))
             
             # Extract parameters
             u = self.cparams[:,GABOR_PARAM_U,:]
@@ -893,42 +890,42 @@ def randomize(params, rstdev, ncopy=None):
 
 def local_optimize(opts, inputs, models, state, current_model, loop_count):
     """Optimize a single model's parameters using local optimization."""
-    
-    # Get initial loss
-    _ = models.local._forward_pass()
-    loss = models.local.err_loss + models.local.con_losses[0]
-    print(f"  loss before local fit is {float(loss):.9f}")
-    
-    # Single optimization step with Adam
-    with tf.GradientTape() as tape:
-        tape.watch(models.local.params)
+    for i in range(opts.local_iter):
+        # Get initial loss
         _ = models.local._forward_pass()
-        err_loss = models.local.err_loss
-        con_loss = models.local.con_losses[0]
-        total_loss = err_loss + con_loss
+        loss = models.local.err_loss + models.local.con_losses[0]
+        print(f"  loss before local fit is {float(loss):.9f}")
         
-    # Compute and apply gradients
-    grads = tape.gradient(total_loss, [models.local.params])
-    if grads[0] is not None:
-        optimizer = tf.keras.optimizers.Adam(learning_rate=opts.local_learning_rate)
-        optimizer.apply_gradients(zip(grads, [models.local.params]))
-        
-        # Update preview and snapshot
-        if opts.preview_size:
-            models.preview.params.assign(models.full.params)
-            _ = models.preview._forward_pass()
-        
+        # Single optimization step with Adam
+        with tf.GradientTape() as tape:
+            tape.watch(models.local.params)
+            _ = models.local._forward_pass()
+            err_loss = models.local.err_loss
+            con_loss = models.local.con_losses[0]
+            total_loss = err_loss + con_loss
+            
+        # Compute and apply gradients
+        grads = tape.gradient(total_loss, [models.local.params])
+        if grads[0] is not None:
+            optimizer = tf.keras.optimizers.Adam(learning_rate=opts.local_learning_rate)
+            optimizer.apply_gradients(zip(grads, [models.local.params]))
+            
+            # Update preview and snapshot
+            if opts.preview_size:
+                models.preview.params.assign(models.full.params)
+                _ = models.preview._forward_pass()
+            
 
-        # Get the results directly from the model
-        gabor = models.full.gabor.numpy()[0]  # Get gabor values
-        approx = models.full.approx.numpy()[0]
+    # Get the results directly from the model
+    gabor = models.full.gabor.numpy()[0]  # Get gabor values
+    approx = models.full.approx.numpy()[0]
 
-        # Convert tensors to numpy arrays and handle dimensions
-        snapshot(gabor, approx,
-             opts, inputs, models,
-             loop_count, '')
-        
-        print(f"  loss after local fit is {float(total_loss):.9f}")
+    # Convert tensors to numpy arrays and handle dimensions
+    snapshot(gabor, approx,
+            opts, inputs, models,
+            loop_count, '')
+
+    print(f"  loss after local fit is {float(total_loss):.9f}")
     
     return float(total_loss)
 
