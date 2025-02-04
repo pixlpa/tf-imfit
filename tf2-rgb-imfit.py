@@ -612,7 +612,7 @@ class GaborModel(object):
 # Set up tensorflow models themselves. We need a separate model for
 # each combination of inputs/dimensions to optimize.
 
-ddef setup_models(opts, inputs, state):
+def setup_models(opts, inputs, state):
     # Validate dimensions
     if opts.num_models <= 0:
         raise ValueError("num_models must be positive")
