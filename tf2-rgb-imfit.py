@@ -670,8 +670,7 @@ def load_params(opts, inputs, models, state):
         iparams = np.empty((0, GABOR_NUM_PARAMS), dtype=np.float32)
         nparams = 0 
 
-    print('loaded {} models from {}'.format(
-        nparams, opts.input))
+    print('loaded {} models from {}'.format(nparams, opts.input))
 
     nparams = min(nparams, opts.num_models)
 
@@ -699,7 +698,9 @@ def load_params(opts, inputs, models, state):
     # Get the results directly from the model
     gabor = models.full.gabor.numpy()[0]  # Get gabor values
     approx = models.full.approx.numpy()[0]
-    err_loss = float(models.full.err_loss)
+    
+    # Use .numpy() to convert the symbolic tensor to a float
+    err_loss = float(models.full.err_loss.numpy())
     con_losses = models.full.con_losses.numpy()[0]
 
     # For initial case with no models, err_loss should be the MSE between target and zeros
