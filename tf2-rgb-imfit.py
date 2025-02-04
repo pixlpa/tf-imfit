@@ -750,8 +750,14 @@ def snapshot(cur_gabor, cur_approx,
         inputs.max_row.assign(current_model + 1)
         models.preview.params.assign(preview_params)
         
-        # Force a forward pass to update the preview
+        # Force a forward pass to update the preview and compute loss
         _ = models.preview._forward_pass()
+        
+        # Ensure we have a valid initial loss
+        if loop_count == 0 and not full_iteration:
+            # Calculate initial loss based on difference from target
+            initial_err = tf.reduce_mean((inputs.target - tf.zeros_like(inputs.target))**2)
+            print(f"Calculated initial loss: {initial_err:.6f}")
         
         preview_image = models.preview.approx.numpy()[0]
         print(f"preview model params shape: {models.preview.params.shape}")
