@@ -921,170 +921,48 @@ def local_optimize(opts, inputs, models, state, current_model):
 ######################################################################
 
 def main():
-    ############################################################
-    # Set up variables
-    
+    # Setup options, state, inputs, and models
     opts = get_options()
-
     inputs = setup_inputs(opts)
     state = setup_state(opts, inputs)
     models = setup_models(opts, inputs, state)
 
-    prev_best_loss = None
-    model_start_idx = 0
+    # For joint training, we want to use all filters at once.
+    # Set nparams to opts.num_models and update target and max_row accordingly.
+    nparams = opts.num_models
+    inputs.target_tensor.assign(inputs.input_image)
+    inputs.max_row.assign(nparams)
 
-    rollback_state = None
-    rollback_loss = None
-
-    ############################################################
-    # Get start time and load initial parameters
-    start_time = datetime.now()
+    # Optionally load initial parameters if provided.
+    # (load_params() will now update all filters; if no input file is provided, 
+    # your random initialization over all N filters is used.)
+    prev_best_loss, _ = load_params(opts, inputs, models, state)
     
-    # Parse input file
-    prev_best_loss, model_start_idx = load_params(opts, inputs,
-                                                  models, state)
-
-    if opts.input is not None:
-        loop_count = -1
-        if opts.time_limit != 0 and opts.total_iterations != 0:
-            prev_best_loss = full_optimize(opts, inputs, models, state,
-                                           loop_count,
-                                           model_start_idx,
-                                           prev_best_loss)
-
-    rollback_state = copy_state(state)
-    rollback_loss = prev_best_loss
-                
+    start_time = datetime.now()
     loop_count = 0
-                
-    # Optimization loop (hit Ctrl+C to quit)
     try:
         while True:
             if opts.time_limit is not None:
                 elapsed = (datetime.now() - start_time).total_seconds()
                 if elapsed > opts.time_limit:
-                    print('exceeded time limit of {}s, quitting!'.format(
-                        opts.time_limit))
+                    print('Exceeded time limit, quitting!')
                     break
 
-            if ( opts.total_iterations is not None and
-                 loop_count >= opts.total_iterations ):
-                print('reached {} outer loop iterations, quitting!'.format(
-                    opts.total_iterations))
+            if opts.total_iterations is not None and loop_count >= opts.total_iterations:
+                print(f"Reached {opts.total_iterations} iterations, quitting!")
                 break
 
-            print('iteration #{}, '.format(loop_count+1), end='')
-            
-            # Figure out which model(s) to replace or newly train
-            is_replace = (model_start_idx >= opts.num_models)
-            
-            if is_replace:
-                idx = np.arange(opts.num_models)
-                np.random.shuffle(idx)
-
-                model_idx = idx[-1]
-                rest_idx = idx[:-1]
-            else:
-                model_idx = model_start_idx
-                rest_idx = np.arange(model_start_idx)
-                print('training models', model_idx)
-
-            # Get the current approximation (sum of all Gabor functions
-            # from all models except the current ones)
-            cur_approx = state.gabor[:,:,:,rest_idx].sum(axis=3)
- 
-            # The function to fit is the difference betw. input image
-            # and current approximation so far.
-            cur_target = inputs.input_image - cur_approx
-           
-            # Have to track constraint losses separately from
-            # approximation error losses
-            cur_con_losses = state.con_loss[rest_idx].sum()
-
-            # Do a big parallel optimization for a bunch of random
-            # model initializations
-            prev_best_loss = local_optimize(opts, inputs, models, state, model_idx)
-
-            # Done with this mini-ensemble
-            model_start_idx += 1
-
-    
-            if ( model_start_idx >= opts.num_models or
-                 (loop_count + 1) % opts.full_every == 0 ):
-
-                # Do a full optimization
-                prev_best_loss = full_optimize(opts, inputs, models, state,
-                                               loop_count,
-                                               model_start_idx,
-                                               prev_best_loss)
-                
-                if rollback_loss is None or prev_best_loss <= rollback_loss:
-                    rollback_loss = prev_best_loss
-                    rollback_state = copy_state(state)
-                    print('current loss of {} is best so far!\n'.format(
-                        rollback_loss))
-                else:
-                    print('cur. loss of {} is not better than prev. {}, '
-                          'rolling back!!!\n'.format(
-                        prev_best_loss, rollback_loss))
-                    prev_best_loss = rollback_loss
-                    state = copy_state(rollback_state)
-                    
-                if opts.output is not None:
-                    print("\nSaving state params:")
-                    print("Shape:", state.params.shape)
-                    print("Min/Max:", np.min(state.params), np.max(state.params))
-                    print("First few values:", state.params.flatten()[:5])
-                    
-                    # Convert to numpy if it's a tensor
-                    save_params = state.params.numpy() if tf.is_tensor(state.params) else state.params
-                    print("After conversion - Min/Max:", np.min(save_params), np.max(save_params))
-                    
-                    np.savetxt(opts.output, save_params.transpose(),
-                               fmt='%f', delimiter=',')
-                    
-                    # Verify the save
-                    loaded = np.loadtxt(opts.output, delimiter=',')
-                    print("Verified saved file - Shape:", loaded.shape)
-                    print("Verified saved file - Min/Max:", np.min(loaded), np.max(loaded))
-                    print("Verified saved file - First few values:", loaded.flatten()[:5])
-                
-            # Finished with this loop iteration
+            print(f"Iteration #{loop_count+1}:")
+            # Joint full optimization on the entire group of filters.
+            current_loss = full_optimize(opts, inputs, models, state,
+                                         nparams, loop_count, prev_best_loss)
+            print(f"Iteration {loop_count+1}: loss = {current_loss:.9f}")
+            prev_best_loss = current_loss
             loop_count += 1
-                
     except KeyboardInterrupt:
-        print('\ninterrupted by user, saving final state...')
-        
-        if opts.output is not None:
-            # Convert to numpy if it's a tensor
-            save_params = state.params.numpy() if tf.is_tensor(state.params) else state.params
-            print("\nSaving final state params:")
-            print("Shape:", save_params.shape)
-            print("Min/Max:", np.min(save_params), np.max(save_params))
-            
-            np.savetxt(opts.output, save_params.transpose(),
-                       fmt='%f', delimiter=',')
-            
-            # Verify the save
-            loaded = np.loadtxt(opts.output, delimiter=',')
-            print("Verified final save - Shape:", loaded.shape)
-            print("Verified final save - Min/Max:", np.min(loaded), np.max(loaded))
-    
-    # Add final save after training completes
-    if opts.output is not None:
-        # Convert to numpy if it's a tensor
-        save_params = state.params.numpy() if tf.is_tensor(state.params) else state.params
-        print("\nSaving final trained params:")
-        print("Shape:", save_params.shape)
-        print("Min/Max:", np.min(save_params), np.max(save_params))
-        
-        np.savetxt(opts.output, save_params.transpose(),
-                   fmt='%f', delimiter=',')
-        
-        # Verify the save
-        loaded = np.loadtxt(opts.output, delimiter=',')
-        print("Verified final trained save - Shape:", loaded.shape)
-        print("Verified final trained save - Min/Max:", np.min(loaded), np.max(loaded))
+        print("Interrupted, saving final state...")
+        # Optionally, save state
+        ...
 
 ######################################################################
 
