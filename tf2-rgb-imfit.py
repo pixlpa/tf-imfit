@@ -768,40 +768,52 @@ def snapshot(cur_gabor, cur_approx,
              full_iteration):
     """
     Save a snapshot of the current state to a PNG file.
+    
+    The output montage includes:
+      - The target image,
+      - The full approximation from all active filters,
+      - The residual image (target - approximation),
+      - An absolute error visualization (optionally enhanced).
     """
     if not opts.label_snapshot:
         outfile = '{}.png'.format(opts.snapshot_prefix)
     elif isinstance(full_iteration, int):
         outfile = '{}{:04d}_{:06d}.png'.format(
-            opts.snapshot_prefix, loop_count+1, full_iteration+1)
+            opts.snapshot_prefix, loop_count + 1, full_iteration + 1)
     else:
         outfile = '{}{:04d}{}.png'.format(
-            opts.snapshot_prefix, loop_count+1, full_iteration)
+            opts.snapshot_prefix, loop_count + 1, full_iteration)
 
     if cur_gabor is None or cur_gabor.size == 0:
         print("Creating zero gabor array")
         cur_gabor = np.zeros_like(cur_approx)
-     
-    # Calculate absolute error between the approximation and target image.
-    cur_abserr = np.abs(cur_approx - inputs.input_image)
+    
+    # Compute the residual image.
+    # This is the signed difference between the target (inputs.input_image)
+    # and the full approximation (cur_approx) from all active models.
+    residual = inputs.input_image - cur_approx
+
+    # Compute an absolute error image for visualization purposes.
+    # Here, we use a non-linear transform to boost low differences.
+    cur_abserr = np.abs(residual)
     cur_abserr = cur_abserr * inputs.weight_image
-    cur_abserr = np.power(cur_abserr, 0.5)  # boost low end to aid visualization
+    cur_abserr = np.power(cur_abserr, 0.5)
 
     global COLORMAP
     if COLORMAP is None:
         COLORMAP = get_colormap()
-        
-    # Instead of showing a single gabor filter output, display the complete approximation.
-    # Here we form a montage showing:
-    #   - the target image,
-    #   - the sum of all Gabor filters (cur_approx), and
-    #   - the error image.
-    input_img = rescale(inputs.input_image, -1, 1)
-    approx_img = rescale(cur_approx, -1, 1)
-    error_img = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
+    
+    # Rescale images for display:
+    # We assume that both the target and the approximation are in [-1, 1].
+    input_img    = rescale(inputs.input_image, -1, 1)
+    approx_img   = rescale(cur_approx, -1, 1)
+    # For the residual image, use the same bounds (or adjust as needed).
+    residual_img = rescale(residual, -1, 1)
+    error_img    = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
 
-    # Stack the images horizontally for compact visualization.
-    out_img = np.hstack((input_img, approx_img, error_img))
+    # Create a montage of the images.
+    # Montage order: Target | Approximation | Residual | Absolute Error
+    out_img = np.hstack((input_img, approx_img, residual_img, error_img))
     
     out_img = Image.fromarray(out_img.astype(np.uint8), 'RGB')
     out_img.save(outfile)
@@ -916,57 +928,81 @@ def local_optimize(opts, inputs, models, state, current_model):
 ######################################################################
 
 def main():
-    # Setup options, state, inputs, and models
+    # Set up command-line options, image inputs, initial state, and models.
     opts = get_options()
     inputs = setup_inputs(opts)
     state = setup_state(opts, inputs)
     models = setup_models(opts, inputs, state)
 
-    # Use all filters together and update the target/max_row accordingly.
-    nparams = opts.num_models
+    # Set the target to the original input image.
     inputs.target_tensor.assign(inputs.input_image)
-    inputs.max_row.assign(nparams)
 
-    # Optionally load initial parameters if provided.
-    prev_best_loss, _ = load_params(opts, inputs, models, state)
-    
-    # Create one optimizer instance for full training
+    # If initial parameter files were provided, load them.
+    prev_best_loss, initial_filter_count = load_params(opts, inputs, models, state)
+
+    # Starting filter count is the number already in the state.
+    current_model = initial_filter_count
+    # Create the optimizer for the full optimization phase.
     optimizer = tf.keras.optimizers.Adam(learning_rate=opts.full_learning_rate)
-    
-    start_time = datetime.now()
+
     loop_count = 0
+    start_time = datetime.now()
+
     try:
         while True:
+            # Exit if time or iteration limits are reached.
             if opts.time_limit is not None:
                 elapsed = (datetime.now() - start_time).total_seconds()
                 if elapsed > opts.time_limit:
                     print('Exceeded time limit, quitting!')
                     break
-
             if opts.total_iterations is not None and loop_count >= opts.total_iterations:
                 print(f"Reached {opts.total_iterations} iterations, quitting!")
                 break
 
             print(f"Iteration #{loop_count+1}:")
-            
-            current_loss = full_optimize(opts, inputs, models, state,
-                                         nparams, loop_count, prev_best_loss, optimizer)
-            print(f"Iteration {loop_count+1}: loss = {current_loss:.9f}")
-            
-            prev_best_loss = current_loss
+
+            # -----------------------------
+            # 1. Compute the residual image.
+            # -----------------------------
+            if current_model > 0:
+                # Sum the output of all filters added so far.
+                current_approx = state.gabor[:,:,:,:current_model].sum(axis=3)
+                residual = inputs.input_image - current_approx
+            else:
+                # If no model has been added yet, the residual is the full image.
+                residual = inputs.input_image
+
+            # For local optimization we want to fit the candidate filter
+            # to the residual (i.e. the part not explained by earlier filters).
+            inputs.target_tensor.assign(residual)
+
+            # -----------------------------
+            # 2. Local (per-filter) optimization.
+            # -----------------------------
+            # Optimize a single candidate filter against the residual image.
+            print(f"Performing local optimization for filter {current_model+1} / {opts.num_models}")
+            local_loss = local_optimize(opts, inputs, models, state, current_model)
+            print(f"Local loss (filter {current_model+1}): {local_loss:.9f}")
+
+            # Assume that local_optimize (directly or via snapshot())
+            # updates state.gabor and state.params for the candidate filter.
+            current_model += 1
+
+            # -----------------------------
+            # 3. Occasional full (joint) optimization.
+            # -----------------------------
+            if current_model >= opts.num_models and (loop_count+1) % opts.full_every == 0:
+                print("Performing full joint optimization over all filters...")
+                inputs.target_tensor.assign(inputs.input_image)
+                prev_best_loss = full_optimize(opts, inputs, models, state,
+                                               current_model, loop_count, prev_best_loss, optimizer)
+
             loop_count += 1
 
-            # A minimal test to ensure a dependency exists:
-            with tf.GradientTape() as tape:
-                tape.watch(models.full.params)
-                # Instead of a full forward pass, just compute a simple function of self.params:
-                dummy_output = tf.reduce_sum(models.full.params * 2.0)
-            grad_dummy = tape.gradient(dummy_output, models.full.params)
-            print("Dummy grad norm (should not be 0):", tf.linalg.global_norm([grad_dummy]).numpy())
     except KeyboardInterrupt:
-        print("Interrupted, saving final state...")
-        # Save final state as needed
-        ...
+        print("Interrupted. Saving final state and exiting...")
+        # Save final state if desired.
 
 ######################################################################
 
