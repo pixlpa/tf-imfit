@@ -337,7 +337,19 @@ class GaborModel(object):
         self.gmin = tf.constant(GABOR_RANGE[:,0], dtype=tf.float32)
         self.gmax = tf.constant(GABOR_RANGE[:,1], dtype=tf.float32)
         
-        # Set up optimizer with gradient clipping
+        # Add learning rate tracking
+        self.initial_lr = learning_rate
+        self.min_lr = learning_rate * 0.01  # Minimum learning rate
+        self.patience = 10  # Number of iterations before adjusting LR
+        self.improvement_threshold = 1e-4  # Minimum meaningful improvement
+        self.lr_decay = 0.5  # How much to reduce LR when plateauing
+        
+        # Add loss history tracking
+        self.loss_history = []
+        self.best_loss = float('inf')
+        self.iterations_without_improvement = 0
+        
+        # Initialize optimizer with the initial learning rate
         self.opt = tf.keras.optimizers.Adam(
             learning_rate=learning_rate,
             clipnorm=1.0
@@ -457,22 +469,25 @@ class GaborModel(object):
 
     @tf.function
     def train_step(self):
-        """Performs one training step with numerical safeguards"""
+        """Performs one training step with adaptive learning rate"""
         with tf.GradientTape() as tape:
             self._forward_pass()
             loss = self.loss
             
         # Get gradients
         gradients = tape.gradient(loss, [self.params])
-        
-        # Clip gradients to prevent instability
         gradients = [tf.clip_by_norm(g, 1.0) if g is not None else g for g in gradients]
         
         # Apply gradients if they exist and are not NaN
         if gradients[0] is not None:
             self.opt.apply_gradients(zip(gradients, [self.params]))
-        
-        # Return values needed for monitoring
+            
+        # Add random perturbation if we're stuck
+        if self.iterations_without_improvement > self.patience * 2:
+            noise = tf.random.normal(self.params.shape, stddev=0.01)
+            self.params.assign_add(noise)
+            self.iterations_without_improvement = 0
+            
         return {
             'loss': loss,
             'gabor': self.gabor,
@@ -481,6 +496,35 @@ class GaborModel(object):
             'err_loss_per_fit': self.err_loss_per_fit,
             'con_loss_per_fit': self.con_loss_per_fit
         }
+
+    def adjust_learning_rate(self, current_loss):
+        """Adjust learning rate based on loss improvement"""
+        self.loss_history.append(current_loss)
+        
+        # Check if this is the best loss we've seen
+        if current_loss < self.best_loss * (1 - self.improvement_threshold):
+            self.best_loss = current_loss
+            self.iterations_without_improvement = 0
+        else:
+            self.iterations_without_improvement += 1
+        
+        # If we haven't improved for patience iterations, reduce learning rate
+        if self.iterations_without_improvement >= self.patience:
+            current_lr = self.opt.learning_rate.numpy()
+            if current_lr > self.min_lr:
+                new_lr = max(current_lr * self.lr_decay, self.min_lr)
+                self.opt.learning_rate.assign(new_lr)
+                print(f"Reducing learning rate to {new_lr:.6f}")
+                self.iterations_without_improvement = 0
+                
+        return self.iterations_without_improvement
+
+    def reset_optimization(self):
+        """Reset optimization state"""
+        self.opt.learning_rate.assign(self.initial_lr)
+        self.loss_history = []
+        self.best_loss = float('inf')
+        self.iterations_without_improvement = 0
 
     def get_current_state(self):
         """Get current model state without using @tf.function"""
@@ -798,42 +842,64 @@ def full_optimize(opts, inputs, models, state,
     # Set the target tensor to the full input image
     inputs.target_tensor.assign(inputs.input_image)
     
-    # Get initial state
-    initial_state = models.full.get_current_state()
-    print("Initial state:")
-    print(f"  Params shape: {initial_state['params'].shape}")
-    print(f"  Loss: {initial_state['err_loss_per_fit'].numpy()}")
+    # Reset optimization state
+    models.full.reset_optimization()
+    
+    # Track best state
+    best_loss = float('inf')
+    best_state = None
+    stagnant_iterations = 0
     
     # Training loop
     for i in range(opts.full_iter):
         # Use the model's train_step method
         result = models.full.train_step()
+        current_loss = float(result['loss'])
+        
+        # Update learning rate and check for stagnation
+        stagnant_iterations = models.full.adjust_learning_rate(current_loss)
+        
+        # Track best results
+        if current_loss < best_loss:
+            best_loss = current_loss
+            best_state = models.full.get_current_state()
+            print(f"  New best loss: {best_loss:.6f}")
+        
+        # Early stopping if we've stagnated too long
+        if stagnant_iterations > opts.patience * 3:
+            print(f"  Stopping early at iteration {i} due to loss stagnation")
+            break
+            
         if i % 10 == 0:  # Print progress every 10 iterations
-            print(f"  Iteration {i}: loss = {result['err_loss_per_fit'].numpy()}")
+            print(f"  Iteration {i}: loss = {current_loss:.6f}, lr = {models.full.opt.learning_rate.numpy():.6f}")
     
-    # Get final state
-    final_state = models.full.get_current_state()
+    # Restore best state if found
+    if best_state is not None:
+        models.full.params.assign(best_state['params'])
+        results = best_state
+    else:
+        results = models.full.get_current_state()
     
     # Convert tensors to numpy arrays
     results = {
-        'loss_per_fit': final_state['err_loss_per_fit'].numpy(),
-        'con_losses': final_state['con_losses'].numpy(),
-        'approx': final_state['approx'].numpy(),
-        'gabor': final_state['gabor'].numpy(),
-        'params': final_state['params'].numpy()
+        'loss_per_fit': results['err_loss_per_fit'].numpy(),
+        'con_losses': results['con_losses'].numpy(),
+        'approx': results['approx'].numpy(),
+        'gabor': results['gabor'].numpy(),
+        'params': results['params'].numpy()
     }
     
     # Find best fit using per-fit losses
     fidx = np.argmin(results['loss_per_fit'])
     
     # Get the best results
-    loss_per_fit = float(results['loss_per_fit'][fidx])  # Should be a scalar
-    con_losses = float(np.sum(results['con_losses'][fidx]))  # Sum all constraint losses
+    loss_per_fit = float(results['loss_per_fit'][fidx])
+    con_losses = float(np.sum(results['con_losses'][fidx]))
     new_loss = loss_per_fit + con_losses
     
     # Get the best gabor and approx
-    best_gabor = results['gabor'][fidx]  # This should be [h, w, 3, models]
-    best_approx = results['approx'][fidx]  # This should be [h, w, 3]
+    best_gabor = results['gabor'][fidx]
+    best_approx = results['approx'][fidx]
     
     # Create snapshot with the best results
     snapshot(best_gabor, best_approx,
