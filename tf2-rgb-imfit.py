@@ -712,6 +712,14 @@ def load_params(opts, inputs, models, state):
 
     model_start_idx = nparams
 
+    # After creating/assigning models.full.params, test sensitivity:
+    old_loss = models.full.loss.numpy()
+    # Perturb the parameters slightly
+    models.full.params.assign_add(tf.random.normal(models.full.params.shape, stddev=0.001))
+    models.full._forward_pass()
+    new_loss = models.full.loss.numpy()
+    print("Loss change from small parameter noise:", new_loss - old_loss)
+
     return prev_best_loss, model_start_idx
 
 ######################################################################
