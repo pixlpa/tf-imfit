@@ -291,13 +291,6 @@ def setup_inputs(opts):
 # Note we will create several of these (see main function below).
 
 class GaborModel(object):
- 
-    # The Gabor function tensor we define will be n x h x w x c x e
-    # where n = num_parallel is the number of independent fits,
-    # h x w is the image size,
-    # c is the number of image channels (3 for RGB)
-    # e = ensemble_size is the number of Gabor models per independent fit
-    
     def __init__(self, 
                  num_parallel, ensemble_size,
                  x, y, weight, target,
@@ -307,7 +300,6 @@ class GaborModel(object):
                  max_row=None):
         
         # Store inputs
-                # Store inputs
         self.x = x
         self.y = y
         self.weight = weight
@@ -315,7 +307,6 @@ class GaborModel(object):
         self.max_row = ensemble_size if max_row is None else max_row
         
         # Set up parameter ranges for clipping
-        # Reshape for broadcasting compatibility
         self.gmin = tf.constant(GABOR_RANGE[:,0], dtype=tf.float32)
         self.gmax = tf.constant(GABOR_RANGE[:,1], dtype=tf.float32)
         
@@ -325,12 +316,7 @@ class GaborModel(object):
                 params = tf.Variable(params, trainable=True, dtype=tf.float32)
             self.params = params
         else:
-            self.params = self._initialize_parameters(num_parallel, ensemble_size)
-        
-        # Print shapes for debugging
-        print(f"params shape: {self.params.shape}")
-        print(f"gmin shape: {self.gmin.shape}")
-        print(f"gmax shape: {self.gmax.shape}")
+            self.params = self.initialize_parameters(num_parallel, ensemble_size)
         
         # Learning rate parameters
         self.initial_lr = learning_rate
@@ -355,78 +341,95 @@ class GaborModel(object):
         # Initial forward pass
         self._forward_pass()
 
-        # Check for NaN values
-        if tf.reduce_any(tf.math.is_nan(self.params)):
-            print("Warning: NaN values detected in params!")
-
-        # Check input data shapes
-        tf.print("Input image shape:", self.x.shape)
-        tf.print("Input weight shape:", self.weight.shape)
-        if self.target is not None:
-            tf.print("Input target shape:", self.target.shape)
+    def initialize_parameters(self, num_parallel, ensemble_size):
+        """Initialize Gabor parameters with improved initialization scheme"""
+        init_params = np.zeros((num_parallel, GABOR_NUM_PARAMS, ensemble_size), dtype=np.float32)
+        
+        for i in range(GABOR_NUM_PARAMS):
+            if GABOR_PARAM_H0 <= i <= GABOR_PARAM_H2:
+                # Initialize heights with small positive values
+                init_params[:,i,:] = np.random.uniform(0.01, 0.05, 
+                                                     (num_parallel, ensemble_size))
+            elif i in [GABOR_PARAM_L, GABOR_PARAM_T, GABOR_PARAM_S]:
+                # Initialize scale parameters with reasonable values
+                min_val = GABOR_RANGE[i, 0]
+                max_val = GABOR_RANGE[i, 1]
+                init_params[:,i,:] = np.random.uniform(
+                    min_val + (max_val-min_val)*0.1,
+                    min_val + (max_val-min_val)*0.5,
+                    (num_parallel, ensemble_size)
+                )
+            else:
+                # Initialize other parameters uniformly within their ranges
+                init_params[:,i,:] = np.random.uniform(
+                    GABOR_RANGE[i, 0],
+                    GABOR_RANGE[i, 1],
+                    (num_parallel, ensemble_size)
+                )
+        
+        return tf.Variable(init_params, trainable=True, dtype=tf.float32)
 
     def _forward_pass(self):
-        """Improved forward pass with better numerical stability"""
-        with tf.name_scope('forward_pass'):
-            # Reshape gmin and gmax for proper broadcasting
-            gmin = tf.reshape(self.gmin, [1, GABOR_NUM_PARAMS, 1])
-            gmax = tf.reshape(self.gmax, [1, GABOR_NUM_PARAMS, 1])
-            
-            # Clip parameters to valid ranges
-            self.cparams = tf.clip_by_value(self.params, gmin, gmax)
-            
-            # Extract parameters
-            u = self.cparams[:,GABOR_PARAM_U,:]
-            v = self.cparams[:,GABOR_PARAM_V,:]
-            r = self.cparams[:,GABOR_PARAM_R,:]
-            l = self.cparams[:,GABOR_PARAM_L,:]
-            t = self.cparams[:,GABOR_PARAM_T,:]
-            s = self.cparams[:,GABOR_PARAM_S,:]
-            
-            # Extract RGB parameters
-            h = self.cparams[:,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
-            p = self.cparams[:,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
-            
-            # Add dimensions for broadcasting
-            u = u[:,None,None,None,:]
-            v = v[:,None,None,None,:]
-            r = r[:,None,None,None,:]
-            l = l[:,None,None,None,:]
-            t = t[:,None,None,None,:]
-            s = s[:,None,None,None,:]
-            h = h[:,None,None,:,:]
-            p = p[:,None,None,:,:]
-            
-            # Compute Gabor function with improved numerical stability
-            cr = tf.cos(r)
-            sr = tf.sin(r)
-            f = tf.cast(2*np.pi, tf.float32) / tf.maximum(l, 1e-6)
-            s2 = tf.maximum(s*s, 1e-6)
-            t2 = tf.maximum(t*t, 1e-6)
-            
-            xp = self.x - u
-            yp = self.y - v
-            
-            b1 = cr*xp + sr*yp
-            b2 = -sr*xp + cr*yp
-            
-            b12 = b1*b1
-            b22 = b2*b2
-            
-            # Prevent numerical instability in exponential
-            exp_term = tf.clip_by_value(-b12/(2*s2) - b22/(2*t2), -88.0, 88.0)
-            w = tf.exp(exp_term)
-            
-            k = f*b1 + p
-            ck = tf.cos(k)
-            
-            # Combine components
-            self.gabor = tf.identity(h * w * ck, name='gabor')
-            self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
-            
-            if self.target is not None:
-                self._compute_losses()
-
+            """Improved forward pass with better numerical stability"""
+            with tf.name_scope('forward_pass'):
+                # Reshape gmin and gmax for broadcasting
+                gmin = tf.reshape(self.gmin, [1, GABOR_NUM_PARAMS, 1])
+                gmax = tf.reshape(self.gmax, [1, GABOR_NUM_PARAMS, 1])
+                
+                # Clip parameters to valid ranges
+                self.cparams = tf.clip_by_value(self.params, gmin, gmax)
+                
+                # Extract parameters
+                u = self.cparams[:,GABOR_PARAM_U,:]
+                v = self.cparams[:,GABOR_PARAM_V,:]
+                r = self.cparams[:,GABOR_PARAM_R,:]
+                l = self.cparams[:,GABOR_PARAM_L,:]
+                t = self.cparams[:,GABOR_PARAM_T,:]
+                s = self.cparams[:,GABOR_PARAM_S,:]
+                
+                # Extract RGB parameters
+                h = self.cparams[:,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
+                p = self.cparams[:,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
+                
+                # Add dimensions for broadcasting
+                u = u[:,None,None,None,:]
+                v = v[:,None,None,None,:]
+                r = r[:,None,None,None,:]
+                l = l[:,None,None,None,:]
+                t = t[:,None,None,None,:]
+                s = s[:,None,None,None,:]
+                h = h[:,None,None,:,:]
+                p = p[:,None,None,:,:]
+                
+                # Compute Gabor function with improved numerical stability
+                cr = tf.cos(r)
+                sr = tf.sin(r)
+                f = tf.cast(2*np.pi, tf.float32) / tf.maximum(l, 1e-6)
+                s2 = tf.maximum(s*s, 1e-6)
+                t2 = tf.maximum(t*t, 1e-6)
+                
+                xp = self.x - u
+                yp = self.y - v
+                
+                b1 = cr*xp + sr*yp
+                b2 = -sr*xp + cr*yp
+                
+                b12 = b1*b1
+                b22 = b2*b2
+                
+                # Prevent numerical instability in exponential
+                exp_term = tf.clip_by_value(-b12/(2*s2) - b22/(2*t2), -88.0, 88.0)
+                w = tf.exp(exp_term)
+                
+                k = f*b1 + p
+                ck = tf.cos(k)
+                
+                # Combine components
+                self.gabor = tf.identity(h * w * ck, name='gabor')
+                self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
+                
+                if self.target is not None:
+                    self._compute_losses()
     def _compute_losses(self):
         """Improved loss computation with regularization"""
         # Compute reconstruction error
@@ -442,12 +445,11 @@ class GaborModel(object):
         # Overall error loss with regularization
         self.err_loss = tf.reduce_mean(self.err_loss_per_fit) + l2_reg
         
-        # Compute constraints with improved numerical stability
+        # Compute constraints
         l = self.cparams[:,GABOR_PARAM_L,:]
         s = self.cparams[:,GABOR_PARAM_S,:]
         t = self.cparams[:,GABOR_PARAM_T,:]
         
-        # Soft constraints using smooth approximations
         constraints = [
             tf.nn.softplus(-(s - l/32)),
             tf.nn.softplus(-(l/2 - s)),
@@ -506,7 +508,6 @@ class GaborModel(object):
         self.iteration += 1
         
         # Compute current position in restart cycle
-        cycle = tf.floor(self.iteration / self.restart_period)
         current_iter = self.iteration % self.restart_period
         
         # Cosine decay with warm restarts
@@ -519,13 +520,15 @@ class GaborModel(object):
 
     def reset_optimization(self):
         """Reset optimization state"""
+        self.iteration = 0
+        self.current_lr = self.initial_lr
         self.opt.learning_rate.assign(self.initial_lr)
         self.loss_history = []
         self.best_loss = float('inf')
-        self.iterations_without_improvement = 0
+        self.patience_counter = 0
 
     def get_current_state(self):
-        """Get current model state without using @tf.function"""
+        """Get current model state"""
         self._forward_pass()
         return {
             'loss': self.loss,
@@ -537,6 +540,71 @@ class GaborModel(object):
             'con_losses': self.con_losses,
             'con_loss_per_fit': self.con_loss_per_fit
         }
+    
+def evaluate_fit_quality(target, approx, weight=None):
+    """Evaluate the quality of the fit with multiple metrics"""
+    if weight is None:
+        weight = np.ones_like(target)
+        
+    # Compute weighted MSE
+    mse = np.mean(weight * (target - approx)**2)
+    
+    # Compute PSNR
+    max_val = target.max() - target.min()
+    psnr = 20 * np.log10(max_val) - 10 * np.log10(max(mse, 1e-10))
+    
+    # Compute weighted correlation coefficient
+    weighted_target = weight * target
+    weighted_approx = weight * approx
+    correlation = np.corrcoef(weighted_target.flatten(), weighted_approx.flatten())[0,1]
+    
+    return {
+        'mse': float(mse),
+        'psnr': float(psnr),
+        'correlation': float(correlation)
+    }
+def setup_models(opts, inputs, state):
+    """Set up the models for optimization"""
+    # Validate dimensions
+    if opts.num_models <= 0:
+        raise ValueError("num_models must be positive")
+    if opts.num_local <= 0:
+        raise ValueError("num_local must be positive")
+        
+    weight_tensor = tf.constant(inputs.weight_image)
+    x_tensor = tf.constant(inputs.x.reshape(1,1,-1,1,1))
+    y_tensor = tf.constant(inputs.y.reshape(1,-1,1,1,1))
+
+    with tf.name_scope('full'):
+        full = GaborModel(1, opts.num_models,
+                         x_tensor, y_tensor,
+                         weight_tensor, inputs.target_tensor,
+                         learning_rate=opts.full_learning_rate,
+                         max_row=inputs.max_row,
+                         params=tf.Variable(state.params[None,:], trainable=True))
+    
+    with tf.name_scope('local'):
+        local = GaborModel(opts.num_local, 1,
+                          x_tensor, y_tensor,
+                          weight_tensor, inputs.target_tensor,
+                          learning_rate=opts.local_learning_rate)
+
+    if opts.preview_size:
+        preview_shape = scale_shape(inputs.target_tensor.shape[:2].as_list(),
+                                  opts.preview_size)
+        _, x_preview, y_preview = normalized_grid(preview_shape)
+        
+        with tf.name_scope('preview'):
+            preview = GaborModel(1, opts.num_models,
+                               x_preview.reshape(1,1,-1,1,1),
+                               y_preview.reshape(1,-1,1,1,1),
+                               weight_tensor, target=None,
+                               max_row=inputs.max_row,
+                               params=full.params)
+    else:
+        preview = None
+
+    return ModelsTuple(full, local, preview)
 
 ######################################################################
 # Set up tensorflow models themselves. We need a separate model for
