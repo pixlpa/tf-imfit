@@ -325,14 +325,10 @@ class GaborModel(object):
                 shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
                 dtype=tf.float32
             )
-            tf.print("Random values before scaling:", random_values)
 
             # Scale and shift the random values to the desired ranges
             ranges = tf.cast(GABOR_RANGE[:, 1] - GABOR_RANGE[:, 0], tf.float32)
             mins = tf.cast(GABOR_RANGE[:, 0], tf.float32)
-
-            tf.print("Ranges:", ranges)
-            tf.print("Minimums:", mins)
 
             # Reshape for broadcasting
             ranges = tf.reshape(ranges, [1, GABOR_NUM_PARAMS, 1])
@@ -345,13 +341,10 @@ class GaborModel(object):
                 dtype=tf.float32,
                 name='params'
             )
-            tf.print("Initialized params:", self.params)
         
         # Set up parameter ranges for clipping
         self.gmin = tf.constant(GABOR_RANGE[:,0], dtype=tf.float32)
         self.gmax = tf.constant(GABOR_RANGE[:,1], dtype=tf.float32)
-        tf.print("assigned gmin:", self.gmin)
-        tf.print("assigned gmax:", self.gmax)
 
         # Add learning rate tracking
         self.initial_lr = learning_rate
@@ -448,10 +441,6 @@ class GaborModel(object):
             
             if self.target is not None:
                 self._compute_losses()
-
-            # Example debugging inside _forward_pass:
-            tf.print("Raw params range:", tf.reduce_min(self.params), tf.reduce_max(self.params))
-            tf.print("Clipped params range:", tf.reduce_min(self.cparams), tf.reduce_max(self.cparams))
 
     def _compute_losses(self):
         """Compute losses with numerical safeguards"""
@@ -652,15 +641,12 @@ def setup_state(opts, inputs):
                 GABOR_RANGE[i, 0],
                 GABOR_RANGE[i, 1],
                 opts.num_models
-            )
-    print("Initial params min/max:", params.min(), params.max())
-    
+            ) 
     state = StateTuple(
         params=params,
         gabor=np.zeros(inputs.input_image.shape + (opts.num_models,),
                        dtype=np.float32),
         con_loss=np.zeros(opts.num_models, dtype=np.float32))
-    print("State params min/max:", state.params.min(), state.params.max())
     return state
 
 ######################################################################
@@ -673,7 +659,6 @@ def copy_state(state):
 # Load weights from file.
 
 def load_params(opts, inputs, models, state):
-    print("Before load - state params min/max:", state.params.min(), state.params.max())
     if opts.input is not None:
         iparams = np.genfromtxt(opts.input, dtype=np.float32, delimiter=',')
         nparams = len(iparams)
@@ -698,10 +683,8 @@ def load_params(opts, inputs, models, state):
 
     # Update the full model's parameters using tf.Variable.assign
     new_params = tf.constant(state.params[None,:], dtype=tf.float32)
-    print("New params min/max:", new_params.numpy().min(), new_params.numpy().max())
     models.full.params.assign(new_params)
-    print("After assign - model params min/max:", models.full.params.numpy().min(), models.full.params.numpy().max())
-
+ 
     # Set the target and max_row
     inputs.target_tensor.assign(inputs.input_image)
     inputs.max_row.assign(nparams)
@@ -878,9 +861,6 @@ def full_optimize(opts, inputs, models, state, start_idx, loop_count, prev_best_
         state_dict = models.full.get_current_state()
         gabor = state_dict['gabor'].numpy()[0]  # Remove batch dimension
         approx = state_dict['approx'].numpy()[0]  # Remove batch dimension
-        snapshot(gabor, approx,
-                 opts, inputs, models,
-                 loop_count, '')
         
         print(f"  loss after full optimization is {float(total_loss):.9f}")
     else:
@@ -938,10 +918,12 @@ def local_optimize(opts, inputs, models, state, current_model, loop_count):
             models.preview.params.assign(models.full.params)
             _ = models.preview._forward_pass()
         
-        state_dict = models.local.get_current_state()
+
+        # Get the results directly from the model
+        gabor = models.full.gabor.numpy()[0]  # Get gabor values
+        approx = models.full.approx.numpy()[0]
+
         # Convert tensors to numpy arrays and handle dimensions
-        gabor = state_dict['gabor'].numpy()[0]  # Remove batch dimension
-        approx = state_dict['approx'].numpy()[0]  # Remove batch dimension
         snapshot(gabor, approx,
              opts, inputs, models,
              loop_count, '')
