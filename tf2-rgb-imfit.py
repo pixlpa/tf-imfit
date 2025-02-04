@@ -820,90 +820,35 @@ def snapshot(cur_gabor, cur_approx,
 def full_optimize(opts, inputs, models, state, start_idx, loop_count):
     """Optimize all models' parameters using full optimization."""
     
-    # Initialize learning rate scheduling
-    initial_lr = opts.full_learning_rate
-    min_lr = opts.min_lr
-    current_lr = initial_lr
-    
-    # Track best loss and parameters
-    best_loss = float('inf')
-    best_params = None
-    stagnant_iterations = 0
-    
-    # Setup optimizer
-    optimizer = tf.keras.optimizers.Adam(learning_rate=current_lr)
-    
     # Get initial loss
     _ = models.full._forward_pass()
     loss = models.full.err_loss + tf.reduce_sum(models.full.con_losses)
     
-    for iteration in range(opts.full_iter):
-        # Optimization step
-        with tf.GradientTape() as tape:
-            tape.watch(models.full.params)
-            _ = models.full._forward_pass()
-            err_loss = models.full.err_loss
-            con_loss = tf.reduce_sum(models.full.con_losses)
-            total_loss = err_loss + con_loss
-            
-        # Compute gradients
-        grads = tape.gradient(total_loss, [models.full.params])
-        if grads[0] is not None:
-            optimizer.apply_gradients(zip(grads, [models.full.params]))
-            
-            # Get current loss and parameters
-            current_loss = float(total_loss)
-            current_params = models.full.params.numpy()
-            
-            # Update preview and save snapshot
-            if opts.preview_size:
-                models.preview.params.assign(models.full.params)
-                _ = models.preview._forward_pass()
-            
-            # Get current state for snapshot
-            state_dict = models.full.get_current_state()
-            snapshot(state_dict['gabor'], state_dict['approx'],
-                    opts, inputs, models,
-                    loop_count, start_idx, iteration)
-            
-            # Check for improvement
-            if current_loss < best_loss * 0.995:  # Allow for 0.5% improvement to count
-                best_loss = current_loss
-                best_params = current_params.copy()
-                stagnant_iterations = 0
-                print(f"  New best loss: {best_loss:.6f}")
-            else:
-                stagnant_iterations += 1
-            
-            # Adjust learning rate if progress stagnates
-            if stagnant_iterations > opts.patience:
-                current_lr = max(current_lr * opts.lr_decay, min_lr)
-                stagnant_iterations = 0
-                print(f"  Reducing learning rate to {current_lr:.6f}")
-                optimizer.learning_rate.assign(current_lr)
-            
-            # Print progress every 10 iterations
-            if iteration % 10 == 0:
-                print(f"  Iteration {iteration}: loss = {current_loss:.6f}, lr = {current_lr:.6f}")
-            
-            # Early stopping
-            if current_lr <= min_lr and stagnant_iterations > opts.patience * 2:
-                print("  Early stopping - no improvement with minimum learning rate")
-                break
-        else:
-            print("  Warning: No gradients computed for this iteration")
-    
-    # Use the best parameters found
-    if best_params is not None:
-        models.full.params.assign(best_params)
+    # Single optimization step with Adam
+    with tf.GradientTape() as tape:
+        tape.watch(models.full.params)
+        _ = models.full._forward_pass()
+        err_loss = models.full.err_loss
+        con_loss = tf.reduce_sum(models.full.con_losses)
+        total_loss = err_loss + con_loss
         
-    # Final snapshot with best parameters
-    state_dict = models.full.get_current_state()
-    snapshot(state_dict['gabor'], state_dict['approx'],
-            opts, inputs, models,
-            loop_count, start_idx, 'final')
+    # Compute and apply gradients
+    grads = tape.gradient(total_loss, [models.full.params])
+    if grads[0] is not None:
+        optimizer = tf.keras.optimizers.Adam(learning_rate=opts.full_learning_rate)
+        optimizer.apply_gradients(zip(grads, [models.full.params]))
+        
+        # Update preview and snapshot
+        if opts.preview_size:
+            models.preview.params.assign(models.full.params)
+            _ = models.preview._forward_pass()
+        
+        state_dict = models.full.get_current_state()
+        snapshot(state_dict['gabor'], state_dict['approx'],
+                opts, inputs, models,
+                loop_count, start_idx, '')
     
-    return best_loss
+    return float(total_loss)
 
 ######################################################################
 # Apply a small perturbation to the input parameters
@@ -931,72 +876,35 @@ def randomize(params, rstdev, ncopy=None):
 def local_optimize(opts, inputs, models, state, current_model):
     """Optimize a single model's parameters using local optimization."""
     
-    # Initialize learning rate scheduling
-    initial_lr = opts.local_learning_rate
-    min_lr = opts.min_lr
-    current_lr = initial_lr
-    
-    # Track best loss and parameters
-    best_loss = float('inf')
-    best_params = None
-    stagnant_iterations = 0
-    
-    # Setup optimizer
-    optimizer = tf.keras.optimizers.Adam(learning_rate=current_lr)
-    
     # Get initial loss
-    _ = models.local._forward_pass()  # Ensure initial computation
+    _ = models.local._forward_pass()
     loss = models.local.err_loss + models.local.con_losses[0]
     
-    for iteration in range(opts.local_iter):
-        # Optimization step
-        with tf.GradientTape() as tape:
-            # Need to explicitly watch the parameters
-            tape.watch(models.local.params)
-            
-            # Forward pass inside gradient tape context
-            _ = models.local._forward_pass()
-            err_loss = models.local.err_loss
-            con_loss = models.local.con_losses[0]
-            total_loss = err_loss + con_loss
-            
-        # Compute gradients
-        grads = tape.gradient(total_loss, [models.local.params])
-        if grads[0] is not None:
-            optimizer.apply_gradients(zip(grads, [models.local.params]))
-            
-            # Get current loss and parameters
-            current_loss = float(total_loss)
-            current_params = models.local.params.numpy()
-            
-            # Check for improvement
-            if current_loss < best_loss * 0.995:  # Allow for 0.5% improvement to count
-                best_loss = current_loss
-                best_params = current_params.copy()
-                stagnant_iterations = 0
-            else:
-                stagnant_iterations += 1
-            
-            # Adjust learning rate if progress stagnates
-            if stagnant_iterations > opts.patience:
-                current_lr = max(current_lr * opts.lr_decay, min_lr)
-                stagnant_iterations = 0
-                print(f"    Local: Reducing learning rate to {current_lr}")
-                optimizer.learning_rate.assign(current_lr)
-            
-            # Early stopping
-            if current_lr <= min_lr and stagnant_iterations > opts.patience * 2:
-                print("    Local: Early stopping - no improvement with minimum learning rate")
-                break
-        else:
-            print("    Warning: No gradients computed for this iteration")
-    
-    # Use the best parameters found
-    if best_params is not None:
-        models.local.params.assign(best_params)
+    # Single optimization step with Adam
+    with tf.GradientTape() as tape:
+        tape.watch(models.local.params)
+        _ = models.local._forward_pass()
+        err_loss = models.local.err_loss
+        con_loss = models.local.con_losses[0]
+        total_loss = err_loss + con_loss
         
-    # Return the best loss achieved
-    return best_loss
+    # Compute and apply gradients
+    grads = tape.gradient(total_loss, [models.local.params])
+    if grads[0] is not None:
+        optimizer = tf.keras.optimizers.Adam(learning_rate=opts.local_learning_rate)
+        optimizer.apply_gradients(zip(grads, [models.local.params]))
+        
+        # Update preview and snapshot
+        if opts.preview_size:
+            models.preview.params.assign(models.full.params)
+            _ = models.preview._forward_pass()
+        
+        state_dict = models.local.get_current_state()
+        snapshot(state_dict['gabor'], state_dict['approx'],
+                opts, inputs, models,
+                current_model, current_model + 1, '')
+    
+    return float(total_loss)
 
 ######################################################################
 
