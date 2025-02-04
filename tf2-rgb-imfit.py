@@ -773,15 +773,7 @@ def snapshot(cur_gabor, cur_approx,
              opts, inputs, models,
              loop_count, 
              full_iteration):
-    """
-    Save a snapshot of the current state to a PNG file.
-    
-    The output montage includes:
-      - The target image,
-      - The full approximation from all active filters,
-      - The gabor image,
-      - An absolute error visualization (optionally enhanced).
-    """
+
     if not opts.label_snapshot:
         outfile = '{}.png'.format(opts.snapshot_prefix)
     elif isinstance(full_iteration, int):
@@ -794,17 +786,6 @@ def snapshot(cur_gabor, cur_approx,
     if cur_gabor is None or cur_gabor.size == 0:
         print("Creating zero gabor array")
         cur_gabor = np.zeros_like(cur_approx)
-    
-    # Compute the residual image.
-    # This is the signed difference between the target (inputs.input_image)
-    # and the full approximation (cur_approx) from all active models.
-    residual = inputs.input_image - cur_approx
-
-    # Compute an absolute error image for visualization purposes.
-    # Here, we use a non-linear transform to boost low differences.
-    cur_abserr = np.abs(residual)
-    cur_abserr = cur_abserr * inputs.weight_image
-    cur_abserr = np.power(cur_abserr, 0.5)
 
     global COLORMAP
     if COLORMAP is None:
@@ -812,13 +793,11 @@ def snapshot(cur_gabor, cur_approx,
     
     # Rescale images for display:
     # We assume that both the target and the approximation are in [-1, 1].
-    input_img    = rescale(inputs.input_image, -1, 1)
     approx_img   = rescale(cur_approx, -1, 1)
-    error_img    = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
 
     # Create a montage of the images.
     # Montage order: Target | Approximation | Residual | Absolute Error
-    out_img = np.hstack((input_img, approx_img, error_img))
+    out_img = approx_img
     
     out_img = Image.fromarray(out_img.astype(np.uint8), 'RGB')
     out_img.save(outfile)
