@@ -529,64 +529,6 @@ class GaborModel(object):
         self.current_lr = new_lr
         self.opt.learning_rate.assign(new_lr)
 
-    def _forward_pass(self):
-        """Improved forward pass with better numerical stability"""
-        with tf.name_scope('forward_pass'):
-            # Clip parameters to valid ranges
-            self.cparams = tf.clip_by_value(self.params, self.gmin[:,None,None], self.gmax[:,None,None])
-            
-            # Extract parameters
-            u = self.cparams[:,GABOR_PARAM_U,:]
-            v = self.cparams[:,GABOR_PARAM_V,:]
-            r = self.cparams[:,GABOR_PARAM_R,:]
-            l = self.cparams[:,GABOR_PARAM_L,:]
-            t = self.cparams[:,GABOR_PARAM_T,:]
-            s = self.cparams[:,GABOR_PARAM_S,:]
-            
-            # Extract RGB parameters
-            h = self.cparams[:,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
-            p = self.cparams[:,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
-            
-            # Add dimensions for broadcasting
-            u = u[:,None,None,None,:]
-            v = v[:,None,None,None,:]
-            r = r[:,None,None,None,:]
-            l = l[:,None,None,None,:]
-            t = t[:,None,None,None,:]
-            s = s[:,None,None,None,:]
-            h = h[:,None,None,:,:]
-            p = p[:,None,None,:,:]
-            
-            # Compute Gabor function with improved numerical stability
-            cr = tf.cos(r)
-            sr = tf.sin(r)
-            f = tf.cast(2*np.pi, tf.float32) / tf.maximum(l, 1e-6)
-            s2 = tf.maximum(s*s, 1e-6)
-            t2 = tf.maximum(t*t, 1e-6)
-            
-            xp = self.x - u
-            yp = self.y - v
-            
-            b1 = cr*xp + sr*yp
-            b2 = -sr*xp + cr*yp
-            
-            b12 = b1*b1
-            b22 = b2*b2
-            
-            # Prevent numerical instability in exponential
-            exp_term = tf.clip_by_value(-b12/(2*s2) - b22/(2*t2), -88.0, 88.0)
-            w = tf.exp(exp_term)
-            
-            k = f*b1 + p
-            ck = tf.cos(k)
-            
-            # Combine components
-            self.gabor = tf.identity(h * w * ck, name='gabor')
-            self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
-            
-            if self.target is not None:
-                self._compute_losses()
-
     def reset_optimization(self):
         """Reset optimization state"""
         self.opt.learning_rate.assign(self.initial_lr)
