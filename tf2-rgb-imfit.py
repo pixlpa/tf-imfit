@@ -713,12 +713,12 @@ def load_params(opts, inputs, models, state):
     model_start_idx = nparams
 
     # After creating/assigning models.full.params, test sensitivity:
-    old_loss = models.full.loss.numpy()
-    # Perturb the parameters slightly
-    models.full.params.assign_add(tf.random.normal(models.full.params.shape, stddev=0.001))
-    models.full._forward_pass()
-    new_loss = models.full.loss.numpy()
-    print("Loss change from small parameter noise:", new_loss - old_loss)
+    with tf.GradientTape() as tape:
+        tape.watch(models.full.params)
+        # Instead of a full forward pass, just compute a simple function of self.params:
+        dummy_output = tf.reduce_sum(models.full.params * 2.0)
+    grad_dummy = tape.gradient(dummy_output, models.full.params)
+    print("Dummy grad norm (should not be 0):", tf.linalg.global_norm([grad_dummy]).numpy())
 
     return prev_best_loss, model_start_idx
 
@@ -962,7 +962,7 @@ def main():
                 # Instead of a full forward pass, just compute a simple function of self.params:
                 dummy_output = tf.reduce_sum(models.full.params * 2.0)
             grad_dummy = tape.gradient(dummy_output, models.full.params)
-            print("Dummy grad norm (should not be 0):", tf.linalg.global_norm(grad_dummy).numpy())
+            print("Dummy grad norm (should not be 0):", tf.linalg.global_norm([grad_dummy]).numpy())
     except KeyboardInterrupt:
         print("Interrupted, saving final state...")
         # Save final state as needed
