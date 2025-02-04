@@ -621,7 +621,6 @@ def setup_state(opts, inputs):
         gabor=np.zeros(inputs.input_image.shape + (opts.num_models,),
                        dtype=np.float32),
         con_loss=np.zeros(opts.num_models, dtype=np.float32)
-    )
     print("State params min/max:", state.params.min(), state.params.max())
     return state
 
@@ -823,6 +822,7 @@ def full_optimize(opts, inputs, models, state, start_idx, loop_count, prev_best_
     # Get initial loss
     _ = models.full._forward_pass()
     loss = models.full.err_loss + tf.reduce_sum(models.full.con_losses)
+    print(f"  loss before full optimization is {float(loss):.9f}")
     
     # Single optimization step with Adam
     with tf.GradientTape() as tape:
@@ -850,6 +850,8 @@ def full_optimize(opts, inputs, models, state, start_idx, loop_count, prev_best_
         snapshot(gabor, approx,
                 opts, inputs, models,
                 loop_count, start_idx, '')
+        
+        print(f"  loss after full optimization is {float(total_loss):.9f}")
     
     return float(total_loss)
 
@@ -882,6 +884,7 @@ def local_optimize(opts, inputs, models, state, current_model):
     # Get initial loss
     _ = models.local._forward_pass()
     loss = models.local.err_loss + models.local.con_losses[0]
+    print(f"  loss before local fit is {float(loss):.9f}")
     
     # Single optimization step with Adam
     with tf.GradientTape() as tape:
@@ -909,6 +912,8 @@ def local_optimize(opts, inputs, models, state, current_model):
         snapshot(gabor, approx,
                 opts, inputs, models,
                 current_model, current_model + 1, '')
+        
+        print(f"  loss after local fit is {float(total_loss):.9f}")
     
     return float(total_loss)
 
