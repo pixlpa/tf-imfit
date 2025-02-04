@@ -817,7 +817,7 @@ def snapshot(cur_gabor, cur_approx,
 ######################################################################
 # Perform an optimization on the full joint model (expensive/slow).
 
-def full_optimize(opts, inputs, models, state, start_idx, loop_count):
+def full_optimize(opts, inputs, models, state, start_idx, loop_count, prev_best_loss):
     """Optimize all models' parameters using full optimization."""
     
     # Get initial loss
