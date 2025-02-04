@@ -167,6 +167,14 @@ def get_options():
                         metavar='BASENAME',
                         help='prefix for snapshots', default='out')
   
+    # Add optimization parameters
+    parser.add_argument('--patience', type=int, default=10,
+                       help='number of iterations to wait before adjusting learning rate')
+    parser.add_argument('--min-lr', type=float, default=1e-6,
+                       help='minimum learning rate')
+    parser.add_argument('--lr-decay', type=float, default=0.5,
+                       help='learning rate decay factor when progress stagnates')
+
     opts = parser.parse_args()
 
     if opts.copy_quantity < 0:
