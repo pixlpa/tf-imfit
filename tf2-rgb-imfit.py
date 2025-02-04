@@ -189,6 +189,12 @@ def get_options():
 
     return opts
 
+class State:
+    def __init__(self, params, gabor, con_loss):
+        self.params = params
+        self.gabor = gabor
+        self.con_loss = con_loss
+
 ######################################################################
 # Compute x/y coordinates for a grid spanning [-1, 1] for the given
 # image shape (h, w)
@@ -630,11 +636,11 @@ def setup_state(opts, inputs):
                 GABOR_RANGE[i, 1],
                 opts.num_models
             ) 
-    state = StateTuple(
+    state = State(
         params=params,
-        gabor=np.zeros(inputs.input_image.shape + (opts.num_models,),
-                       dtype=np.float32),
-        con_loss=np.zeros(opts.num_models, dtype=np.float32))
+        gabor=np.zeros(inputs.input_image.shape + (opts.num_models,), dtype=np.float32),
+        con_loss=np.zeros(opts.num_models, dtype=np.float32)
+)
     return state
 
 ######################################################################
