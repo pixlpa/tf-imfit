@@ -262,6 +262,7 @@ def setup_inputs(opts):
 
     if opts.weights is not None:
         weight_image = open_image(opts.weights, opts.max_size, grayscale=False)
+        print('  {} {} {}'.format(opts.weights.name, weight_image.shape, weight_image.dtype))
         assert weight_image.size == input_image.size
     else:
         weight_image = 1.0
@@ -274,7 +275,7 @@ def setup_inputs(opts):
     GABOR_RANGE[GABOR_PARAM_L, 0] = 2.5*px
     GABOR_RANGE[GABOR_PARAM_T, 0] = px
     GABOR_RANGE[GABOR_PARAM_S, 0] = px
-    
+  
     target_tensor = tf.Variable(np.zeros(input_image.shape, dtype=np.float32),
                               trainable=False,
                               name='target')
@@ -349,7 +350,9 @@ class GaborModel(object):
         # Set up parameter ranges for clipping
         self.gmin = tf.constant(GABOR_RANGE[:,0], dtype=tf.float32)
         self.gmax = tf.constant(GABOR_RANGE[:,1], dtype=tf.float32)
-        
+        tf.print("assigned gmin:", self.gmin)
+        tf.print("assigned gmax:", self.gmax)
+
         # Add learning rate tracking
         self.initial_lr = learning_rate
         self.min_lr = learning_rate * 0.01  # Minimum learning rate
