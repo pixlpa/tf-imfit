@@ -955,6 +955,14 @@ def main():
             
             prev_best_loss = current_loss
             loop_count += 1
+
+            # A minimal test to ensure a dependency exists:
+            with tf.GradientTape() as tape:
+                tape.watch(models.full.params)
+                # Instead of a full forward pass, just compute a simple function of self.params:
+                dummy_output = tf.reduce_sum(models.full.params * 2.0)
+            grad_dummy = tape.gradient(dummy_output, models.full.params)
+            print("Dummy grad norm (should not be 0):", tf.linalg.global_norm(grad_dummy).numpy())
     except KeyboardInterrupt:
         print("Interrupted, saving final state...")
         # Save final state as needed
