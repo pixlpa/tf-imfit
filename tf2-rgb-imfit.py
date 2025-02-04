@@ -587,6 +587,12 @@ def setup_models(opts, inputs, state):
     x_tensor = tf.constant(inputs.x.reshape(1,1,-1,1,1))
     y_tensor = tf.constant(inputs.y.reshape(1,-1,1,1,1))
 
+    # Check target tensor before using it
+    if inputs.target_tensor is None:
+        print("Error: inputs.target_tensor is None!")
+    else:
+        tf.print("Target tensor shape:", inputs.target_tensor.shape)
+
     with tf.name_scope('full'):
         full = GaborModel(1, opts.num_models,
                           x_tensor, y_tensor,
