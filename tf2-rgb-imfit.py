@@ -732,7 +732,7 @@ def load_params(opts, inputs, models, state):
     # Pass gabor values to snapshot instead of None
     snapshot(gabor, approx,
              opts, inputs, models,
-             -1, nparams, '')
+             -1, '')
     
     print('initial loss is {}'.format(prev_best_loss))
     print()
