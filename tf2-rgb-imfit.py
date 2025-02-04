@@ -569,8 +569,8 @@ def setup_models(opts, inputs, state):
                           x_tensor, y_tensor,
                           weight_tensor, inputs.target_tensor,
                           learning_rate=opts.full_learning_rate,
-                          max_row = inputs.max_row,
-                          params=tf.constant(state.params[None,:]))
+                          max_row=inputs.max_row,
+                          params=tf.Variable(state.params[None,:], trainable=True))
     
     with tf.name_scope('local'):
         
