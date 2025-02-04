@@ -791,7 +791,7 @@ def rescale(img, src_min, src_max, colormap=None):
 
 def snapshot(cur_gabor, cur_approx,
              opts, inputs, models,
-             loop_count, model_start_idx,
+             loop_count, 
              full_iteration):
     """
     Save a snapshot of the current state to a PNG file.
@@ -834,13 +834,11 @@ def snapshot(cur_gabor, cur_approx,
     # We assume that both the target and the approximation are in [-1, 1].
     input_img    = rescale(inputs.input_image, -1, 1)
     approx_img   = rescale(cur_approx, -1, 1)
-    # For the residual image, use the same bounds (or adjust as needed).
-    gabor_img = rescale(cur_gabor, -1, 1)
     error_img    = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
 
     # Create a montage of the images.
     # Montage order: Target | Approximation | Residual | Absolute Error
-    out_img = np.hstack((input_img, approx_img, gabor_img, error_img))
+    out_img = np.hstack((input_img, approx_img, error_img))
     
     out_img = Image.fromarray(out_img.astype(np.uint8), 'RGB')
     out_img.save(outfile)
@@ -882,7 +880,7 @@ def full_optimize(opts, inputs, models, state, start_idx, loop_count, prev_best_
         approx = state_dict['approx'].numpy()[0]  # Remove batch dimension
         snapshot(gabor, approx,
                  opts, inputs, models,
-                 loop_count, start_idx, '')
+                 loop_count, '')
         
         print(f"  loss after full optimization is {float(total_loss):.9f}")
     else:
@@ -945,8 +943,8 @@ def local_optimize(opts, inputs, models, state, current_model):
         gabor = state_dict['gabor'].numpy()[0]  # Remove batch dimension
         approx = state_dict['approx'].numpy()[0]  # Remove batch dimension
         snapshot(gabor, approx,
-                opts, inputs, models,
-                current_model, current_model + 1, '')
+             opts, inputs, models,
+             -1, '')
         
         print(f"  loss after local fit is {float(total_loss):.9f}")
     
