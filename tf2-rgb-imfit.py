@@ -916,9 +916,9 @@ def local_optimize(opts, inputs, models, state, current_model, loop_count):
                 _ = models.preview._forward_pass()
             
 
-    # Get the results directly from the model
-    gabor = models.full.gabor.numpy()[0]  # Get gabor values
-    approx = models.full.approx.numpy()[0]
+    # Get the results from the preview model
+    gabor = models.preview.gabor.numpy()[0]  # Get gabor values
+    approx = models.preview.approx.numpy()[0]
 
     # Convert tensors to numpy arrays and handle dimensions
     snapshot(gabor, approx,
@@ -992,6 +992,8 @@ def main():
             # Assume that local_optimize (directly or via snapshot())
             # updates state.gabor and state.params for the candidate filter.
             current_model += 1
+            if current_model >= opts.num_models:
+                current_model = opts.num_models -1
 
             # -----------------------------
             # 3. Occasional full (joint) optimization.
