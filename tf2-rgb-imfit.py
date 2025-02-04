@@ -1023,13 +1023,20 @@ def main():
                 print("Performing full joint optimization over all filters...")
                 prev_best_loss = full_optimize(opts, inputs, models, state,
                                                current_model, loop_count, prev_best_loss, optimizer)
+                if opts.output is not None:
+                    np.savetxt(opts.output, state.params.transpose(),
+                               fmt='%f', delimiter=',')
 
             loop_count += 1
 
+    if opts.output is not None:
+            np.savetxt(opts.output, state.params.transpose(), fmt='%f', delimiter=',')
+
     except KeyboardInterrupt:
         print("Interrupted. Saving final state and exiting...")
-        # Save final state if desired.
-
+        if opts.output is not None:
+                    np.savetxt(opts.output, state.params.transpose(),
+                               fmt='%f', delimiter=',')
 ######################################################################
 
 # from https://github.com/BIDS/colormap/blob/master/colormaps.py
