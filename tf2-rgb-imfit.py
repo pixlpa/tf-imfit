@@ -763,54 +763,27 @@ def snapshot(cur_gabor, cur_approx,
         print("Creating zero gabor array")
         cur_gabor = np.zeros_like(cur_approx)
      
-    # Calculate error
+    # Calculate absolute error between the approximation and target image.
     cur_abserr = np.abs(cur_approx - inputs.input_image)
     cur_abserr = cur_abserr * inputs.weight_image
-    cur_abserr = np.power(cur_abserr, 0.5) # boost low end to aid visualization
+    cur_abserr = np.power(cur_abserr, 0.5)  # boost low end to aid visualization
 
     global COLORMAP
-    
     if COLORMAP is None:
         COLORMAP = get_colormap()
         
-    if not opts.preview_size:
-        # Scale all images from their actual ranges to [0,255]
-        input_img = rescale(inputs.input_image, -1, 1)
-        approx_img = rescale(cur_approx, -1, 1)
-        gabor_img = rescale(cur_gabor, -1, 1)
-        error_img = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
+    # Instead of showing a single gabor filter output, display the complete approximation.
+    # Here we form a montage showing:
+    #   - the target image,
+    #   - the sum of all Gabor filters (cur_approx), and
+    #   - the error image.
+    input_img = rescale(inputs.input_image, -1, 1)
+    approx_img = rescale(cur_approx, -1, 1)
+    error_img = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
 
-        out_img = np.hstack((gabor_img, error_img))
-        
-    else:
-        # Get current model index (subtract 1 since model_start_idx points to next model)
-        current_model = max(0, model_start_idx - 1)
-        
-        # Create a new parameter array with all models up to current
-        preview_params = np.zeros_like(models.full.params.numpy())
-        preview_params[:,:,:current_model+1] = models.full.params.numpy()[:,:,:current_model+1]
-        
-        # Set preview to show all models up to current
-        inputs.max_row.assign(current_model + 1)
-        models.preview.params.assign(preview_params)
-        
-        # Force a forward pass to update the preview
-        _ = models.preview._forward_pass()
-        
-        # Ensure we have a valid initial loss
-        if loop_count == 0 and not full_iteration:
-            # Calculate initial loss based on difference from target
-            initial_err = tf.reduce_mean((inputs.target_tensor - tf.zeros_like(inputs.target_tensor))**2)
-            print(f"Calculated initial loss: {initial_err:.6f}")
-        
-        preview_image = models.preview.approx.numpy()[0]
-        
-        err_image = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
-        err_image = Image.fromarray(err_image, 'RGB')
-        err_image = err_image.resize((preview_image.shape[1], preview_image.shape[0]), resample=Image.NEAREST)
-        err_image = np.array(err_image)
-        out_img = np.hstack((preview_image, err_image))
-
+    # Stack the images horizontally for compact visualization.
+    out_img = np.hstack((input_img, approx_img, error_img))
+    
     out_img = Image.fromarray(out_img.astype(np.uint8), 'RGB')
     out_img.save(outfile)
 
