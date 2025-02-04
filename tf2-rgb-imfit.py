@@ -779,13 +779,7 @@ def snapshot(cur_gabor, cur_approx,
         approx_img = rescale(cur_approx, -1, 1)
         gabor_img = rescale(cur_gabor, -1, 1)
         error_img = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
-        
-        print(f"Scaled ranges:")
-        print(f"input_img shape: {input_img.shape}, range: {input_img.min()} to {input_img.max()}")
-        print(f"approx_img shape: {approx_img.shape}, range: {approx_img.min()} to {approx_img.max()}")
-        print(f"gabor_img shape: {gabor_img.shape}, range: {gabor_img.min()} to {gabor_img.max()}")
-        print(f"error_img shape: {error_img.shape}, range: {error_img.min()} to {error_img.max()}")
-        
+
         out_img = np.hstack((gabor_img, error_img))
         
     else:
