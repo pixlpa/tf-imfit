@@ -378,15 +378,14 @@ class GaborModel(object):
             tf.print("Input target shape:", self.target.shape)
 
     def _forward_pass(self):
+        """Improved forward pass with better numerical stability"""
         with tf.name_scope('forward_pass'):
-            # Reshape gmin and gmax for broadcasting
+            # Reshape gmin and gmax for proper broadcasting
             gmin = tf.reshape(self.gmin, [1, GABOR_NUM_PARAMS, 1])
             gmax = tf.reshape(self.gmax, [1, GABOR_NUM_PARAMS, 1])
             
-            # Clip parameters
-            if tf.size(self.params) == 0:
-                print("Warning: Parameters tensor is empty!")
-            self.cparams = self.params
+            # Clip parameters to valid ranges
+            self.cparams = tf.clip_by_value(self.params, gmin, gmax)
             
             # Extract parameters
             u = self.cparams[:,GABOR_PARAM_U,:]
@@ -397,25 +396,25 @@ class GaborModel(object):
             s = self.cparams[:,GABOR_PARAM_S,:]
             
             # Extract RGB parameters
-            h = self.cparams[:,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]  # [batch, 3, models]
-            p = self.cparams[:,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]  # [batch, 3, models]
+            h = self.cparams[:,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
+            p = self.cparams[:,GABOR_PARAM_P0:GABOR_PARAM_P0+3,:]
             
-            # Add necessary dimensions for broadcasting
-            u = u[:,None,None,None,:]  # [batch, 1, 1, 1, models]
+            # Add dimensions for broadcasting
+            u = u[:,None,None,None,:]
             v = v[:,None,None,None,:]
             r = r[:,None,None,None,:]
             l = l[:,None,None,None,:]
             t = t[:,None,None,None,:]
             s = s[:,None,None,None,:]
-            h = h[:,None,None,:,:]  # [batch, 1, 1, 3, models]
+            h = h[:,None,None,:,:]
             p = p[:,None,None,:,:]
             
-            # Compute Gabor function
+            # Compute Gabor function with improved numerical stability
             cr = tf.cos(r)
             sr = tf.sin(r)
-            f = tf.cast(2*np.pi, tf.float32) / l
-            s2 = s*s
-            t2 = t*t
+            f = tf.cast(2*np.pi, tf.float32) / tf.maximum(l, 1e-6)
+            s2 = tf.maximum(s*s, 1e-6)
+            t2 = tf.maximum(t*t, 1e-6)
             
             xp = self.x - u
             yp = self.y - v
@@ -426,13 +425,14 @@ class GaborModel(object):
             b12 = b1*b1
             b22 = b2*b2
             
-            exp_term = -b12/(2*s2) - b22/(2*t2)
-            w = tf.exp(exp_term)  # Gaussian envelope [0,1]
+            # Prevent numerical instability in exponential
+            exp_term = tf.clip_by_value(-b12/(2*s2) - b22/(2*t2), -88.0, 88.0)
+            w = tf.exp(exp_term)
             
             k = f*b1 + p
-            ck = tf.cos(k)  # Oscillation [-1,1]
+            ck = tf.cos(k)
             
-            # Combine components with proper scaling for RGB
+            # Combine components
             self.gabor = tf.identity(h * w * ck, name='gabor')
             self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
             
@@ -612,7 +612,7 @@ class GaborModel(object):
 # Set up tensorflow models themselves. We need a separate model for
 # each combination of inputs/dimensions to optimize.
 
-def setup_models(opts, inputs, state):
+ddef setup_models(opts, inputs, state):
     # Validate dimensions
     if opts.num_models <= 0:
         raise ValueError("num_models must be positive")
