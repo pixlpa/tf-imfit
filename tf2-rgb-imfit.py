@@ -307,62 +307,50 @@ class GaborModel(object):
                  max_row=None):
         
         # Store inputs
+                # Store inputs
         self.x = x
         self.y = y
         self.weight = weight
         self.target = target
         self.max_row = ensemble_size if max_row is None else max_row
-        self.iteration = 0
+        
+        # Set up parameter ranges for clipping
+        # Reshape for broadcasting compatibility
+        self.gmin = tf.constant(GABOR_RANGE[:,0], dtype=tf.float32)
+        self.gmax = tf.constant(GABOR_RANGE[:,1], dtype=tf.float32)
+        
         # Initialize parameters
         if params is not None:
-            # Convert params to Variable if it isn't already
             if not isinstance(params, tf.Variable):
                 params = tf.Variable(params, trainable=True, dtype=tf.float32)
             self.params = params
         else:
-            # Create random values directly using tf.random.uniform
-            random_values = tf.random.uniform(
-                shape=(num_parallel, GABOR_NUM_PARAMS, ensemble_size),
-                dtype=tf.float32
-            )
-
-            # Scale and shift the random values to the desired ranges
-            ranges = tf.cast(GABOR_RANGE[:, 1] - GABOR_RANGE[:, 0], tf.float32)
-            mins = tf.cast(GABOR_RANGE[:, 0], tf.float32)
-
-            # Reshape for broadcasting
-            ranges = tf.reshape(ranges, [1, GABOR_NUM_PARAMS, 1])
-            mins = tf.reshape(mins, [1, GABOR_NUM_PARAMS, 1])
-
-            # Scale random values to proper ranges and create Variable
-            self.params = tf.Variable(
-                random_values * ranges + mins,
-                trainable=True,
-                dtype=tf.float32,
-                name='params'
-            )
+            self.params = self._initialize_parameters(num_parallel, ensemble_size)
         
-        # Set up parameter ranges for clipping
-        self.gmin = tf.constant(GABOR_RANGE[:,0], dtype=tf.float32)
-        self.gmax = tf.constant(GABOR_RANGE[:,1], dtype=tf.float32)
-
-        # Add learning rate tracking
+        # Print shapes for debugging
+        print(f"params shape: {self.params.shape}")
+        print(f"gmin shape: {self.gmin.shape}")
+        print(f"gmax shape: {self.gmax.shape}")
+        
+        # Learning rate parameters
         self.initial_lr = learning_rate
-        self.min_lr = learning_rate * 0.01  # Minimum learning rate
-        self.patience = 10  # Number of iterations before adjusting LR
-        self.improvement_threshold = 1e-4  # Minimum meaningful improvement
-        self.lr_decay = 0.5  # How much to reduce LR when plateauing
+        self.min_lr = learning_rate * 0.01
+        self.current_lr = learning_rate
+        self.restart_period = 1000
+        self.iteration = 0
         
-        # Add loss history tracking
+        # Initialize optimizer
+        self.opt = tf.keras.optimizers.Adam(
+            learning_rate=self.current_lr,
+            beta_1=0.9,
+            beta_2=0.999,
+            epsilon=1e-7
+        )
+        
+        # Training history
         self.loss_history = []
         self.best_loss = float('inf')
-        self.iterations_without_improvement = 0
-        
-        # Initialize optimizer with the initial learning rate
-        self.opt = tf.keras.optimizers.Adam(
-            learning_rate=learning_rate,
-            clipnorm=1.0
-        )
+        self.patience_counter = 0
         
         # Initial forward pass
         self._forward_pass()
