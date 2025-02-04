@@ -607,65 +607,6 @@ def setup_models(opts, inputs, state):
     return ModelsTuple(full, local, preview)
 
 ######################################################################
-# Set up tensorflow models themselves. We need a separate model for
-# each combination of inputs/dimensions to optimize.
-
-def setup_models(opts, inputs, state):
-    # Validate dimensions
-    if opts.num_models <= 0:
-        raise ValueError("num_models must be positive")
-    if opts.num_local <= 0:
-        raise ValueError("num_local must be positive")
-        
-    weight_tensor = tf.constant(inputs.weight_image)
-
-    x_tensor = tf.constant(inputs.x.reshape(1,1,-1,1,1))
-    y_tensor = tf.constant(inputs.y.reshape(1,-1,1,1,1))
-
-    # Check target tensor before using it
-    if inputs.target_tensor is None:
-        print("Error: inputs.target_tensor is None!")
-    else:
-        tf.print("Target tensor shape:", inputs.target_tensor.shape)
-
-    with tf.name_scope('full'):
-        full = GaborModel(1, opts.num_models,
-                          x_tensor, y_tensor,
-                          weight_tensor, inputs.target_tensor,
-                          learning_rate=opts.full_learning_rate,
-                          max_row=inputs.max_row,
-                          params=tf.Variable(state.params[None,:], trainable=True))
-    
-    with tf.name_scope('local'):
-        
-        local = GaborModel(opts.num_local, 1,
-                           x_tensor, y_tensor,
-                           weight_tensor, inputs.target_tensor,
-                           learning_rate=opts.local_learning_rate)
-        
-
-    if opts.preview_size:
-
-        preview_shape = scale_shape(map(int, inputs.target_tensor.shape[:2]),
-                                    opts.preview_size)
-
-        _, x_preview, y_preview = normalized_grid(preview_shape[:2])
-        
-        with tf.name_scope('preview'):
-            preview = GaborModel(1, opts.num_models,
-                                 x_preview.reshape(1,1,-1,1,1),
-                                 y_preview.reshape(1,-1,1,1,1),
-                                 weight_tensor, target=None,
-                                 max_row=inputs.max_row,
-                                 params=full.params)
-
-    else:
-
-        preview = None
-
-    return ModelsTuple(full, local, preview)
-
-######################################################################
 # Set up state variables to record weights, Gabor approximations, &
 # losses that need to persist across loops.
 
@@ -915,44 +856,29 @@ def randomize(params, rstdev, ncopy=None):
 
 def local_optimize(opts, inputs, models, state, current_model, loop_count):
     """Optimize a single model's parameters using local optimization."""
-    for i in range(opts.local_iter):
-        # Get initial loss
-        _ = models.local._forward_pass()
-        loss = models.local.err_loss + models.local.con_losses[0]
-        # print(f"  loss before local fit is {float(loss):.9f}")
-        
-        # Single optimization step with Adam
-        with tf.GradientTape() as tape:
-            tape.watch(models.local.params)
-            _ = models.local._forward_pass()
-            err_loss = models.local.err_loss
-            con_loss = models.local.con_losses[0]
-            total_loss = err_loss + con_loss
-            
-        # Compute and apply gradients
-        grads = tape.gradient(total_loss, [models.local.params])
-        if grads[0] is not None:
-            optimizer = tf.keras.optimizers.Adam(learning_rate=opts.local_learning_rate)
-            optimizer.apply_gradients(zip(grads, [models.local.params]))
-            
-            # Update preview and snapshot
-            if opts.preview_size:
-                models.preview.params.assign(models.full.params)
-                _ = models.preview._forward_pass()
-            
-
-    # Get the results from the preview model
-    gabor = models.preview.gabor.numpy()[0]  # Get gabor values
-    approx = models.preview.approx.numpy()[0]
-
-    # Convert tensors to numpy arrays and handle dimensions
-    snapshot(gabor, approx,
-            opts, inputs, models,
-            loop_count, '')
-
-    print(f"  loss after local fit is {float(total_loss):.9f}")
+    print(f"\nStarting local optimization for model {current_model + 1}")
+    initial_loss = None
     
-    return float(total_loss)
+    for i in range(opts.local_iter):
+        try:
+            result = models.local.train_step()
+            current_loss = float(result['loss'])
+            
+            if initial_loss is None:
+                initial_loss = current_loss
+                
+            if i % 5 == 0:
+                print(f"  Step {i}: loss = {current_loss:.6f}")
+                
+        except Exception as e:
+            print(f"Error in local optimization step {i}: {e}")
+            break
+    
+    if initial_loss is not None:
+        improvement = initial_loss - current_loss
+        print(f"Local optimization complete: loss improved by {improvement:.6f}")
+        
+    return current_loss
 
 ######################################################################
 
@@ -964,9 +890,13 @@ def main():
     models = setup_models(opts, inputs, state)
 
     # Initialize tracking variables
-    current_model = 0
     loop_count = 0
     best_loss = float('inf')
+    # If initial parameter files were provided, load them
+    prev_best_loss, initial_filter_count = load_params(opts, inputs, models, state)
+    
+    # Starting filter count is the number already in the state
+    current_model = initial_filter_count
     start_time = datetime.now()
     
     try:
