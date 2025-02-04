@@ -801,7 +801,7 @@ def snapshot(cur_gabor, cur_approx,
 ######################################################################
 # Perform an optimization on the full joint model (expensive/slow).
 
-def full_optimize(opts, inputs, models, state, start_idx, loop_count, prev_best_loss):
+def full_optimize(opts, inputs, models, state, start_idx, loop_count, prev_best_loss, optimizer):
     """Optimize all models' parameters using full optimization."""
     
     # Get initial loss
@@ -809,35 +809,38 @@ def full_optimize(opts, inputs, models, state, start_idx, loop_count, prev_best_
     loss = models.full.err_loss + tf.reduce_sum(models.full.con_losses)
     print(f"  loss before full optimization is {float(loss):.9f}")
     
-    # Single optimization step with Adam
     with tf.GradientTape() as tape:
+        # Ensure that the tape watches the model parameters
         tape.watch(models.full.params)
         _ = models.full._forward_pass()
         err_loss = models.full.err_loss
         con_loss = tf.reduce_sum(models.full.con_losses)
         total_loss = err_loss + con_loss
         
-    # Compute and apply gradients
+    # Compute gradients
     grads = tape.gradient(total_loss, [models.full.params])
-    if grads[0] is not None:
-        optimizer = tf.keras.optimizers.Adam(learning_rate=opts.full_learning_rate)
+    grad_norm = tf.linalg.global_norm(grads)
+    print("  Grad norm:", grad_norm.numpy())
+    
+    if grads[0] is not None and grad_norm.numpy() > 1e-8:
         optimizer.apply_gradients(zip(grads, [models.full.params]))
         
-        # Update preview and snapshot
+        # Update preview and snapshot if needed
         if opts.preview_size:
             models.preview.params.assign(models.full.params)
             _ = models.preview._forward_pass()
         
         state_dict = models.full.get_current_state()
-        # Convert tensors to numpy arrays and handle dimensions
         gabor = state_dict['gabor'].numpy()[0]  # Remove batch dimension
         approx = state_dict['approx'].numpy()[0]  # Remove batch dimension
         snapshot(gabor, approx,
-                opts, inputs, models,
-                loop_count, start_idx, '')
+                 opts, inputs, models,
+                 loop_count, start_idx, '')
         
         print(f"  loss after full optimization is {float(total_loss):.9f}")
-    
+    else:
+        print("  Gradients are zero, not applying update.")
+        
     return float(total_loss)
 
 ######################################################################
@@ -911,16 +914,16 @@ def main():
     state = setup_state(opts, inputs)
     models = setup_models(opts, inputs, state)
 
-    # For joint training, we want to use all filters at once.
-    # Set nparams to opts.num_models and update target and max_row accordingly.
+    # Use all filters together and update the target/max_row accordingly.
     nparams = opts.num_models
     inputs.target_tensor.assign(inputs.input_image)
     inputs.max_row.assign(nparams)
 
     # Optionally load initial parameters if provided.
-    # (load_params() will now update all filters; if no input file is provided, 
-    # your random initialization over all N filters is used.)
     prev_best_loss, _ = load_params(opts, inputs, models, state)
+    
+    # Create one optimizer instance for full training
+    optimizer = tf.keras.optimizers.Adam(learning_rate=opts.full_learning_rate)
     
     start_time = datetime.now()
     loop_count = 0
@@ -937,15 +940,16 @@ def main():
                 break
 
             print(f"Iteration #{loop_count+1}:")
-            # Joint full optimization on the entire group of filters.
+            
             current_loss = full_optimize(opts, inputs, models, state,
-                                         nparams, loop_count, prev_best_loss)
+                                         nparams, loop_count, prev_best_loss, optimizer)
             print(f"Iteration {loop_count+1}: loss = {current_loss:.9f}")
+            
             prev_best_loss = current_loss
             loop_count += 1
     except KeyboardInterrupt:
         print("Interrupted, saving final state...")
-        # Optionally, save state
+        # Save final state as needed
         ...
 
 ######################################################################
