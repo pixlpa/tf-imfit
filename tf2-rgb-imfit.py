@@ -799,7 +799,7 @@ def snapshot(cur_gabor, cur_approx,
     The output montage includes:
       - The target image,
       - The full approximation from all active filters,
-      - The residual image (target - approximation),
+      - The gabor image,
       - An absolute error visualization (optionally enhanced).
     """
     if not opts.label_snapshot:
@@ -835,12 +835,12 @@ def snapshot(cur_gabor, cur_approx,
     input_img    = rescale(inputs.input_image, -1, 1)
     approx_img   = rescale(cur_approx, -1, 1)
     # For the residual image, use the same bounds (or adjust as needed).
-    residual_img = rescale(residual, -1, 1)
+    gabor_img = rescale(cur_gabor, -1, 1)
     error_img    = rescale(cur_abserr, 0, cur_abserr.max(), COLORMAP)
 
     # Create a montage of the images.
     # Montage order: Target | Approximation | Residual | Absolute Error
-    out_img = np.hstack((input_img, approx_img, residual_img, error_img))
+    out_img = np.hstack((input_img, approx_img, gabor_img, error_img))
     
     out_img = Image.fromarray(out_img.astype(np.uint8), 'RGB')
     out_img.save(outfile)
