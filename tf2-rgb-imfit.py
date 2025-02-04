@@ -616,18 +616,26 @@ def load_params(opts, inputs, models, state):
     inputs.target_tensor.assign(inputs.input_image)
     inputs.max_row.assign(nparams)
 
+    # Force a forward pass to compute initial error
+    _ = models.full._forward_pass()
+    
     # Get the results directly from the model
     gabor = models.full.gabor.numpy()[0]  # Get gabor values
     approx = models.full.approx.numpy()[0]
     err_loss = float(models.full.err_loss)
     con_losses = models.full.con_losses.numpy()[0]
 
+    # For initial case with no models, err_loss should be the MSE between target and zeros
+    if nparams == 0:
+        err_loss = float(tf.reduce_mean(inputs.input_image ** 2))
+        print(f"Initial error (no models): {err_loss}")
+
     # Update state with results
     state.gabor[:,:,:,:nparams] = gabor[:,:,:,:nparams]
     state.con_loss[:nparams] = con_losses[:nparams]
 
     prev_best_loss = err_loss + state.con_loss[:nparams].sum()
-        
+    
     if opts.preview_size:
         models.preview.params.assign(new_params)
     
