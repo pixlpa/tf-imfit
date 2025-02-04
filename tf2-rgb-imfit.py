@@ -844,9 +844,9 @@ def full_optimize(opts, inputs, models, state, start_idx, loop_count):
             _ = models.preview._forward_pass()
         
         state_dict = models.full.get_current_state()
-        # Convert tensors to numpy arrays
-        gabor = state_dict['gabor'].numpy()
-        approx = state_dict['approx'].numpy()
+        # Convert tensors to numpy arrays and handle dimensions
+        gabor = state_dict['gabor'].numpy()[0]  # Remove batch dimension
+        approx = state_dict['approx'].numpy()[0]  # Remove batch dimension
         snapshot(gabor, approx,
                 opts, inputs, models,
                 loop_count, start_idx, '')
@@ -903,9 +903,9 @@ def local_optimize(opts, inputs, models, state, current_model):
             _ = models.preview._forward_pass()
         
         state_dict = models.local.get_current_state()
-        # Convert tensors to numpy arrays
-        gabor = state_dict['gabor'].numpy()
-        approx = state_dict['approx'].numpy()
+        # Convert tensors to numpy arrays and handle dimensions
+        gabor = state_dict['gabor'].numpy()[0]  # Remove batch dimension
+        approx = state_dict['approx'].numpy()[0]  # Remove batch dimension
         snapshot(gabor, approx,
                 opts, inputs, models,
                 current_model, current_model + 1, '')
