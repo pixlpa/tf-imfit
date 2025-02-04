@@ -911,7 +911,7 @@ def randomize(params, rstdev, ncopy=None):
 # Optimize a bunch of randomly-initialized small ensembles in
 # parallel.
 
-def local_optimize(opts, inputs, models, state, current_model):
+def local_optimize(opts, inputs, models, state, current_model, loop_count):
     """Optimize a single model's parameters using local optimization."""
     
     # Get initial loss
@@ -944,7 +944,7 @@ def local_optimize(opts, inputs, models, state, current_model):
         approx = state_dict['approx'].numpy()[0]  # Remove batch dimension
         snapshot(gabor, approx,
              opts, inputs, models,
-             -1, '')
+             loop_count, '')
         
         print(f"  loss after local fit is {float(total_loss):.9f}")
     
@@ -1007,7 +1007,7 @@ def main():
             # -----------------------------
             # Optimize a single candidate filter against the residual image.
             print(f"Performing local optimization for filter {current_model+1} / {opts.num_models}")
-            local_loss = local_optimize(opts, inputs, models, state, current_model)
+            local_loss = local_optimize(opts, inputs, models, state, current_model, loop_count)
             print(f"Local loss (filter {current_model+1}): {local_loss:.9f}")
 
             # Assume that local_optimize (directly or via snapshot())
