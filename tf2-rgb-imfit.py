@@ -128,11 +128,11 @@ def get_options():
 
     parser.add_argument('-r', '--local-learning-rate', type=float, metavar='R',
                         help='learning rate for local opt.',
-                        default=0.01)
+                        default=0.02)
 
     parser.add_argument('-R', '--full-learning-rate', type=float, metavar='R',
                         help='learning rate for full opt.',
-                        default=0.0005)
+                        default=0.001)
     
     parser.add_argument('-n', '--num-models', type=int, metavar='N',
                         help='total number of models to fit',
@@ -170,7 +170,7 @@ def get_options():
     # Add optimization parameters
     parser.add_argument('--patience', type=int, default=10,
                        help='number of iterations to wait before adjusting learning rate')
-    parser.add_argument('--min-lr', type=float, default=1e-6,
+    parser.add_argument('--min-lr', type=float, default=1e-5,
                        help='minimum learning rate')
     parser.add_argument('--lr-decay', type=float, default=0.5,
                        help='learning rate decay factor when progress stagnates')
@@ -430,6 +430,10 @@ class GaborModel(object):
             
             if self.target is not None:
                 self._compute_losses()
+
+            # Example debugging inside _forward_pass:
+            tf.print("Raw params range:", tf.reduce_min(self.params), tf.reduce_max(self.params))
+            tf.print("Clipped params range:", tf.reduce_min(self.cparams), tf.reduce_max(self.cparams))
 
     def _compute_losses(self):
         """Compute losses with numerical safeguards"""
