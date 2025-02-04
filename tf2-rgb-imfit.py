@@ -817,10 +817,7 @@ def snapshot(cur_gabor, cur_approx,
 ######################################################################
 # Perform an optimization on the full joint model (expensive/slow).
 
-def full_optimize(opts, inputs, models, state,
-                 loop_count,
-                 model_start_idx,
-                 prev_best_loss):
+def full_optimize(opts, inputs, models, state, start_idx, loop_count):
     """Perform full optimization across all models"""
     print("\nStarting full optimization:")
     print(f"  Current loss: {prev_best_loss}")
@@ -838,28 +835,38 @@ def full_optimize(opts, inputs, models, state,
     best_state = None
     stagnant_iterations = 0
     
+    # Add learning rate scheduling
+    initial_lr = 5e-4
+    min_lr = opts.min_lr
+    current_lr = initial_lr
+    
     # Training loop
-    for i in range(opts.full_iter):
+    for iteration in range(opts.full_iter):
         # Use the model's train_step method
         result = models.full.train_step()
         current_loss = float(result['loss'])
         
-        # Update learning rate and check for stagnation
-        stagnant_iterations = models.full.adjust_learning_rate(current_loss)
-        
-        # Track best results
-        if current_loss < best_loss:
+        # Check for improvement
+        if current_loss < best_loss * 0.995:  # Allow for 0.5% improvement to count
             best_loss = current_loss
-            best_state = models.full.get_current_state()
-            print(f"  New best loss: {best_loss:.6f}")
+            best_state = result
+            stagnant_iterations = 0
+        else:
+            stagnant_iterations += 1
         
-        # Early stopping if we've stagnated too long
-        if stagnant_iterations > opts.patience * 3:
-            print(f"  Stopping early at iteration {i} due to loss stagnation")
-            break
+        # Adjust learning rate if progress stagnates
+        if stagnant_iterations > opts.patience:
+            current_lr = max(current_lr * opts.lr_decay, min_lr)
+            stagnant_iterations = 0
+            print(f"  Reducing learning rate to {current_lr}")
             
-        if i % 10 == 0:  # Print progress every 10 iterations
-            print(f"  Iteration {i}: loss = {current_loss:.6f}, lr = {models.full.opt.learning_rate.numpy():.6f}")
+        # Add momentum or use Adam optimizer
+        optimizer = tf.keras.optimizers.Adam(learning_rate=current_lr)
+        
+        # Consider early stopping
+        if current_lr <= min_lr and stagnant_iterations > opts.patience * 2:
+            print("  Early stopping - no improvement with minimum learning rate")
+            break
     
     # Restore best state if found
     if best_state is not None:
@@ -934,71 +941,65 @@ def randomize(params, rstdev, ncopy=None):
 # Optimize a bunch of randomly-initialized small ensembles in
 # parallel.
 
-def local_optimize(opts, inputs, models, state,
-                   cur_approx, cur_con_losses, cur_target,
-                   is_replace, model_idx, loop_count,
-                   model_start_idx, prev_best_loss):
-
-    if prev_best_loss is not None:
-        print('  loss before local fit is', prev_best_loss)
-        
-    # Set the target tensor
-    inputs.target_tensor.assign(cur_target)
+def local_optimize(opts, inputs, models, state, current_model):
+    """Optimize a single model's parameters using local optimization."""
     
-    # Initialize parameters
-    if is_replace and opts.copy_quantity:
-        # Get current randomly initialized values
-        pvalues = models.local.params.numpy()
-
-        # Load in existing model values, slightly perturbed
-        rparams = randomize(state.params[:,model_idx],
-                           opts.perturb_amount,
-                           opts.copy_quantity)
-
-        pvalues[:opts.copy_quantity] = rparams[:,:,None]
+    # Initialize learning rate scheduling
+    initial_lr = opts.local_learning_rate
+    min_lr = opts.min_lr
+    current_lr = initial_lr
+    
+    # Track best loss and parameters
+    best_loss = float('inf')
+    best_params = None
+    stagnant_iterations = 0
+    
+    # Setup optimizer
+    optimizer = tf.keras.optimizers.Adam(learning_rate=current_lr)
+    
+    # Get initial loss
+    loss = models.local.err_loss + models.local.con_losses[0]
+    
+    for iteration in range(opts.local_iter):
+        # Optimization step
+        with tf.GradientTape() as tape:
+            err_loss = models.local.err_loss
+            con_loss = models.local.con_losses[0]
+            total_loss = err_loss + con_loss
             
-        # Update tensor with perturbed values
-        models.local.params.assign(pvalues)
-
-    # Training loop
-    for i in range(opts.local_iter):
-        # Use the model's train_step method
-        result = models.local.train_step()
-
-    # Get final state
-    final_state = models.local.get_current_state()
+        grads = tape.gradient(total_loss, models.local.params)
+        optimizer.apply_gradients([(grads, models.local.params)])
+        
+        # Get current loss and parameters
+        current_loss = float(total_loss)
+        current_params = models.local.params.numpy()
+        
+        # Check for improvement
+        if current_loss < best_loss * 0.995:  # Allow for 0.5% improvement to count
+            best_loss = current_loss
+            best_params = current_params.copy()
+            stagnant_iterations = 0
+        else:
+            stagnant_iterations += 1
+        
+        # Adjust learning rate if progress stagnates
+        if stagnant_iterations > opts.patience:
+            current_lr = max(current_lr * opts.lr_decay, min_lr)
+            stagnant_iterations = 0
+            print(f"    Local: Reducing learning rate to {current_lr}")
+            optimizer.learning_rate.assign(current_lr)
+        
+        # Early stopping
+        if current_lr <= min_lr and stagnant_iterations > opts.patience * 2:
+            print("    Local: Early stopping - no improvement with minimum learning rate")
+            break
     
-    # Convert tensors to numpy arrays
-    results = {
-        'loss_per_fit': final_state['err_loss_per_fit'].numpy(),
-        'con_losses': final_state['con_losses'].numpy(),
-        'approx': final_state['approx'].numpy(),
-        'gabor': final_state['gabor'].numpy(),
-        'params': final_state['params'].numpy()
-    }
-
-    # Find best fit using per-fit losses
-    fidx = results['loss_per_fit'].argmin()
-
-    # Get the best results
-    new_loss = results['loss_per_fit'][fidx] + cur_con_losses
-    new_gabor = results['gabor'][fidx,...,0]  # Should be [h, w, 3]
-    new_params = results['params'][fidx]
-    new_con_loss = results['con_losses'][fidx]
-
-    # Update preview if needed
-    if opts.preview_size:
-        tmpparams = state.params.copy()
-        tmpparams[:,model_idx] = new_params[:,0]
-        models.full.params.assign(tmpparams[None,:])
-
-    # Create snapshot with current state
-    total_approx = cur_approx + new_gabor  # Add new gabor to current approximation
-    snapshot(new_gabor, total_approx,
-             opts, inputs, models,
-             loop_count, model_start_idx+1, '')
-
-    return new_loss, new_params[:,0], new_con_loss
+    # Use the best parameters found
+    if best_params is not None:
+        models.local.params.assign(best_params)
+        
+    # Return the best loss achieved
+    return best_loss
 
 ######################################################################
 
@@ -1085,14 +1086,7 @@ def main():
 
             # Do a big parallel optimization for a bunch of random
             # model initializations
-            prev_best_loss, new_params, new_con_loss = local_optimize(opts, inputs, models,
-                                            state,
-                                            cur_approx, cur_con_losses,
-                                            cur_target,
-                                            is_replace, model_idx, 
-                                            loop_count,
-                                            model_start_idx,
-                                            prev_best_loss)
+            prev_best_loss = local_optimize(opts, inputs, models, state, model_idx)
 
             # Done with this mini-ensemble
             model_start_idx += 1
