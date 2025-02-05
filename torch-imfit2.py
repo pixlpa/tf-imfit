@@ -24,7 +24,7 @@ class GaborLayer(nn.Module):
         self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 2)   # smaller variance
         self.gamma = nn.Parameter(torch.zeros(num_gabors))  # starts at 0.5 after sigmoid
         self.psi = nn.Parameter(torch.rand(num_gabors, 3))  # [-π, π]
-        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.5)  # smaller initial amplitudes
+        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.25)  # smaller initial amplitudes
         
         self.dropout = nn.Dropout(p=0.01)
 
@@ -55,7 +55,7 @@ class GaborLayer(nn.Module):
         sigma = (0.5 + 0.5 * torch.tanh(self.rel_sigma.clamp(1e-5, 5)))
         
         # Safe aspect ratio
-        gamma = 0.001 + 0.5 * torch.sigmoid(self.gamma.clamp(1e-5, 5))
+        gamma = 0.001 + self.gamma.clamp(1e-5, 1)
         
         # Add small noise during training (with gradient preservation)
         if self.training:
