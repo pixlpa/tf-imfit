@@ -52,10 +52,10 @@ class GaborLayer(nn.Module):
         theta = self.theta.clamp(0, 1)*2*np.pi
         
         # Ensure positive sigma with safe scaling
-        sigma = (0.5 + 0.5 * torch.tanh(self.rel_sigma.clamp(-5, 5)))
+        sigma = (0.5 + 0.5 * torch.tanh(self.rel_sigma.clamp(1e-5, 5)))
         
         # Safe aspect ratio
-        gamma = 0.001 + 0.5 * torch.sigmoid(self.gamma.clamp(-5, 5))
+        gamma = 0.001 + 0.5 * torch.sigmoid(self.gamma.clamp(1e-5, 5))
         
         # Add small noise during training (with gradient preservation)
         if self.training:
@@ -90,7 +90,7 @@ class GaborLayer(nn.Module):
                            phase[:, :, None, None] * np.pi)
         
         # Safe amplitude scaling
-        amplitude = 0.2 * torch.tanh(self.amplitude.clamp(-5, 5))
+        amplitude = 0.2 * torch.tanh(self.amplitude.clamp(0, 2))
         
         # Combine components safely
         gabors = amplitude[:,:,None,None] * gauss[:, None, :, :] * sinusoid
@@ -107,12 +107,12 @@ class GaborLayer(nn.Module):
         with torch.no_grad():
             self.u.clamp_(-1, 1)
             self.v.clamp_(-1, 1)
-            self.theta.clamp_(0, 2)
-            self.rel_sigma.clamp_(-3, 3)
-            self.rel_freq
+            self.theta.clamp_(0, 1)
+            self.rel_sigma.clamp_(1e-5,5)
+            self.rel_freq.clamp_(1e-5,5)
             self.psi.clamp_(-1, 1)
-            self.gamma.clamp_(-3, 3)
-            self.amplitude.clamp_(-0.5, 0.5)
+            self.gamma.clamp_(1e-5,5)
+            self.amplitude.clamp_(0,2)
 
 class ImageFitter:
     def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 
