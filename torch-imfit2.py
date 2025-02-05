@@ -414,7 +414,7 @@ class ImageFitter:
                 }
             par = np.array([params['u'], params['v'], params['theta'], params['rel_sigma'], params['rel_freq'], params['psi'].flatten(), params['gamma'], params['amplitude'].flatten()])
             flat = par.transpose()
-            np.savetxt(path, flat)
+            np.savetxt(path, flat,fmt='%f', delimiter=',')
 
     def load_model(self, path):
         """Load the model state with parameter verification"""
