@@ -17,14 +17,14 @@ class GaborLayer(nn.Module):
         self.base_scale = base_scale
         
         # Initialize parameters with conservative ranges
-        self.u = nn.Parameter(torch.rand(num_gabors) * 1.6 - 0.8)  # [-0.8, 0.8]
-        self.v = nn.Parameter(torch.rand(num_gabors) * 1.6 - 0.8)  # [-0.8, 0.8]
-        self.theta = nn.Parameter(torch.rand(num_gabors) * 0.8 * np.pi)  # [0, 0.8π]
-        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 0.4)  # smaller variance
-        self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 0.8)   # smaller variance
+        self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-0.8, 0.8]
+        self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-0.8, 0.8]
+        self.theta = nn.Parameter(torch.rand(num_gabors) * 2)  # [0, 0.8π]
+        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 2)  # smaller variance
+        self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 2)   # smaller variance
         self.gamma = nn.Parameter(torch.zeros(num_gabors))  # starts at 0.5 after sigmoid
         self.psi = nn.Parameter(torch.rand(num_gabors, 3))  # [-π, π]
-        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.1)  # smaller initial amplitudes
+        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.5)  # smaller initial amplitudes
         
         self.dropout = nn.Dropout(p=0.01)
 
@@ -552,6 +552,9 @@ def main():
     # Training loop
     print(f"Training on {args.device}...")
     with tqdm(total=args.iterations) as pbar:
+        for i in range(args.iterations):
+            fitter.train_step(i, args.iterations)
+            fitter.save_image(os.path.join(args.output_dir, f'preroll_{i:04d}.png'))
         print("Optimizing each filter individually")
         for n in range(args.num_gabors):
             fitter.single_optimize(n,args.single_iterations,fitter.target)
