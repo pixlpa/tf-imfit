@@ -350,39 +350,39 @@ class GaborModel(object):
         h = self.cparams[:,None,None,GABOR_PARAM_H0:GABOR_PARAM_H0+3,:]
 
 
-        cr = tf.cos(r)
-        sr = tf.sin(r)
-        f = np.float32(2*np.pi) / l
+        cr = tf.cos(r) #rotation cosine
+        sr = tf.sin(r) #rotation sine
+        f = np.float32(2*np.pi) / l #frequency from wavelength
 
-        s2 = s*s
-        t2 = t*t
+        s2 = s*s #sigma squared
+        t2 = t*t #tension squared
 
         # n x 1 x w x 1 x e
-        xp = x-u
+        xp = x-u #x position of center of gabor in normalized coordinates
 
         # n x h x 1 x 1 x e
         yp = y-v
 
         # n x h x w x 1 x e
-        b1 =  cr*xp + sr*yp
-        b2 = -sr*xp + cr*yp
+        b1 =  cr*xp + sr*yp #x rotated position of gabor in normalized coordinates
+        b2 = -sr*xp + cr*yp #y rotated position of gabor in normalized coordinates
 
-        b12 = b1*b1
-        b22 = b2*b2
+        b12 = b1*b1 #x rotated position squared
+        b22 = b2*b2 #y rotated position squared
 
         w = tf.exp(-b12/(2*s2) - b22/(2*t2))
 
-        k = f*b1 +  p
-        ck = tf.cos(k)
+        k = f*b1 +  p #frequency * x rotated position + phase offset
+        ck = tf.cos(k) #cosine of gabor filter
 
         # n x h x w x c x e
-        self.gabor = tf.identity(h * w * ck, name='gabor')
+        self.gabor = tf.identity(h * w * ck, name='gabor') #gabor filter
 
         ############################################################
         # Compute the ensemble sum of all models for each fit        
         
         # n x h x w x c
-        self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx')
+        self.approx = tf.reduce_sum(self.gabor, axis=4, name='approx') #ensemble sum of all models for each fit
 
         ############################################################
         # Everything below here is for optimizing, if we just want
