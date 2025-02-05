@@ -225,22 +225,18 @@ class ImageFitter:
 
         # Extract the specific model parameters to optimize
         specific_model_params = {
-            'u': self.model.u[model_index],
-            'v': self.model.v[model_index],
-            'theta': self.model.theta[model_index],
-            'rel_sigma': self.model.rel_sigma[model_index],
-            'rel_freq': self.model.rel_freq[model_index],
-            'psi': self.model.psi[model_index],
-            'gamma': self.model.gamma[model_index],
-            'amplitude': self.model.amplitude[model_index]
+            'u': self.model.u[model_index].detach().clone().requires_grad_(),
+            'v': self.model.v[model_index].detach().clone().requires_grad_(),
+            'theta': self.model.theta[model_index].detach().clone().requires_grad_(),
+            'rel_sigma': self.model.rel_sigma[model_index].detach().clone().requires_grad_(),
+            'rel_freq': self.model.rel_freq[model_index].detach().clone().requires_grad_(),
+            'psi': self.model.psi[model_index].detach().clone().requires_grad_(),
+            'gamma': self.model.gamma[model_index].detach().clone().requires_grad_(),
+            'amplitude': self.model.amplitude[model_index].detach().clone().requires_grad_()
         }
         
         # Create a list of parameters to optimize
         params_to_optimize = [specific_model_params[param] for param in specific_model_params]
-
-        # Set requires_grad=True for the parameters to optimize
-        # for param in params_to_optimize:
-        #   param.requires_grad = True
 
         # Initialize optimizer for specific parameters
         optimizer = optim.AdamW(
