@@ -252,9 +252,9 @@ class ImageFitter:
             optimizer.zero_grad()
 
             # Assuming specific_model_params is a dictionary of batched tensors
-            rel_sigma = specific_model_params['rel_sigma']
-            rel_freq = specific_model_params['rel_freq']
-            gamma = specific_model_params['gamma']
+            rel_sigma = specific_model_params['rel_sigma'].unsqueeze(0)  # Add a dimension if necessary
+            rel_freq = specific_model_params['rel_freq'].unsqueeze(0)    # Add a dimension if necessary
+            gamma = specific_model_params['gamma'].unsqueeze(0)          # Add a dimension if necessary
 
             # Vectorized pairwise constraints
             pairwise_constraints = torch.stack([
