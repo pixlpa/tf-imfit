@@ -412,8 +412,10 @@ class ImageFitter:
                     'gamma': self.model.gamma.cpu().tolist(),
                     'amplitude': self.model.amplitude.cpu().tolist()
                 }
-            par = np.array([params['u'], params['v'], params['theta'], params['rel_sigma'], params['rel_freq'], params['psi'].flatten(), params['gamma'], params['amplitude'].flatten()])
+            par = np.array([params['u'], params['v'], params['theta'], params['rel_sigma'], params['rel_freq'], params['psi'], params['gamma'], params['amplitude']])
             flat = par.transpose()
+            for i in range(flat.shape[0]):
+                flat[i] = flat[i].flatten()
             np.savetxt(path, flat,fmt='%f', delimiter=',')
 
     def load_model(self, path):
@@ -505,7 +507,7 @@ def main():
         os.makedirs(args.output_dir, exist_ok=True)
         fitter.save_image(os.path.join(args.output_dir, 'final_result.png'))
         fitter.save_model(os.path.join(args.output_dir, 'saved_model.pth'))
-        fitter.save_weights(os.path.join(args.output_dir, 'weights.txt'))
+        fitter.save_weights(os.path.join(args.output_dir, 'saved_weights.txt'))
         fitter.save_parameters_to_text(os.path.join(args.output_dir, 'parameters.txt'))
 
 if __name__ == '__main__':
