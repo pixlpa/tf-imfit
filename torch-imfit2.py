@@ -23,7 +23,7 @@ class GaborLayer(nn.Module):
         self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 0.4)  # smaller variance
         self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 0.8)   # smaller variance
         self.gamma = nn.Parameter(torch.zeros(num_gabors))  # starts at 0.5 after sigmoid
-        self.psi = nn.Parameter(torch.rand(num_gabors, 3) * 2 * np.pi - np.pi)  # [-π, π]
+        self.psi = nn.Parameter(torch.rand(num_gabors, 3))  # [-π, π]
         self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.1)  # smaller initial amplitudes
         
         self.dropout = nn.Dropout(p=0.01)
@@ -46,7 +46,7 @@ class GaborLayer(nn.Module):
     def forward(self, grid_x, grid_y, temperature=1.0, dropout_active=True):
         H, W = grid_x.shape
         image_size = max(H, W)
-        base_size = image_size / self.base_scale
+        base_size = float(image_size)/ float(self.base_scale)
         
         # Safe parameter transformations with gradient preservation
         u = self.u.clamp(-1, 1)
@@ -158,7 +158,7 @@ class ImageFitter:
         self.grid_y = y.to(device)
         
         # Initialize model with improved training setup
-        self.model = GaborLayer(num_gabors, init_size).to(device)
+        self.model = GaborLayer(num_gabors,init_size).to(device)
         # Initialize model parameters if provided
         if init:
             self.init_parameters(init)
