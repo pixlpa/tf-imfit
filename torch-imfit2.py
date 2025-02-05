@@ -256,6 +256,9 @@ class ImageFitter:
             rel_freq = specific_model_params['rel_freq'].unsqueeze(0)    # Add a dimension if necessary
             gamma = specific_model_params['gamma'].unsqueeze(0)          # Add a dimension if necessary
 
+            # Debugging: Print shapes of tensors
+            print(f"Shapes - rel_sigma: {rel_sigma.shape}, rel_freq: {rel_freq.shape}, gamma: {gamma.shape}")
+
             # Vectorized pairwise constraints
             pairwise_constraints = torch.stack([
                 rel_sigma - rel_freq / 32,
