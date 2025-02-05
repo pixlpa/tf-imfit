@@ -220,7 +220,7 @@ class ImageFitter:
     
     def single_optimize(self, model_index, iterations, target_image):
         # Convert target image to tensor and normalize
-        target_image_tensor = torch.tensor(target_image, device=self.target.device).unsqueeze(0)  # Add batch dimension
+        target_image_tensor = target_image.clone().detach().to(self.target.device)  # No unsqueeze
         target_image_tensor = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])(target_image_tensor)
 
         # Extract the specific model parameters to optimize
