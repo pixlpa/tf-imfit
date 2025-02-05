@@ -261,10 +261,10 @@ class ImageFitter:
 
             # Vectorized pairwise constraints
             pairwise_constraints = torch.stack([
-                rel_sigma - rel_freq / 32,
-                rel_freq / 2 - rel_sigma,
-                rel_sigma - rel_freq,
-                8 * rel_sigma - gamma
+                (rel_sigma - rel_freq / 32).unsqueeze(0),
+                (rel_freq / 2 - rel_sigma).unsqueeze(0),
+                (rel_sigma - rel_freq).unsqueeze(0),
+                (8 * rel_sigma - gamma).unsqueeze(0)
             ], dim=2)  # Stack along the last dimension
 
             # Calculate the squared constraints using ReLU
