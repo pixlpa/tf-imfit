@@ -217,7 +217,7 @@ class ImageFitter:
         self.current_temp = self.initial_temp
         
         # Add mutation probability
-        self.mutation_prob = 0.001
+        self.mutation_prob = 0.01
         self.mutation_strength = mutation_strength
         # Add phase tracking
         self.optimization_phase = 'global'  # 'global' or 'local'
