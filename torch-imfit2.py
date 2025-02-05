@@ -84,7 +84,7 @@ class GaborLayer(nn.Module):
         ))
         
         # Safe sinusoid computation with frequency scaling
-        freq = np.float32(2*np.pi) / torch.exp(self.rel_freq)
+        freq = np.float32(2*np.pi) / torch.exp(self.rel_freq*2.5)
         phase = self.psi*2*np.pi
         sinusoid = torch.cos(freq[:,None,None,None] * x_rot[:, None, :, :] + 
                            phase[:, :, None, None] * np.pi)
