@@ -641,7 +641,7 @@ def main():
             fitter.single_optimize(n+accum_filters,args.single_iterations,fitter.target)
             if n % 8 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'singles_{n+accum_filters:04d}.png'))
-            accum_filters += n+1
+            accum_filters += n
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)
             
@@ -657,7 +657,7 @@ def main():
             fitter.single_optimize(n+accum_filters,args.single_iterations,fitter.target)
             if n % 8 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'singles_{n+accum_filters:04d}.png'))
-            accum_filters += n+1
+            accum_filters += n
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)
             
