@@ -364,8 +364,6 @@ class ImageFitter:
         """Get current image with parameter state logging"""
         with torch.no_grad():
             # Print key parameter stats           
-            for name, param in self.model.named_parameters():
-            
             if use_best and self.best_state is not None:
                 # Use the best model state for final output
                 current_state = {k: v.clone() for k, v in self.model.state_dict().items()}
@@ -374,7 +372,7 @@ class ImageFitter:
                 self.model.load_state_dict(current_state)
             else:
                 output = self.model(self.grid_x, self.grid_y)
-            
+                
             # Denormalize the output
             output = output * 0.5 + 0.5
             return output.clamp(0, 1).cpu().numpy()
