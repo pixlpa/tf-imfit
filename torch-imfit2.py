@@ -12,7 +12,7 @@ import scipy.signal
 from torchvision.transforms.functional import gaussian_blur
 
 class GaborLayer(nn.Module):
-    def __init__(self, num_gabors=256, base_scale=32):
+    def __init__(self, num_gabors=256, base_scale=64):
         super().__init__()
         self.base_scale = base_scale
         
@@ -81,9 +81,9 @@ class GaborLayer(nn.Module):
         ))
         
         # Safe sinusoid computation with frequency scaling
-        freq = torch.exp(self.rel_freq) # Positive frequency scaling
+        freq = torch.exp(self.rel_freq) * base_size # Positive frequency scaling
         phase = self.psi*2*np.pi
-        sinusoid = torch.cos(2 * np.pi * freq[:,None,None,None] * x_rot[:, None, :, :] * base_size + 
+        sinusoid = torch.cos(2 * np.pi * freq[:,None,None,None] * x_rot[:, None, :, :] + 
                            phase[:, :, None, None])
         
         # Safe amplitude scaling
