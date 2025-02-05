@@ -616,10 +616,11 @@ def main():
         fitter.save_image(os.path.join(args.output_dir, 'initial_result.png'))
     # Training loop
     print(f"Training on {args.device}...")
+    quat = int(args.num_gabors/4)
     with tqdm(total=args.iterations) as pbar:
         accum_filters = 0
         print("Optimizing each filter individually")
-        for n in range(args.num_gabors/4):
+        for n in range(quat):
             fitter.single_optimize(n,args.single_iterations,fitter.target)
             if n % 8 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'singles_{n:04d}.png'))
@@ -636,7 +637,7 @@ def main():
             # Save intermediate results
             if i % 50 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'first_{i:04d}.png'))
-        for n in range(args.num_gabors/4):
+        for n in range(quat):
             fitter.single_optimize(n+accum_filters,args.single_iterations,fitter.target)
             if n % 8 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'singles_{n+accum_filters:04d}.png'))
@@ -652,7 +653,7 @@ def main():
             # Save intermediate results
             if i % 50 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'second_{i:04d}.png'))
-        for n in range(args.num_gabors/4):
+        for n in range(quat):
             fitter.single_optimize(n+accum_filters,args.single_iterations,fitter.target)
             if n % 8 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'singles_{n+accum_filters:04d}.png'))
@@ -668,7 +669,7 @@ def main():
             # Save intermediate results
             if i % 50 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'third_{i:04d}.png'))
-        for n in range(args.num_gabors/4):
+        for n in range(quat):
             fitter.single_optimize(n+accum_filters,args.single_iterations,fitter.target)
             if n % 8 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'singles_{n+accum_filters:04d}.png'))
