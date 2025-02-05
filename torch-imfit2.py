@@ -241,7 +241,7 @@ class ImageFitter:
         # Initialize optimizer for specific parameters
         optimizer = optim.AdamW(
             params_to_optimize,
-            lr=0.001,
+            lr=0.01,
             weight_decay=1e-4,
             betas=(0.9, 0.999)
         )
@@ -250,8 +250,19 @@ class ImageFitter:
             # Zero gradients
             optimizer.zero_grad()
 
+            # Temporarily set the model parameters to the optimized values
+            with torch.no_grad():
+                self.model.u[model_index] = specific_model_params['u']
+                self.model.v[model_index] = specific_model_params['v']
+                self.model.theta[model_index] = specific_model_params['theta']
+                self.model.rel_sigma[model_index] = specific_model_params['rel_sigma']
+                self.model.rel_freq[model_index] = specific_model_params['rel_freq']
+                self.model.psi[model_index] = specific_model_params['psi']
+                self.model.gamma[model_index] = specific_model_params['gamma']
+                self.model.amplitude[model_index] = specific_model_params['amplitude']
+
             # Forward pass for the specific model
-            output = self.model(self.grid_x, self.grid_y)  # Assuming the model uses the full grid
+            output = self.model(self.grid_x, self.grid_y)
 
             # Calculate loss against the target image
             loss = self.mse_criterion(output, target_image_tensor)
