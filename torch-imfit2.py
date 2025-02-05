@@ -364,6 +364,31 @@ class ImageFitter:
         loss = weighted_diff.mean()
         
         return loss
+    
+    def constraint_loss(self, model):
+        # Vectorized pairwise constraints
+        with torch.no_grad():
+            rel_sigma = model.rel_sigma
+            rel_freq = model.rel_freq
+            gamma = model.gamma
+
+        pairwise_constraints = torch.stack([
+            (rel_sigma - rel_freq / 32).unsqueeze(0),
+            (rel_freq / 2 - rel_sigma).unsqueeze(0),
+            (rel_sigma - rel_freq).unsqueeze(0),
+            (8 * rel_sigma - gamma).unsqueeze(0)
+        ], dim=2)  # Stack along the last dimension
+
+        # Calculate the squared constraints using ReLU
+        con_sqr = torch.relu(pairwise_constraints) ** 2
+
+        # Sum across the last dimension (k)
+        con_losses = torch.sum(con_sqr, dim=2)
+
+        # Sum across the mini-batch (n)
+        con_loss_per_fit = torch.sum(con_losses, dim=1)
+        con_loss = con_loss_per_fit.mean()  # Use PyTorch's mean
+        return con_loss
 
     def train_step(self, iteration, max_iterations):
         # Update temperature
@@ -387,7 +412,7 @@ class ImageFitter:
         
         # Calculate loss
         weights = self.get_phase_specific_weights()
-        loss = self.weighted_loss(output, self.target, weights)
+        loss = self.weighted_loss(output, self.target, weights) + self.constraint_loss(self.model)
         
         # Backward pass and optimize
         loss.backward()
@@ -592,11 +617,13 @@ def main():
     with tqdm(total=args.iterations) as pbar:
         for i in range(args.iterations):
             fitter.train_step(i, args.iterations)
-            fitter.save_image(os.path.join(args.output_dir, f'preroll_{i:04d}.png'))
+            if i % 50 == 0:
+                fitter.save_image(os.path.join(args.output_dir, f'preroll_{i:04d}.png'))
         print("Optimizing each filter individually")
         for n in range(args.num_gabors):
             fitter.single_optimize(n,args.single_iterations,fitter.target)
-            fitter.save_image(os.path.join(args.output_dir, f'singles_{n:04d}.png'))
+            if n % 5 == 0:
+                fitter.save_image(os.path.join(args.output_dir, f'singles_{n:04d}.png'))
         print("Optimizing all filters together")
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)
