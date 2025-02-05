@@ -54,7 +54,7 @@ class GaborLayer(nn.Module):
         theta = self.theta.clamp(0, 1)*2*np.pi
         
         # Ensure positive sigma with safe scaling
-        sigma = base_size * (0.5 + 0.5 * torch.tanh(self.rel_sigma.clamp(-5, 5)))
+        sigma = (0.5 + 0.5 * torch.tanh(self.rel_sigma.clamp(-5, 5)))
         
         # Safe aspect ratio
         gamma = 0.5 + 0.5 * torch.sigmoid(self.gamma.clamp(-5, 5))
@@ -81,10 +81,10 @@ class GaborLayer(nn.Module):
         ))
         
         # Safe sinusoid computation with frequency scaling
-        freq = torch.exp(self.rel_freq) * base_size # Positive frequency scaling
+        freq = torch.exp(self.rel_freq) # Positive frequency scaling
         phase = self.psi*2*np.pi
         sinusoid = torch.cos(2 * np.pi * freq[:,None,None,None] * x_rot[:, None, :, :] + 
-                           phase[:, :, None, None])
+                           phase[:, :, None, None] * np.pi)
         
         # Safe amplitude scaling
         amplitude = 0.2 * torch.tanh(self.amplitude.clamp(-5, 5))
@@ -223,7 +223,7 @@ class ImageFitter:
     def init_parameters(self, init):
         """Initialize parameters from a saved model"""
         if init:
-            self.load_model(init)  # Remove self argument
+            self.load_model(init)
             print("Initialized parameters from", init)
 
     def mutate_parameters(self):
@@ -390,7 +390,7 @@ class ImageFitter:
         self.model.dropout.p = 0.0001
         
         # Update mutation settings
-        self.mutation_prob = 0.00005
+        self.mutation_prob = 0.0001
         
         print("Switching to local optimization phase...")
 
