@@ -408,14 +408,16 @@ class ImageFitter:
                     'theta': self.model.theta.cpu().tolist(),
                     'rel_sigma': self.model.rel_sigma.cpu().tolist(),
                     'rel_freq': self.model.rel_freq.cpu().tolist(),
-                    'psi': self.model.psi.cpu().tolist(),
+                    'psi0': self.model.psi[:,0].cpu().tolist(),
+                    'psi1': self.model.psi[:,1].cpu().tolist(),
+                    'psi2': self.model.psi[:,2].cpu().tolist(),
                     'gamma': self.model.gamma.cpu().tolist(),
-                    'amplitude': self.model.amplitude.cpu().tolist()
+                    'amplitude0': self.model.amplitude[:,0].cpu().tolist(),
+                    'amplitude1': self.model.amplitude[:,1].cpu().tolist(),
+                    'amplitude2': self.model.amplitude[:,2].cpu().tolist()
                 }
-            par = np.array([params['u'], params['v'], params['theta'], params['rel_sigma'], params['rel_freq'], params['psi'], params['gamma'], params['amplitude']])
+            par = np.array([params['u'], params['v'], params['theta'], params['rel_sigma'], params['rel_freq'], params['psi0'], params['psi1'], params['psi2'], params['gamma'], params['amplitude0'], params['amplitude1'], params['amplitude2']])
             flat = par.transpose()
-            for i in range(flat.shape[0]):
-                flat[i] = flat[i].flatten()
             np.savetxt(path, flat,fmt='%f', delimiter=',')
 
     def load_model(self, path):
