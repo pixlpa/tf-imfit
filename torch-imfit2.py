@@ -52,12 +52,15 @@ class GaborLayer(nn.Module):
         theta = self.theta.clamp(0, 1)*2*np.pi
         
         # sigma
-        sigma = self.rel_sigma.clamp(-5, 5)
+        sigma = self.rel_sigma.clamp(1e-5, 5)
         sigma = sigma*sigma
         
         # Safe aspect ratio
-        gamma = self.gamma.clamp(-5, 5)
+        gamma = self.gamma.clamp(1e-5, 5)
         gamma = gamma*gamma
+
+        if torch.isnan(sigma).any() or torch.isnan(gamma).any():
+            print("NaN detected in sigma or gamma")
 
         cr = torch.cos(theta[:,None,None])
         sr = torch.sin(theta[:,None,None])
@@ -69,10 +72,10 @@ class GaborLayer(nn.Module):
                 (grid_y[None,:,:] - v[:,None,None]) * cr
 
         # Safe gaussian computation
-        gaussian = torch.exp(-(x_rot**2 / (sigma[:,None,None] * 2) - (y_rot**2)/(gamma[:,None,None]*2)))
+        gaussian = torch.exp(torch.clamp(-(x_rot**2 / (sigma[:,None,None] * 2) - (y_rot**2)/(gamma[:,None,None]*2)), min=-80, max=80))
         
         # Safe sinusoid computation with frequency scaling
-        freq = np.float32(2*np.pi) / self.rel_freq
+        freq = np.float32(2*np.pi) / torch.exp(self.rel_freq)
         phase = self.psi*2*np.pi
         sinusoid = torch.cos(freq[:,None,None,None] * x_rot[:, None, :, :] + 
                            phase[:, :, None, None])
