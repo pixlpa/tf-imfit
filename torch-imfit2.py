@@ -221,8 +221,8 @@ class ImageFitter:
     def single_optimize(self, model_index, iterations, target_image):
         # Convert target image to tensor and normalize
         target_image_tensor = target_image.clone().detach().to(self.target.device)  # No unsqueeze
-        target_image_tensor = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])(target_image_tensor)
-
+        
+        #Removed normalization
         # Extract the specific model parameters to optimize
         specific_model_params = {
             'u': self.model.u[model_index].detach().clone().requires_grad_(),
@@ -241,8 +241,8 @@ class ImageFitter:
         # Initialize optimizer for specific parameters
         optimizer = optim.AdamW(
             params_to_optimize,
-            lr=0.01,
-            weight_decay=1e-4,
+            lr=0.004,
+            weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
         
