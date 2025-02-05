@@ -268,10 +268,10 @@ class ImageFitter:
             con_sqr = torch.relu(pairwise_constraints) ** 2
 
             # Sum across the last dimension (k)
-            con_losses = torch.sum(con_sqr, dim=2)
+            con_losses = torch.mean(con_sqr, dim=2)
 
             # Sum across the mini-batch (n)
-            con_loss_per_fit = torch.sum(con_losses, dim=1)
+            con_loss_per_fit = torch.mean(con_losses, dim=1)
 
             # Temporarily set the model parameters to the optimized values
             with torch.no_grad():
@@ -380,10 +380,10 @@ class ImageFitter:
         con_sqr = torch.relu(pairwise_constraints) ** 2
 
         # Sum across the last dimension (k)
-        con_losses = torch.sum(con_sqr, dim=2)
+        con_losses = torch.mean(con_sqr, dim=2)
 
         # Sum across the mini-batch (n)
-        con_loss_per_fit = torch.sum(con_losses, dim=1)
+        con_loss_per_fit = torch.mean(con_losses, dim=1)
         con_loss = con_loss_per_fit.mean()  # Use PyTorch's mean
         return con_loss
 
@@ -613,9 +613,12 @@ def main():
     print(f"Training on {args.device}...")
     with tqdm(total=args.iterations) as pbar:
         for i in range(args.iterations):
-            fitter.train_step(i, args.iterations)
+            loss = fitter.train_step(i, args.iterations)
             if i % 50 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'preroll_{i:04d}.png'))
+                temp = fitter.current_temp
+                pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                pbar.update(10)
         print("Optimizing each filter individually")
         for n in range(args.num_gabors):
             fitter.single_optimize(n,args.single_iterations,fitter.target)
