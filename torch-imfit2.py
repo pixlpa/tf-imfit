@@ -617,18 +617,13 @@ def main():
     # Training loop
     print(f"Training on {args.device}...")
     with tqdm(total=args.iterations) as pbar:
-        for i in range(args.iterations):
-            loss = fitter.train_step(i, args.iterations)
-            if i % 50 == 0:
-                fitter.save_image(os.path.join(args.output_dir, f'preroll_{i:04d}.png'))
-                temp = fitter.current_temp
-                pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
-                pbar.update(10)
+        accum_filters = 0
         print("Optimizing each filter individually")
-        for n in range(args.num_gabors):
+        for n in range(args.num_gabors/4):
             fitter.single_optimize(n,args.single_iterations,fitter.target)
-            if n % 5 == 0:
+            if n % 8 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'singles_{n:04d}.png'))
+            accum_filters = n+1
         print("Optimizing all filters together")
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)
@@ -640,7 +635,56 @@ def main():
             
             # Save intermediate results
             if i % 50 == 0:
-                fitter.save_image(os.path.join(args.output_dir, f'result_{i:04d}.png'))
+                fitter.save_image(os.path.join(args.output_dir, f'first_{i:04d}.png'))
+        for n in range(args.num_gabors/4):
+            fitter.single_optimize(n+accum_filters,args.single_iterations,fitter.target)
+            if n % 8 == 0:
+                fitter.save_image(os.path.join(args.output_dir, f'singles_{n+accum_filters:04d}.png'))
+            accum_filters += n+1
+        for i in range(args.iterations):
+            loss = fitter.train_step(i, args.iterations)
+            
+            if i % 10 == 0:
+                temp = fitter.current_temp
+                pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                pbar.update(10)
+            
+            # Save intermediate results
+            if i % 50 == 0:
+                fitter.save_image(os.path.join(args.output_dir, f'second_{i:04d}.png'))
+        for n in range(args.num_gabors/4):
+            fitter.single_optimize(n+accum_filters,args.single_iterations,fitter.target)
+            if n % 8 == 0:
+                fitter.save_image(os.path.join(args.output_dir, f'singles_{n+accum_filters:04d}.png'))
+            accum_filters += n+1
+        for i in range(args.iterations):
+            loss = fitter.train_step(i, args.iterations)
+            
+            if i % 10 == 0:
+                temp = fitter.current_temp
+                pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                pbar.update(10)
+            
+            # Save intermediate results
+            if i % 50 == 0:
+                fitter.save_image(os.path.join(args.output_dir, f'third_{i:04d}.png'))
+        for n in range(args.num_gabors/4):
+            fitter.single_optimize(n+accum_filters,args.single_iterations,fitter.target)
+            if n % 8 == 0:
+                fitter.save_image(os.path.join(args.output_dir, f'singles_{n+accum_filters:04d}.png'))
+            accum_filters += n+1
+        for i in range(args.iterations):
+            loss = fitter.train_step(i, args.iterations)
+            
+            if i % 10 == 0:
+                temp = fitter.current_temp
+                pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                pbar.update(10)
+            
+            # Save intermediate results
+            if i % 50 == 0:
+                fitter.save_image(os.path.join(args.output_dir, f'fourth_{i:04d}.png'))
+        
     # Save final result
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)
