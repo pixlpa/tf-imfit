@@ -239,8 +239,8 @@ class ImageFitter:
         params_to_optimize = [specific_model_params[param] for param in specific_model_params]
 
         # Set requires_grad=True for the parameters to optimize
-        for param in params_to_optimize:
-            param.requires_grad = True
+        # for param in params_to_optimize:
+        #   param.requires_grad = True
 
         # Initialize optimizer for specific parameters
         optimizer = optim.AdamW(
