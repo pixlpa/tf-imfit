@@ -55,7 +55,7 @@ class GaborLayer(nn.Module):
         sigma = (0.5 + 0.5 * torch.tanh(self.rel_sigma.clamp(-5, 5)))
         
         # Safe aspect ratio
-        gamma = 0.5 + 0.5 * torch.sigmoid(self.gamma.clamp(-5, 5))
+        gamma = 0.001 + 0.5 * torch.sigmoid(self.gamma.clamp(-5, 5))
         
         # Add small noise during training (with gradient preservation)
         if self.training:
@@ -77,6 +77,11 @@ class GaborLayer(nn.Module):
             -(x_rot**2 + (gamma[:,None,None] * y_rot)**2) / (2 * sigma[:,None,None]**2),
             min=-80, max=80
         ))
+
+        gauss = torch.exp(torch.clamp(
+            -(x_rot**2)/(2*(sigma[:,None,None]**2)) - (y_rot**2)/(2*(gamma[:,None,None]**2)),
+            min=-80, max=80
+        ))
         
         # Safe sinusoid computation with frequency scaling
         freq = np.float32(2*np.pi) / torch.exp(self.rel_freq)
@@ -88,7 +93,7 @@ class GaborLayer(nn.Module):
         amplitude = 0.2 * torch.tanh(self.amplitude.clamp(-5, 5))
         
         # Combine components safely
-        gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
+        gabors = amplitude[:,:,None,None] * gauss[:, None, :, :] * sinusoid
         if dropout_active and self.training:
             gabors = self.dropout(gabors)
         
