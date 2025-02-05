@@ -81,7 +81,7 @@ class GaborLayer(nn.Module):
         ))
         
         # Safe sinusoid computation with frequency scaling
-        freq = torch.exp(self.rel_freq)  # Positive frequency scaling
+        freq = torch.exp(self.rel_freq) / base_size # Positive frequency scaling
         phase = self.psi*2*np.pi
         sinusoid = torch.cos(2 * np.pi * freq[:,None,None,None] * x_rot[:, None, :, :] + 
                            phase[:, :, None, None])
@@ -114,7 +114,7 @@ class GaborLayer(nn.Module):
 class ImageFitter:
     def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 
                  device='cuda' if torch.cuda.is_available() else 'cpu', init=None,
-                 global_lr=0.03, local_lr=0.01):  # Add learning rate parameters
+                 global_lr=0.03, local_lr=0.01, init_size=128):  # Add learning rate parameters
         image = Image.open(image_path).convert('RGB')
         
         # Resize image if target_size is specified
@@ -158,7 +158,7 @@ class ImageFitter:
         self.grid_y = y.to(device)
         
         # Initialize model with improved training setup
-        self.model = GaborLayer(num_gabors).to(device)
+        self.model = GaborLayer(num_gabors, init_size).to(device)
         # Initialize model parameters if provided
         if init:
             self.init_parameters(init)
@@ -445,6 +445,8 @@ def main():
                        help='Number of training iterations')
     parser.add_argument('--init', type=str, default=None,
                        help='load initial parameters from file')
+    parser.add_argument('--init-size', type=int, default=128,
+                       help='size of image used for initialization')
     # Add size arguments
     parser.add_argument('--size', type=int, default=None,
                        help='Target size (maintains aspect ratio)')
@@ -484,7 +486,8 @@ def main():
         args.device, 
         args.init,
         global_lr=args.global_lr,
-        local_lr=args.local_lr
+        local_lr=args.local_lr,
+        init_size=args.init_size
     )
     # Set the phase split from arguments
     fitter.phase_split = args.phase_split
