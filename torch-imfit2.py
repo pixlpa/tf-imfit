@@ -112,7 +112,7 @@ class GaborLayer(nn.Module):
 class ImageFitter:
     def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 
                  device='cuda' if torch.cuda.is_available() else 'cpu', init=None,
-                 global_lr=0.03, local_lr=0.01, init_size=128):  # Add learning rate parameters
+                 global_lr=0.03, local_lr=0.01, init_size=128, mutation_strength=0.01):  # Add learning rate parameters
         image = Image.open(image_path).convert('RGB')
         
         # Resize image if target_size is specified
@@ -213,7 +213,7 @@ class ImageFitter:
         
         # Add mutation probability
         self.mutation_prob = 0.001
-        
+        self.mutation_strength = mutation_strength
         # Add phase tracking
         self.optimization_phase = 'global'  # 'global' or 'local'
         self.phase_split = 0.5  # default value, will be updated from args
@@ -236,14 +236,14 @@ class ImageFitter:
                 device = self.model.u.device  # Get the current device
                 
                 # Reset their parameters randomly, ensuring correct device
-                self.model.u.data[idx] = (torch.rand(num_mutate, device=device) * 2 - 1)
-                self.model.v.data[idx] = (torch.rand(num_mutate, device=device) * 2 - 1)
-                self.model.theta.data[idx] = (torch.rand(num_mutate, device=device))
-                self.model.rel_sigma.data[idx] = (torch.randn(num_mutate, device=device) * 2 - 1)
-                self.model.rel_freq.data[idx] = (torch.randn(num_mutate, device=device) * 2)
-                self.model.psi.data[idx] = (torch.randn(num_mutate, 3, device=device))
-                self.model.gamma.data[idx] = (torch.randn(num_mutate, device=device) * 0.5)
-                self.model.amplitude.data[idx] = (torch.randn(num_mutate, 3, device=device) * 0.1)
+                self.model.u.data[idx] = self.model.u.data[idx] + (torch.rand(num_mutate, device=device) * 2 - 1) * self.mutation_strength
+                self.model.v.data[idx] = self.model.v.data[idx] + (torch.rand(num_mutate, device=device) * 2 - 1) * self.mutation_strength
+                self.model.theta.data[idx] = self.model.theta.data[idx] + (torch.rand(num_mutate, device=device)* 2 - 1) * self.mutation_strength
+                self.model.rel_sigma.data[idx] = self.model.rel_sigma.data[idx] + (torch.randn(num_mutate, device=device) * 2 - 1) * self.mutation_strength
+                self.model.rel_freq.data[idx] = self.model.rel_freq.data[idx] +  (torch.randn(num_mutate, device=device) * 2 - 1) * self.mutation_strength
+                self.model.psi.data[idx] = self.model.psi.data[idx] + (torch.randn(num_mutate, 3, device=device) * 2 - 1) * self.mutation_strength
+                self.model.gamma.data[idx] = self.model.gamma.data[idx] + (torch.randn(num_mutate, device=device) * 2 - 1) * self.mutation_strength
+                self.model.amplitude.data[idx] = self.model.amplitude.data[idx] + (torch.randn(num_mutate, 3, device=device) * 2 - 1) * self.mutation_strength
 
     def update_temperature(self, iteration, max_iterations):
         """Update temperature for simulated annealing"""
@@ -464,6 +464,8 @@ def main():
                        help='Learning rate for global phase')
     parser.add_argument('--local-lr', type=float, default=0.01,
                        help='Learning rate for local phase')
+    parser.add_argument('--mutation-strength', type=float, default=0.01,
+                       help='Mutation strength')
     args = parser.parse_args()
 
     # Create output directory if it doesn't exist
@@ -486,7 +488,8 @@ def main():
         args.init,
         global_lr=args.global_lr,
         local_lr=args.local_lr,
-        init_size=args.init_size
+        init_size=args.init_size,
+        mutation_strength=args.mutation_strength
     )
     # Set the phase split from arguments
     fitter.phase_split = args.phase_split
