@@ -617,8 +617,8 @@ def main():
     # Training loop
     print(f"Training on {args.device}...")
     quat = int(args.num_gabors/4)
+    accum_filters = 0
     with tqdm(total=args.iterations) as pbar:
-        accum_filters = 0
         print("Pre-rolling")
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)
@@ -637,7 +637,7 @@ def main():
             fitter.single_optimize(nf,args.single_iterations,fitter.target)
             if n % 8 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'singles_{nf:04d}.png'))
-            accum_filters = n
+        accum_filters += quat
         print("Optimizing all filters together")
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)
@@ -688,7 +688,6 @@ def main():
             fitter.single_optimize(nf,args.single_iterations,fitter.target)
             if n % 8 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'singles_{nf:04d}.png'))
-        accum_filters += quat
         print("Finalizing")
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)
