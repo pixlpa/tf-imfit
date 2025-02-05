@@ -271,9 +271,6 @@ class ImageFitter:
             loss.backward()
             optimizer.step()
 
-            # Print loss for monitoring
-            print(f"Model {model_index} - Iteration {iteration}/{iterations}, Loss: {loss.item():.6f}")
-
         # Update the model parameters with the optimized values
         with torch.no_grad():
             self.model.u[model_index] = specific_model_params['u']
@@ -285,7 +282,7 @@ class ImageFitter:
             self.model.gamma[model_index] = specific_model_params['gamma']
             self.model.amplitude[model_index] = specific_model_params['amplitude']
 
-        print(f"Optimization for model {model_index} completed.")
+        print(f"Optimization for model {model_index} completed. Loss: {loss.item():.6f}")
 
     def init_parameters(self, init):
         """Initialize parameters from a saved model"""
