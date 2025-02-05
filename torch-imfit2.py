@@ -556,6 +556,11 @@ def main():
     # Training loop
     print(f"Training on {args.device}...")
     with tqdm(total=args.iterations) as pbar:
+        print("Optimizing each filter individually")
+        for n in range(args.num_gabors):
+            fitter.single_optimize(n,args.single_iterations,fitter.target)
+            fitter.save_image(os.path.join(args.output_dir, f'singles_{n:04d}.png'))
+        print("Optimizing all filters together")
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)
             
@@ -567,15 +572,6 @@ def main():
             # Save intermediate results
             if i % 50 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'result_{i:04d}.png'))
-        print("Optimizing each filter individually")
-        for n in range(args.num_gabors):
-            fitter.single_optimize(n,args.single_iterations,fitter.target)
-            fitter.save_image(os.path.join(args.output_dir, f'singles_{i:04d}.png'))
-        print("Optimizing all filters together")
-        for i in range(10):
-            loss = fitter.train_step(i, args.iterations)
-            print(f"Loss: {loss:.6f}")
-            fitter.save_image(os.path.join(args.output_dir, f'finals_{i:04d}.png'))
     # Save final result
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)
