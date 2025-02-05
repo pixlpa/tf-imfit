@@ -217,6 +217,69 @@ class ImageFitter:
         # Add phase tracking
         self.optimization_phase = 'global'  # 'global' or 'local'
         self.phase_split = 0.5  # default value, will be updated from args
+    
+    def single_optimize(self, model_index, iterations, target_image):
+        # Convert target image to tensor and normalize
+        target_image_tensor = torch.tensor(target_image, device=self.target.device).unsqueeze(0)  # Add batch dimension
+        target_image_tensor = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])(target_image_tensor)
+
+        # Extract the specific model parameters to optimize
+        specific_model_params = {
+            'u': self.model.u[model_index],
+            'v': self.model.v[model_index],
+            'theta': self.model.theta[model_index],
+            'rel_sigma': self.model.rel_sigma[model_index],
+            'rel_freq': self.model.rel_freq[model_index],
+            'psi': self.model.psi[model_index],
+            'gamma': self.model.gamma[model_index],
+            'amplitude': self.model.amplitude[model_index]
+        }
+        
+        # Create a list of parameters to optimize
+        params_to_optimize = [specific_model_params[param] for param in specific_model_params]
+
+        # Set requires_grad=True for the parameters to optimize
+        for param in params_to_optimize:
+            param.requires_grad = True
+
+        # Initialize optimizer for specific parameters
+        optimizer = optim.AdamW(
+            params_to_optimize,
+            lr=0.001,
+            weight_decay=1e-4,
+            betas=(0.9, 0.999)
+        )
+        
+        for iteration in range(iterations):
+            # Zero gradients
+            optimizer.zero_grad()
+
+            # Forward pass for the specific model
+            output = self.model(self.grid_x, self.grid_y)  # Assuming the model uses the full grid
+
+            # Calculate loss against the target image
+            loss = self.mse_criterion(output, target_image_tensor)
+
+            # Backward pass and optimize
+            loss.backward()
+            optimizer.step()
+
+            # Print loss for monitoring
+            if iteration % 100 == 0:
+                print(f"Model {model_index} - Iteration {iteration}/{iterations}, Loss: {loss.item():.6f}")
+
+        # Update the model parameters with the optimized values
+        with torch.no_grad():
+            self.model.u[model_index] = specific_model_params['u']
+            self.model.v[model_index] = specific_model_params['v']
+            self.model.theta[model_index] = specific_model_params['theta']
+            self.model.rel_sigma[model_index] = specific_model_params['rel_sigma']
+            self.model.rel_freq[model_index] = specific_model_params['rel_freq']
+            self.model.psi[model_index] = specific_model_params['psi']
+            self.model.gamma[model_index] = specific_model_params['gamma']
+            self.model.amplitude[model_index] = specific_model_params['amplitude']
+
+        print(f"Optimization for model {model_index} completed.")
 
     def init_parameters(self, init):
         """Initialize parameters from a saved model"""
@@ -294,10 +357,7 @@ class ImageFitter:
         
         # Backward pass and optimize
         loss.backward()
-        self.optimizer.step()
-        
-        # Enforce parameter ranges after optimization step
-        # self.model.enforce_parameter_ranges()
+        self.optimizer.step())
         
         # Update learning rate
         self.scheduler.step(loss)
@@ -442,6 +502,8 @@ def main():
                        help='Number of Gabor functions to fit')
     parser.add_argument('--iterations', type=int, default=1000,
                        help='Number of training iterations')
+    parser.add_argument('--single-iterations', type=int, default=100,
+                       help='Number of training iterations')
     parser.add_argument('--init', type=str, default=None,
                        help='load initial parameters from file')
     parser.add_argument('--init-size', type=int, default=128,
@@ -509,6 +571,15 @@ def main():
             # Save intermediate results
             if i % 50 == 0:
                 fitter.save_image(os.path.join(args.output_dir, f'result_{i:04d}.png'))
+        print("Optimizing each filter individually")
+        for n in range(args.num_gabors):
+            fitter.single_optimize(n,args.single_iterations,fitter.target)
+            fitter.save_image(os.path.join(args.output_dir, f'singles_{i:04d}.png'))
+        print("Optimizing all filters together")
+        for i in range(10):
+            loss = fitter.train_step(i, args.iterations)
+            print(f"Loss: {loss:.6f}")
+            fitter.save_image(os.path.join(args.output_dir, f'finals_{i:04d}.png'))
     # Save final result
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)
