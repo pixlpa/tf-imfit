@@ -241,7 +241,7 @@ class ImageFitter:
         # Initialize optimizer for specific parameters
         optimizer = optim.AdamW(
             params_to_optimize,
-            lr=0.004,
+            lr=0.01,
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
@@ -264,9 +264,9 @@ class ImageFitter:
             # Forward pass for the specific model
             output = self.model(self.grid_x, self.grid_y)
 
-            # Calculate loss against the target image
-            loss = self.mse_criterion(output, target_image_tensor)
-
+            # Calculate loss against the target image with weights
+            weighted_diff = (output - target_image_tensor) ** 2 * self.weights
+            loss = weighted_diff.mean()  # or .sum() depending on your preference
             # Backward pass and optimize
             loss.backward()
             optimizer.step()
