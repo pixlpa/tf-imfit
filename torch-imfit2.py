@@ -29,17 +29,15 @@ class GaborLayer(nn.Module):
         self.dropout = nn.Dropout(p=0.01)
 
     def load_state_dict(self, state_dict, strict=True):
-        """Override to enforce parameter ranges when loading"""
-        # Clamp parameters to valid ranges before loading
         with torch.no_grad():
-            state_dict['u'].clamp_(-1, 1)
-            state_dict['v'].clamp_(-1, 1)
-            state_dict['theta'].clamp_(0, 1)
-            state_dict['rel_sigma'].clamp_(-3, 3)
+            state_dict['u']
+            state_dict['v']
+            state_dict['theta']
+            state_dict['rel_sigma']
             state_dict['rel_freq']
-            state_dict['psi'].clamp_(0, 2)
-            state_dict['gamma'].clamp_(-2, 2)
-            state_dict['amplitude'].clamp_(0,2)
+            state_dict['psi']
+            state_dict['gamma']
+            state_dict['amplitude']
         
         return super().load_state_dict(state_dict, strict)
 
@@ -81,9 +79,9 @@ class GaborLayer(nn.Module):
         ))
         
         # Safe sinusoid computation with frequency scaling
-        freq = torch.exp(self.rel_freq) # Positive frequency scaling
+        freq = np.float32(2*np.pi) / torch.exp(self.rel_freq)
         phase = self.psi*2*np.pi
-        sinusoid = torch.cos(2 * np.pi * freq[:,None,None,None] * x_rot[:, None, :, :] + 
+        sinusoid = torch.cos(freq[:,None,None,None] * x_rot[:, None, :, :] + 
                            phase[:, :, None, None] * np.pi)
         
         # Safe amplitude scaling
@@ -104,7 +102,7 @@ class GaborLayer(nn.Module):
         with torch.no_grad():
             self.u.clamp_(-1, 1)
             self.v.clamp_(-1, 1)
-            self.theta.clamp_(0, 1)
+            self.theta.clamp_(0, 2)
             self.rel_sigma.clamp_(-3, 3)
             self.rel_freq
             self.psi.clamp_(-1, 1)
