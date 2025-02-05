@@ -250,6 +250,28 @@ class ImageFitter:
             # Zero gradients
             optimizer.zero_grad()
 
+            # Assuming specific_model_params is a dictionary of batched tensors
+            rel_sigma = specific_model_params['rel_sigma']
+            rel_freq = specific_model_params['rel_freq']
+            gamma = specific_model_params['gamma']
+
+            # Vectorized pairwise constraints
+            pairwise_constraints = torch.stack([
+                rel_sigma - rel_freq / 32,
+                rel_freq / 2 - rel_sigma,
+                rel_sigma - rel_freq,
+                8 * rel_sigma - gamma
+            ], dim=2)  # Stack along the last dimension
+
+            # Calculate the squared constraints using ReLU
+            con_sqr = torch.relu(pairwise_constraints) ** 2
+
+            # Sum across the last dimension (k)
+            con_losses = torch.sum(con_sqr, dim=2)
+
+            # Sum across the mini-batch (n)
+            con_loss_per_fit = torch.sum(con_losses, dim=1)
+
             # Temporarily set the model parameters to the optimized values
             with torch.no_grad():
                 self.model.u[model_index] = specific_model_params['u']
@@ -263,11 +285,14 @@ class ImageFitter:
 
             # Forward pass for the specific model
             output = self.model(self.grid_x, self.grid_y)
-
-            # Calculate loss against the target image with weights
             weighted_diff = (output - target_image_tensor) ** 2 * self.weights
-            loss = weighted_diff.mean()  # or .sum() depending on your preference
-            # Backward pass and optimize
+            err_loss_per_fit = weighted_diff.mean()
+
+            # scalars
+            err_loss = err_loss_per_fit.mean()  # Use PyTorch's mean
+            con_loss = con_loss_per_fit.mean()  # Use PyTorch's mean
+            loss = err_loss + con_loss
+             # Backward pass and optimize
             loss.backward()
             optimizer.step()
 
