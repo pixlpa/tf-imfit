@@ -619,6 +619,18 @@ def main():
     quat = int(args.num_gabors/4)
     with tqdm(total=args.iterations) as pbar:
         accum_filters = 0
+        print("Pre-rolling")
+        for i in range(args.iterations):
+            loss = fitter.train_step(i, args.iterations)
+            
+            if i % 10 == 0:
+                temp = fitter.current_temp
+                pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                pbar.update(10)
+            
+            # Save intermediate results
+            if i % 50 == 0:
+                fitter.save_image(os.path.join(args.output_dir, f'preroll_{i:04d}.png'))
         print("Optimizing each filter individually")
         for n in range(quat):
             fitter.single_optimize(n,args.single_iterations,fitter.target)
