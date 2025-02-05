@@ -357,7 +357,7 @@ class ImageFitter:
         
         # Backward pass and optimize
         loss.backward()
-        self.optimizer.step())
+        self.optimizer.step()
         
         # Update learning rate
         self.scheduler.step(loss)
