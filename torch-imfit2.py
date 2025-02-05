@@ -106,7 +106,7 @@ class GaborLayer(nn.Module):
             self.rel_sigma.clamp_(-3, 3)
             self.rel_freq
             self.psi.clamp_(-1, 1)
-            self.gamma.clamp_(-2, 2)
+            self.gamma.clamp_(-3, 3)
             self.amplitude.clamp_(-0.5, 0.5)
 
 class ImageFitter:
@@ -363,10 +363,8 @@ class ImageFitter:
     def get_current_image(self, use_best=True):
         """Get current image with parameter state logging"""
         with torch.no_grad():
-            # Print key parameter stats
-            print("\nCurrent parameter state:")
+            # Print key parameter stats           
             for name, param in self.model.named_parameters():
-                print(f"{name}: range [{param.min():.3f}, {param.max():.3f}]")
             
             if use_best and self.best_state is not None:
                 # Use the best model state for final output
