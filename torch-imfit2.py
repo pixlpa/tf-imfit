@@ -261,8 +261,7 @@ class ImageFitter:
             optimizer.step()
 
             # Print loss for monitoring
-            if iteration % 100 == 0:
-                print(f"Model {model_index} - Iteration {iteration}/{iterations}, Loss: {loss.item():.6f}")
+            print(f"Model {model_index} - Iteration {iteration}/{iterations}, Loss: {loss.item():.6f}")
 
         # Update the model parameters with the optimized values
         with torch.no_grad():
