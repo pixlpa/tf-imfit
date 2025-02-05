@@ -271,6 +271,7 @@ class ImageFitter:
     def train_step(self, iteration, max_iterations):
         # Update temperature
         self.update_temperature(iteration, max_iterations)
+        self.mutate_parameters()
         
         # Switch to local phase at the specified split point
         if iteration == int(max_iterations * self.phase_split):
@@ -296,7 +297,7 @@ class ImageFitter:
         self.optimizer.step()
         
         # Enforce parameter ranges after optimization step
-        self.model.enforce_parameter_ranges()
+        # self.model.enforce_parameter_ranges()
         
         # Update learning rate
         self.scheduler.step(loss)
