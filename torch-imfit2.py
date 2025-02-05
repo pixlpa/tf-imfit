@@ -245,7 +245,8 @@ class ImageFitter:
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
-        
+        loss_per_fit = float('inf')
+
         for iteration in range(iterations):
             # Zero gradients
             optimizer.zero_grad()
@@ -292,6 +293,7 @@ class ImageFitter:
             err_loss = err_loss_per_fit.mean()  # Use PyTorch's mean
             con_loss = con_loss_per_fit.mean()  # Use PyTorch's mean
             loss = err_loss + con_loss
+            loss_per_fit = loss.item()
              # Backward pass and optimize
             loss.backward()
             optimizer.step()
@@ -307,7 +309,8 @@ class ImageFitter:
             self.model.gamma[model_index] = specific_model_params['gamma']
             self.model.amplitude[model_index] = specific_model_params['amplitude']
 
-        print(f"Optimization for model {model_index} completed. Loss: {loss.item():.6f}")
+        print(f"Optimization for model {model_index} completed. Loss: {loss_per_fit:.6f}")
+        return loss_per_fit
 
     def init_parameters(self, init):
         """Initialize parameters from a saved model"""
