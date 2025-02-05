@@ -240,12 +240,12 @@ class ImageFitter:
                 # Reset their parameters randomly, ensuring correct device
                 self.model.u.data[idx] = (torch.rand(num_mutate, device=device) * 2 - 1)
                 self.model.v.data[idx] = (torch.rand(num_mutate, device=device) * 2 - 1)
-                self.model.theta.data[idx] = (torch.rand(num_mutate, device=device) * np.pi)
-                self.model.rel_sigma.data[idx] = (torch.randn(num_mutate, device=device) * 0.7 - 1.0)
-                self.model.rel_freq.data[idx] = (torch.randn(num_mutate, device=device) * 0.7)
-                self.model.psi.data[idx] = (torch.randn(num_mutate, 3, device=device) * 2 * np.pi)
-                self.model.gamma.data[idx] = (torch.randn(num_mutate, device=device) * 0.2)
-                self.model.amplitude.data[idx] = (torch.randn(num_mutate, 3, device=device) * 0.05)
+                self.model.theta.data[idx] = (torch.rand(num_mutate, device=device))
+                self.model.rel_sigma.data[idx] = (torch.randn(num_mutate, device=device) * 2 - 1)
+                self.model.rel_freq.data[idx] = (torch.randn(num_mutate, device=device) * 2)
+                self.model.psi.data[idx] = (torch.randn(num_mutate, 3, device=device))
+                self.model.gamma.data[idx] = (torch.randn(num_mutate, device=device) * 0.5)
+                self.model.amplitude.data[idx] = (torch.randn(num_mutate, 3, device=device) * 0.1)
 
     def update_temperature(self, iteration, max_iterations):
         """Update temperature for simulated annealing"""
@@ -400,6 +400,22 @@ class ImageFitter:
         torch.save(state_dict, path)
         print(f"Saved model to {path}")
 
+    def save_weights(self, path):
+        with torch.no_grad():
+            params = {
+                    'u': self.model.u.cpu().tolist(),
+                    'v': self.model.v.cpu().tolist(),
+                    'theta': self.model.theta.cpu().tolist(),
+                    'rel_sigma': self.model.rel_sigma.cpu().tolist(),
+                    'rel_freq': self.model.rel_freq.cpu().tolist(),
+                    'psi': self.model.psi.cpu().tolist(),
+                    'gamma': self.model.gamma.cpu().tolist(),
+                    'amplitude': self.model.amplitude.cpu().tolist()
+                }
+            par = np.array([params['u'], params['v'], params['theta'], params['rel_sigma'], params['rel_freq'], params['psi'].flatten(), params['gamma'], params['amplitude'].flatten()])
+            flat = par.transpose()
+            np.savetxt(path, flat)
+
     def load_model(self, path):
         """Load the model state with parameter verification"""
         state_dict = torch.load(path)  
@@ -489,6 +505,7 @@ def main():
         os.makedirs(args.output_dir, exist_ok=True)
         fitter.save_image(os.path.join(args.output_dir, 'final_result.png'))
         fitter.save_model(os.path.join(args.output_dir, 'saved_model.pth'))
+        fitter.save_weights(os.path.join(args.output_dir, 'weights.txt'))
         fitter.save_parameters_to_text(os.path.join(args.output_dir, 'parameters.txt'))
 
 if __name__ == '__main__':
