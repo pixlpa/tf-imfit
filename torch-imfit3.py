@@ -288,7 +288,7 @@ class ImageFitter:
             con_losses = torch.mean(con_sqr, dim=2)
 
             # Sum across the mini-batch (n)
-            con_loss_per_fit = torch.mean(con_losses, dim=1)
+            con_loss_per_fit = torch.mean(con_losses, dim=1)/100
 
             # Temporarily set the model parameters to the optimized values
             with torch.no_grad():
