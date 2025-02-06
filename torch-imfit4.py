@@ -571,10 +571,6 @@ def main():
     elif args.width is not None and args.height is not None:
         target_size = (args.width, args.height)
     init_gabors = args.num_gabors
-    if args.init:
-        init_gabors = args.num_gabors
-    else:
-        init_gabors = 1
 
     # Initialize fitter with target size and learning rates
     fitter = ImageFitter(
