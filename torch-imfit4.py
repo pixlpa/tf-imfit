@@ -15,9 +15,9 @@ GABOR_MIN ={
     'u': 0,
     'v': 0,
     'theta': 0,
-    'rel_sigma': 1e-5,
+    'rel_sigma': 0.002,
     'rel_freq': 1e-5,
-    'gamma': 1e-5,
+    'gamma': 0.1,
     'psi': -3,
     'amplitude': 0.00
 }
@@ -26,9 +26,9 @@ GABOR_MAX ={
     'u': 1,
     'v': 1,
     'theta': 2,
-    'rel_sigma': 2,
+    'rel_sigma': 0.7,
     'rel_freq': 5,
-    'gamma': 1,
+    'gamma': 0.15,
     'psi': 3,
     'amplitude': 0.2
 }
