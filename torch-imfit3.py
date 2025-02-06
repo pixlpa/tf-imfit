@@ -225,7 +225,7 @@ class ImageFitter:
         self.model.psi = nn.Parameter(torch.cat((self.model.psi, new_gabor.psi)))
         self.model.amplitude = nn.Parameter(torch.cat((self.model.amplitude, new_gabor.amplitude)))
         self.update_optimizer()
-        
+
     def single_optimize(self, model_index, iterations, target_image):
         # Convert target image to tensor and normalize
         target_image_tensor = target_image.clone().detach().to(self.target.device)  # No unsqueeze
@@ -367,36 +367,16 @@ class ImageFitter:
         return con_loss
     
     def global_optimize(self, iterations):
-        self.mutate_parameters()
-        self.optimizer.zero_grad()
+        loss = None
         for i in range(iterations):
-            loss = self.train_step(i, iterations)
-            
-
-    def train_step(self, iteration, max_iterations):
-        # Update temperature
-        self.update_temperature(iteration, max_iterations)
-        self.mutate_parameters()
-        
-        # Zero gradients
-        self.optimizer.zero_grad()
-        
-        # Forward pass
-        output = self.model(
-            self.grid_x, 
-            self.grid_y, 
-            temperature=self.current_temp,
-            dropout_active=(iteration < max_iterations * 0.8)
-        )
-        # Calculate loss
-        loss = self.weighted_loss(output, self.target, self.weights) # + self.constraint_loss(self.model)
-        
-        # Backward pass and optimize
-        loss.backward()
-        self.optimizer.step()        
-        # Update learning rate
-        self.scheduler.step(loss)
-        
+            self.mutate_parameters()
+            self.optimizer.zero_grad()
+            output = self.model(self.grid_x, self.grid_y)
+            loss = self.weighted_loss(output, self.target, self.weights) # + self.constraint_loss(self.model)
+            loss.backward()
+            self.optimizer.step()
+            self.scheduler.step(loss)
+            print(f"Global Optimization {i} of {iterations} completed. Loss: {loss.item():.6f}")
         return loss.item()
 
     def get_current_image(self, use_best=True):
@@ -567,28 +547,17 @@ def main():
                 progress+=1
                 if i % 64 == 0:
                     print("Full Optimization")
-                    for i in range(args.iterations):
-                        loss = fitter.train_step(i, args.iterations)    
-                        if i % 10 == 0:
-                            temp = fitter.current_temp
-                            pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
-                            pbar.update(10)
-                        if i % 50 == 0 or i == args.iterations - 1:
-                                fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
-                                progress+=1
+                    loss = fitter.global_optimize(args.global_iterations)
+                    fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
+                    progress+=1
+            loss = fitter.global_optimize(args.global_iterations)
+            fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
+            progress+=1
         else:
             print("Optimizing full model")
-            for i in range(args.iterations):
-                loss = fitter.train_step(i, args.iterations)
-                if i % 10 == 0:
-                    temp = fitter.current_temp
-                    pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
-                    pbar.update(10)
-            
-                # Save intermediate results
-                if i % 50 == 0 or i == args.iterations - 1:
-                    fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
-                    progress+=1
+            loss = fitter.global_optimize(args.global_iterations)
+            fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
+            progress+=1
         
     # Save final result
     if args.output_dir:
