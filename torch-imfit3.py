@@ -610,7 +610,7 @@ def main():
                     fitter.add_gabor()  # Add a new Gabor filter
                 loss = fitter.single_optimize(i,args.single_iterations,fitter.target)  # Optimize the newly added filter
                 fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
-                progress++
+                progress+=1
                 if i % 64 == 0:
                     print("Full Optimization")
                     for i in range(args.iterations):
@@ -621,7 +621,7 @@ def main():
                             pbar.update(10)
                         if i % 50 == 0 or i == args.iterations - 1:
                                 fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
-                                progress++
+                                progress+=1
         else:
             print("Optimizing full model")
             for i in range(args.iterations):
@@ -634,7 +634,7 @@ def main():
                 # Save intermediate results
                 if i % 50 == 0 or i == args.iterations - 1:
                     fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
-                    progress++
+                    progress+=1
         
     # Save final result
     if args.output_dir:
