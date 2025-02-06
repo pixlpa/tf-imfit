@@ -602,35 +602,39 @@ def main():
     quat = int(args.num_gabors/4)
     accum_filters = 0
     with tqdm(total=args.iterations) as pbar:
+        progress = 0
         if not args.init:
             print("Building up model")
             for i in range(args.num_gabors):
                 if (i > 0):
                     fitter.add_gabor()  # Add a new Gabor filter
                 loss = fitter.single_optimize(i,args.single_iterations,fitter.target)  # Optimize the newly added filter
-                fitter.save_image(os.path.join(args.output_dir, f'buildup_{i:04d}.png'))
+                fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
+                progress++
                 if i % 64 == 0:
                     print("Full Optimization")
                     for i in range(args.iterations):
-                        loss = fitter.train_step(i, args.iterations)
-                        
-                    if i % 10 == 0:
-                        temp = fitter.current_temp
-                        pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
-                        pbar.update(10)
+                        loss = fitter.train_step(i, args.iterations)    
+                        if i % 10 == 0:
+                            temp = fitter.current_temp
+                            pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                            pbar.update(10)
+                        if i % 50 == 0 or i == args.iterations - 1:
+                                fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
+                                progress++
         else:
-            print("Optimizing model")
+            print("Optimizing full model")
             for i in range(args.iterations):
                 loss = fitter.train_step(i, args.iterations)
-                
-            if i % 10 == 0:
-                temp = fitter.current_temp
-                pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
-                pbar.update(10)
+                if i % 10 == 0:
+                    temp = fitter.current_temp
+                    pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                    pbar.update(10)
             
-            # Save intermediate results
-            if i % 50 == 0:
-                fitter.save_image(os.path.join(args.output_dir, f'preroll_{i:04d}.png'))
+                # Save intermediate results
+                if i % 50 == 0 or i == args.iterations - 1:
+                    fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
+                    progress++
         
     # Save final result
     if args.output_dir:
