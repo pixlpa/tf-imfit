@@ -256,11 +256,18 @@ class ImageFitter:
         # Initialize optimizer for specific parameters
         optimizer = optim.AdamW(
             params_to_optimize,
-            lr=0.01,
+            lr=0.03,
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
-        loss_per_fit = 0
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode='min',
+            factor=0.5,
+            patience=30,
+            verbose=True,
+            min_lr=1e-6
+        )
 
         for iteration in range(iterations):
             # Zero gradients
@@ -285,6 +292,7 @@ class ImageFitter:
              # Backward pass and optimize
             loss.backward()
             optimizer.step()
+            scheduler.step(loss)
 
         # Update the model parameters with the optimized values
         with torch.no_grad():
@@ -297,8 +305,8 @@ class ImageFitter:
             self.model.gamma[model_index] = specific_model_params['gamma']
             self.model.amplitude[model_index] = specific_model_params['amplitude']
 
-        print(f"Optimization for model {model_index} completed. Loss: {loss_per_fit:.6f}")
-        return loss_per_fit
+        print(f"Optimization for model {model_index} completed. Loss: {loss.item():.6f}")
+        return loss.item()
 
     def init_parameters(self, init):
         """Initialize parameters from a saved model"""
@@ -579,12 +587,17 @@ def main():
         target_size = args.size
     elif args.width is not None and args.height is not None:
         target_size = (args.width, args.height)
+    init_gabors = args.num_gabors
+    if args.init:
+        init_gabors = args.num_gabors
+    else:
+        init_gabors = 1
 
     # Initialize fitter with target size and learning rates
     fitter = ImageFitter(
         args.image, 
         args.weight, 
-        args.num_gabors, 
+        init_gabors, 
         target_size, 
         args.device, 
         args.init,
