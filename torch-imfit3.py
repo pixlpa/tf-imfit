@@ -266,28 +266,6 @@ class ImageFitter:
             # Zero gradients
             optimizer.zero_grad()
 
-            # Assuming specific_model_params is a dictionary of batched tensors
-            rel_sigma = specific_model_params['rel_sigma'].unsqueeze(0)  # Add a dimension if necessary
-            rel_freq = specific_model_params['rel_freq'].unsqueeze(0)    # Add a dimension if necessary
-            gamma = specific_model_params['gamma'].unsqueeze(0)          # Add a dimension if necessary
-
-            # Vectorized pairwise constraints
-            pairwise_constraints = torch.stack([
-                (rel_sigma - rel_freq / 8).unsqueeze(0),
-                (rel_freq / 2 - rel_sigma).unsqueeze(0),
-                (rel_sigma - rel_freq).unsqueeze(0),
-                (8 * rel_sigma - gamma).unsqueeze(0)
-            ], dim=2)  # Stack along the last dimension
-
-            # Calculate the squared constraints using ReLU
-            con_sqr = torch.relu(pairwise_constraints) ** 2
-
-            # Sum across the last dimension (k)
-            con_losses = torch.mean(con_sqr, dim=2)
-
-            # Sum across the mini-batch (n)
-            con_loss_per_fit = torch.mean(con_losses, dim=1)/100
-
             # Temporarily set the model parameters to the optimized values
             with torch.no_grad():
                 self.model.u[model_index] = specific_model_params['u']
@@ -302,13 +280,8 @@ class ImageFitter:
             # Forward pass for the specific model
             output = self.model(self.grid_x, self.grid_y)
             weighted_diff = (output - target_image_tensor) ** 2 * self.weights
-            err_loss_per_fit = weighted_diff.mean()
+            loss = weighted_diff.mean()
 
-            # scalars
-            err_loss = err_loss_per_fit.mean()  # Use PyTorch's mean
-            con_loss = con_loss_per_fit.mean()  # Use PyTorch's mean
-            loss = err_loss + con_loss
-            loss_per_fit = loss.item()
              # Backward pass and optimize
             loss.backward()
             optimizer.step()
