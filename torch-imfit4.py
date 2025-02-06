@@ -106,6 +106,7 @@ class GaborLayer(nn.Module):
         # Combine components safely
         gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
         result = torch.sum(gabors, dim=0)
+        result = result.unsqueeze(0)
         result = self.batch_norm(result)  # Apply batch normalization
         result = torch.clamp(result, -1, 1)  # Clamp to normalized range       
         return result
@@ -139,7 +140,7 @@ class ImageFitter:
         ])
         self.target = transform(image).to(device)
         h, w = self.target.shape[-2:]
-        
+
        #load weights if provided
         if weight_path:
             weight_img = Image.open(weight_path).convert('L')  # Convert to grayscale
