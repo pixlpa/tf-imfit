@@ -260,14 +260,6 @@ class ImageFitter:
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer,
-            mode='min',
-            factor=0.5,
-            patience=30,
-            verbose=True,
-            min_lr=1e-6
-        )
 
         for iteration in range(iterations):
             # Zero gradients
@@ -292,7 +284,6 @@ class ImageFitter:
              # Backward pass and optimize
             loss.backward()
             optimizer.step()
-            scheduler.step(loss)
 
         # Update the model parameters with the optimized values
         with torch.no_grad():
@@ -380,7 +371,7 @@ class ImageFitter:
 
         # Sum across the mini-batch (n)
         con_loss_per_fit = torch.mean(con_losses, dim=1)
-        con_loss = con_loss_per_fit.mean() / 1000  # Use PyTorch's mean
+        con_loss = con_loss_per_fit.mean() / 100  # Use PyTorch's mean
         return con_loss
 
     def train_step(self, iteration, max_iterations):
