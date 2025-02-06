@@ -93,7 +93,7 @@ class GaborLayer(nn.Module):
         amplitude = 0.2 * torch.tanh(self.amplitude.clamp(0, 2))
         
         # Combine components safely
-        gabors = amplitude[:,:,None,None] * gauss[:, None, :, :] * sinusoid
+        gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
         if dropout_active and self.training:
             gabors = self.dropout(gabors)
         
