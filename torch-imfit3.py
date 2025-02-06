@@ -173,6 +173,13 @@ class ImageFitter:
             betas=(0.9, 0.999)
         )
         
+        self.local_optimizer = optim.AdamW(
+            self.model.parameters(),
+            lr=local_lr,
+            weight_decay=1e-5,
+            betas=(0.9, 0.999)
+        )
+        
         self.optimizer = self.global_optimizer  # Start with global optimizer
         
         # Initialize schedulers for both phases
@@ -184,7 +191,16 @@ class ImageFitter:
             verbose=True,
             min_lr=1e-5
         )
-        self.global_lr = global_lr
+        
+        self.local_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.local_optimizer,
+            mode='min',
+            factor=0.5,
+            patience=30,
+            verbose=True,
+            min_lr=1e-6
+        )
+        
         self.scheduler = self.global_scheduler  # Start with global scheduler
         
         # Use a combination of MSE and L1 loss
@@ -201,17 +217,11 @@ class ImageFitter:
         self.current_temp = self.initial_temp
         
         # Add mutation probability
-        self.mutation_prob = 0.005
+        self.mutation_prob = 0.01
         self.mutation_strength = mutation_strength
-
-    def update_optimizer(self):
-        """Update the optimizer to reflect the current model parameters."""
-        self.global_optimizer = optim.AdamW(
-            self.model.parameters(),
-            lr=self.global_lr,
-            weight_decay=1e-4,
-            betas=(0.9, 0.999)
-        )
+        # Add phase tracking
+        self.optimization_phase = 'global'  # 'global' or 'local'
+        self.phase_split = 0.5  # default value, will be updated from args
     
     def add_gabor(self):
         """Add a new Gabor filter to the model."""
@@ -224,7 +234,6 @@ class ImageFitter:
         self.model.gamma = nn.Parameter(torch.cat((self.model.gamma, new_gabor.gamma)))
         self.model.psi = nn.Parameter(torch.cat((self.model.psi, new_gabor.psi)))
         self.model.amplitude = nn.Parameter(torch.cat((self.model.amplitude, new_gabor.amplitude)))
-        self.update_optimizer()
 
     def single_optimize(self, model_index, iterations, target_image):
         # Convert target image to tensor and normalize
@@ -288,7 +297,7 @@ class ImageFitter:
             self.model.gamma[model_index] = specific_model_params['gamma']
             self.model.amplitude[model_index] = specific_model_params['amplitude']
 
-        print(f"Optimization for model {model_index} completed. Loss: {loss.item():.6f}")
+        print(f"Optimization for model {model_index} completed. Loss: {loss_per_fit:.6f}")
         return loss_per_fit
 
     def init_parameters(self, init):
@@ -365,18 +374,38 @@ class ImageFitter:
         con_loss_per_fit = torch.mean(con_losses, dim=1)
         con_loss = con_loss_per_fit.mean() / 1000  # Use PyTorch's mean
         return con_loss
-    
-    def global_optimize(self, iterations):
-        loss = None
-        for i in range(iterations):
-            self.mutate_parameters()
-            self.optimizer.zero_grad()
-            output = self.model(self.grid_x, self.grid_y)
-            loss = self.weighted_loss(output, self.target, self.weights) # + self.constraint_loss(self.model)
-            loss.backward()
-            self.optimizer.step()
-            self.scheduler.step(loss)
-            print(f"Global Optimization {i} of {iterations} completed. Loss: {loss.item():.6f}")
+
+    def train_step(self, iteration, max_iterations):
+        # Update temperature
+        self.update_temperature(iteration, max_iterations)
+        self.mutate_parameters()
+        
+        # Switch to local phase at the specified split point
+        if iteration == int(max_iterations * self.phase_split):
+            self.switch_to_local_phase()
+        
+        # Zero gradients
+        self.optimizer.zero_grad()
+        
+        # Forward pass
+        output = self.model(
+            self.grid_x, 
+            self.grid_y, 
+            temperature=self.current_temp,
+            dropout_active=(iteration < max_iterations * 0.8)
+        )
+        
+        # Calculate loss
+        weights = self.get_phase_specific_weights()
+        loss = self.weighted_loss(output, self.target, weights) + self.constraint_loss(self.model)
+        
+        # Backward pass and optimize
+        loss.backward()
+        self.optimizer.step()
+        
+        # Update learning rate
+        self.scheduler.step(loss)
+        
         return loss.item()
 
     def get_current_image(self, use_best=True):
@@ -422,6 +451,47 @@ class ImageFitter:
                     f.write(f"  Aspect ratio (γ): {params['gamma'][i]:.4f}\n")
                     f.write(f"  Amplitude (RGB): {[f'{a:.4f}' for a in params['amplitude'][i]]}\n")
                     f.write("\n")
+
+    def get_phase_specific_weights(self):
+        """Calculate phase-specific importance weights"""
+        H, W = self.target.shape[-2:]
+        
+        # Create base weights
+        weights = torch.ones((H, W), device=self.target.device)
+        
+        # Add gaussian-weighted center focus
+        y, x = torch.meshgrid(
+            torch.linspace(-1, 1, H, device=self.target.device),
+            torch.linspace(-1, 1, W, device=self.target.device)
+        )
+        r = torch.sqrt(x*x + y*y)
+        gaussian_weight = torch.exp(-r * 2)
+        
+        if self.optimization_phase == 'global':
+            # Global phase: focus more on center
+            weights = weights * (0.5 + 0.5 * gaussian_weight)
+        else:
+            # Local phase: more uniform weights with slight center bias
+            weights = weights * (0.8 + 0.2 * gaussian_weight)
+        
+        # Normalize weights
+        weights = weights / weights.mean()
+        
+        return weights
+
+    def switch_to_local_phase(self):
+        """Switch optimization from global to local phase"""
+        self.optimization_phase = 'local'
+        self.optimizer = self.local_optimizer
+        self.scheduler = self.local_scheduler
+        
+        # Reduce dropout for fine-tuning
+        self.model.dropout.p = 0.0001
+        
+        # Update mutation settings
+        self.mutation_prob = 0.0001
+        
+        print("Switching to local optimization phase...")
 
     def save_model(self, path):
         """Save the model state with parameter info"""
@@ -510,15 +580,11 @@ def main():
     elif args.width is not None and args.height is not None:
         target_size = (args.width, args.height)
 
-    num_gabors = 1
-    if args.init:
-        num_gabors = args.num_gabors
-
     # Initialize fitter with target size and learning rates
     fitter = ImageFitter(
         args.image, 
         args.weight, 
-        num_gabors, 
+        args.num_gabors, 
         target_size, 
         args.device, 
         args.init,
@@ -547,17 +613,28 @@ def main():
                 progress+=1
                 if i % 64 == 0:
                     print("Full Optimization")
-                    loss = fitter.global_optimize(args.iterations)
-                    fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
-                    progress+=1
-            loss = fitter.global_optimize(args.iterations)
-            fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
-            progress+=1
+                    for i in range(args.iterations):
+                        loss = fitter.train_step(i, args.iterations)    
+                        if i % 10 == 0:
+                            temp = fitter.current_temp
+                            pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                            pbar.update(10)
+                        if i % 50 == 0 or i == args.iterations - 1:
+                                fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
+                                progress+=1
         else:
             print("Optimizing full model")
-            loss = fitter.global_optimize(args.iterations)
-            fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
-            progress+=1
+            for i in range(args.iterations):
+                loss = fitter.train_step(i, args.iterations)
+                if i % 10 == 0:
+                    temp = fitter.current_temp
+                    pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                    pbar.update(10)
+            
+                # Save intermediate results
+                if i % 50 == 0 or i == args.iterations - 1:
+                    fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
+                    progress+=1
         
     # Save final result
     if args.output_dir:
