@@ -38,16 +38,18 @@ class GaborLayer(nn.Module):
         super().__init__()
         self.base_scale = base_scale
         
-        self.batch_norm = nn.BatchNorm2d(num_gabors)  # Add batch normalization
+        # Initialize BatchNorm2d with the correct number of channels
+        self.batch_norm = nn.BatchNorm2d(num_gabors)  # This should match the number of output channels
+        
         # Initialize parameters with conservative ranges
-        self.u = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['u'], GABOR_MAX['u']))  # [-0.8, 0.8]
-        self.v = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['v'], GABOR_MAX['v']))  # [-0.8, 0.8]
-        self.theta = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['theta'], GABOR_MAX['theta']))  # [0, 0.8π]
-        self.rel_sigma = nn.Parameter(torch.randn(num_gabors).normal_(GABOR_MIN['rel_sigma'], GABOR_MAX['rel_sigma']))  # smaller variance
-        self.rel_freq = nn.Parameter(torch.randn(num_gabors).normal_(GABOR_MIN['rel_freq'], GABOR_MAX['rel_freq']))   # smaller variance
-        self.gamma = nn.Parameter(torch.zeros(num_gabors).normal_(GABOR_MIN['gamma'], GABOR_MAX['gamma']))  # starts at 0.5 after sigmoid
-        self.psi = nn.Parameter(torch.rand(num_gabors, 3).normal_(GABOR_MIN['psi'], GABOR_MAX['psi']))  # [-π, π]
-        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3).normal_(GABOR_MIN['amplitude'], GABOR_MAX['amplitude']))  # smaller initial amplitudes
+        self.u = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['u'], GABOR_MAX['u']))  
+        self.v = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['v'], GABOR_MAX['v']))  
+        self.theta = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['theta'], GABOR_MAX['theta']))  
+        self.rel_sigma = nn.Parameter(torch.randn(num_gabors).normal_(GABOR_MIN['rel_sigma'], GABOR_MAX['rel_sigma']))  
+        self.rel_freq = nn.Parameter(torch.randn(num_gabors).normal_(GABOR_MIN['rel_freq'], GABOR_MAX['rel_freq']))   
+        self.gamma = nn.Parameter(torch.zeros(num_gabors).normal_(GABOR_MIN['gamma'], GABOR_MAX['gamma']))  
+        self.psi = nn.Parameter(torch.rand(num_gabors, 3).normal_(GABOR_MIN['psi'], GABOR_MAX['psi']))  
+        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3).normal_(GABOR_MIN['amplitude'], GABOR_MAX['amplitude']))  
         
         self.dropout = nn.Dropout(p=0.01)
 
@@ -104,12 +106,16 @@ class GaborLayer(nn.Module):
         amplitude = self.amplitude
         
         # Combine components safely
-        gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
-        result = torch.sum(gabors, dim=0)
-        result = result.unsqueeze(0)
+        gabors = amplitude[:, :, None, None] * gaussian[:, None, :, :] * sinusoid
+        result = torch.sum(gabors, dim=0)  # This should be [num_gabors, height, width]
+        
+        # Ensure result is 4D before batch normalization
+        result = result.unsqueeze(0)  # Add batch dimension, now [1, num_gabors, height, width]
+        
+        # Apply batch normalization
         result = self.batch_norm(result)  # Apply batch normalization
         result = torch.clamp(result, -1, 1)  # Clamp to normalized range       
-        return result.squeeze(0)
+        return result.squeeze(0)  # Remove batch dimension for output
 
     def enforce_parameter_ranges(self):
         """Enforce valid parameter ranges"""
