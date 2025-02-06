@@ -547,15 +547,15 @@ def main():
                 progress+=1
                 if i % 64 == 0:
                     print("Full Optimization")
-                    loss = fitter.global_optimize(args.global_iterations)
+                    loss = fitter.global_optimize(args.iterations)
                     fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
                     progress+=1
-            loss = fitter.global_optimize(args.global_iterations)
+            loss = fitter.global_optimize(args.iterations)
             fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
             progress+=1
         else:
             print("Optimizing full model")
-            loss = fitter.global_optimize(args.global_iterations)
+            loss = fitter.global_optimize(args.iterations)
             fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
             progress+=1
         
