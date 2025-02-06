@@ -109,7 +109,7 @@ class GaborLayer(nn.Module):
         result = result.unsqueeze(0)
         result = self.batch_norm(result)  # Apply batch normalization
         result = torch.clamp(result, -1, 1)  # Clamp to normalized range       
-        return result
+        return result.squeeze(0)
 
     def enforce_parameter_ranges(self):
         """Enforce valid parameter ranges"""
