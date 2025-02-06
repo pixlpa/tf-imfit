@@ -20,7 +20,7 @@ class GaborLayer(nn.Module):
         self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-0.8, 0.8]
         self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-0.8, 0.8]
         self.theta = nn.Parameter(torch.rand(num_gabors) * 2)  # [0, 0.8π]
-        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 0.5)  # smaller variance
+        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 0.1)  # smaller variance
         self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 1)   # smaller variance
         self.gamma = nn.Parameter(torch.zeros(num_gabors)*0.5)  # starts at 0.5 after sigmoid
         self.psi = nn.Parameter(torch.rand(num_gabors, 3))  # [-π, π]
