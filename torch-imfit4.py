@@ -39,7 +39,7 @@ class GaborLayer(nn.Module):
         self.base_scale = base_scale
         
         # Initialize BatchNorm2d with the correct number of channels
-        self.batch_norm = nn.BatchNorm2d(num_gabors)  # This should match the number of output channels
+        #self.batch_norm = nn.BatchNorm2d(num_gabors)  # This should match the number of output channels
         
         # Initialize parameters with conservative ranges
         self.u = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['u'], GABOR_MAX['u']))  
@@ -108,12 +108,12 @@ class GaborLayer(nn.Module):
         result = torch.sum(gabors, dim=0)  # This should be [num_gabors, height, width]
         
         # Ensure result is 4D before batch normalization
-        result = result.unsqueeze(0)  # Add batch dimension, now [1, num_gabors, height, width]
+        #result = result.unsqueeze(0)  # Add batch dimension, now [1, num_gabors, height, width]
         
         # Apply batch normalization
-        result = self.batch_norm(result)  # Apply batch normalization
+        #result = self.batch_norm(result)  # Apply batch normalization
         result = torch.clamp(result, -1, 1)  # Clamp to normalized range       
-        return result.squeeze(0)  # Remove batch dimension for output
+        return result  # Remove batch dimension for output
 
     def enforce_parameter_ranges(self):
         """Enforce valid parameter ranges"""
