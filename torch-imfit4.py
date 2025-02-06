@@ -139,8 +139,7 @@ class ImageFitter:
         ])
         self.target = transform(image).to(device)
         h, w = self.target.shape[-2:]
-        if target_size is not None:
-            w,h = target_size
+        
        #load weights if provided
         if weight_path:
             weight_img = Image.open(weight_path).convert('L')  # Convert to grayscale
