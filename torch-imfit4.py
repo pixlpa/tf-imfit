@@ -15,9 +15,9 @@ GABOR_MIN ={
     'u': -1,
     'v': -1,
     'theta': 0,
-    'rel_sigma': 0.001,
-    'rel_freq': 0.001,
-    'gamma': 0.001,
+    'rel_sigma': 1e-5,
+    'rel_freq': 1e-5,
+    'gamma': 1e-5,
     'psi': -3,
     'amplitude': 0.00
 }
@@ -38,6 +38,7 @@ class GaborLayer(nn.Module):
         super().__init__()
         self.base_scale = base_scale
         
+        self.batch_norm = nn.BatchNorm2d(num_gabors)  # Add batch normalization
         # Initialize parameters with conservative ranges
         self.u = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['u'], GABOR_MAX['u']))  # [-0.8, 0.8]
         self.v = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['v'], GABOR_MAX['v']))  # [-0.8, 0.8]
@@ -71,57 +72,42 @@ class GaborLayer(nn.Module):
         # Safe parameter transformations with gradient preservation
         u = self.u.clamp(-1, 1)
         v = self.v.clamp(-1, 1)
-        theta = self.theta.clamp(0, 1)*2*np.pi
+        theta = self.theta.clamp(0, 2)*2*np.pi
         
         # Ensure positive sigma with safe scaling
         sigma = (0.01 + 0.5 * torch.tanh(self.rel_sigma.clamp(1e-5, 5)))
         
         # Safe aspect ratio
         gamma = 0.001 + self.gamma.clamp(1e-5, 1)
-        
-        # Add small noise during training (with gradient preservation)
-        if self.training:
-            noise = torch.randn_like(u, device=u.device) * 0.0001 * temperature
-            u = torch.clamp(u + noise, -1, 1)
-            noise = torch.randn_like(u, device=v.device) * 0.0001 * temperature
-            v = torch.clamp(v + noise, -1, 1)
-            noise = torch.randn_like(theta, device=theta.device) * 0.0001 * temperature
-            theta = torch.clamp(theta + noise, 0, 2*np.pi)
+        cr = torch.cos(theta[:,None,None])
+        sr = torch.sin(theta[:,None,None])
         
         # Compute rotated coordinates
-        x_rot = (grid_x[None,:,:] - u[:,None,None]) * torch.cos(theta[:,None,None]) + \
-                (grid_y[None,:,:] - v[:,None,None]) * torch.sin(theta[:,None,None])
-        y_rot = -(grid_x[None,:,:] - u[:,None,None]) * torch.sin(theta[:,None,None]) + \
-                (grid_y[None,:,:] - v[:,None,None]) * torch.cos(theta[:,None,None])
+        x_rot = (grid_x[None,:,:] - u[:,None,None]) * cr + \
+                (grid_y[None,:,:] - v[:,None,None]) * sr
+        y_rot = -(grid_x[None,:,:] - u[:,None,None]) * sr + \
+                (grid_y[None,:,:] - v[:,None,None]) * cr
 
         # Safe gaussian computation
-        gaussian = torch.exp(torch.clamp(
-            -(x_rot**2 + (gamma[:,None,None] * y_rot)**2) / (2 * sigma[:,None,None]**2),
-            min=-80, max=80
-        ))
 
-        gauss = torch.exp(torch.clamp(
+        gaussian = torch.exp(torch.clamp(
             -(x_rot**2)/(2*(sigma[:,None,None]**2)) - (y_rot**2)/(2*(gamma[:,None,None]**2)),
             min=-80, max=80
         ))
         
         # Safe sinusoid computation with frequency scaling
-        freq = np.float32(2*np.pi) / torch.exp(self.rel_freq*2.5)
+        freq = np.float32(2*np.pi) / torch.exp(self.rel_freq)
         phase = self.psi*2*np.pi
         sinusoid = torch.cos(freq[:,None,None,None] * x_rot[:, None, :, :] + 
                            phase[:, :, None, None] * np.pi)
         
-        # Safe amplitude scaling
-        amplitude = 0.2 * torch.tanh(self.amplitude.clamp(0, 2))
+        amplitude = self.amplitude
         
         # Combine components safely
         gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
-        if dropout_active and self.training:
-            gabors = self.dropout(gabors)
-        
         result = torch.sum(gabors, dim=0)
-        result = torch.clamp(result, -1, 1)  # Clamp to normalized range
-        
+        result = self.batch_norm(result)  # Apply batch normalization
+        result = torch.clamp(result, -1, 1)  # Clamp to normalized range       
         return result
 
     def enforce_parameter_ranges(self):
@@ -144,34 +130,19 @@ class ImageFitter:
         
         # Resize image if target_size is specified
         if target_size is not None:
-            if isinstance(target_size, int):
-                # If single number, maintain aspect ratio
-                w, h = image.size
-                aspect_ratio = w / h
-                if w > h:
-                    new_w = target_size
-                    new_h = int(target_size / aspect_ratio)
-                else:
-                    new_h = target_size
-                    new_w = int(target_size * aspect_ratio)
-                target_size = (new_w, new_h)
-            image = image.resize(target_size, Image.Resampling.LANCZOS)
+            image = self.resize_image(image, target_size)
         
         # Enhanced preprocessing pipeline
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
-        
-        self.global_lr = global_lr
-        self.local_lr = local_lr
-
         self.target = transform(image).to(device)
         h, w = self.target.shape[-2:]
         if target_size is not None:
             w,h = target_size
-        
-        if weight_path:
+       #load weights if provided
+       if weight_path:
             weight_img = Image.open(weight_path).convert('L')  # Convert to grayscale
             weight_img = weight_img.resize((w, h), Image.Resampling.LANCZOS)
             self.weights = transforms.ToTensor()(weight_img).to(device)
@@ -185,11 +156,13 @@ class ImageFitter:
         self.grid_x = x.to(device)
         self.grid_y = y.to(device)
         
-        # Initialize model with improved training setup
+        # Initialize model
         self.model = GaborLayer(num_gabors,init_size).to(device)
+    
         # Initialize model parameters if provided
         if init:
             self.init_parameters(init)
+        
         # Initialize optimizers with provided learning rates
         self.global_optimizer = optim.AdamW(
             self.model.parameters(),
@@ -204,7 +177,7 @@ class ImageFitter:
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
-        
+      
         self.optimizer = self.global_optimizer  # Start with global optimizer
         
         # Initialize schedulers for both phases
@@ -228,16 +201,12 @@ class ImageFitter:
         
         self.scheduler = self.global_scheduler  # Start with global scheduler
         
-        # Use a combination of MSE and L1 loss
-        self.mse_criterion = nn.MSELoss()
-        self.l1_criterion = nn.L1Loss()
-        
-        # Initialize best loss tracking
+        # Initialize best loss tracking / needs to be implemented
         self.best_loss = float('inf')
         self.best_state = None
         
         # Add temperature scheduling
-        self.initial_temp = 0.08
+        self.initial_temp = 0.1
         self.min_temp = 0.00000001
         self.current_temp = self.initial_temp
         
@@ -268,12 +237,84 @@ class ImageFitter:
         self.local_optimizer = optim.AdamW(
             self.model.parameters(),
             lr=self.local_lr,
-            weight_decay=1e-5,
+            weight_decay=1e-4,
             betas=(0.9, 0.999)
         )
         self.optimizer = self.global_optimizer
+    def init_parameters(self, init):
+        """Initialize parameters from a saved model"""
+        if init:
+            self.load_model(init)
+            print("Initialized parameters from", init)
 
-    def single_optimize(self, model_index, iterations, target_image):
+    def mutate_parameters(self):
+        """Randomly mutate some Gabor functions to explore new solutions"""
+        if np.random.random() < self.mutation_prob:
+            with torch.no_grad():
+                # Randomly select 5% of Gabors to mutate
+                num_gabors = self.model.amplitude.shape[0]
+                num_mutate = max(1, int(0.01 * num_gabors))
+                idx = np.random.choice(num_gabors, num_mutate, replace=False)
+                
+                device = self.model.u.device  # Get the current device
+                
+                # Reset their parameters randomly, ensuring correct device
+                self.model.u.data[idx] = self.model.u.data[idx] + (torch.rand(num_mutate, device=device) * 2 - 1) * self.mutation_strength
+                self.model.v.data[idx] = self.model.v.data[idx] + (torch.rand(num_mutate, device=device) * 2 - 1) * self.mutation_strength
+                self.model.theta.data[idx] = self.model.theta.data[idx] + (torch.rand(num_mutate, device=device)* 2 - 1) * self.mutation_strength
+                self.model.rel_sigma.data[idx] = self.model.rel_sigma.data[idx] + (torch.randn(num_mutate, device=device) * 2 - 1) * self.mutation_strength
+                self.model.rel_freq.data[idx] = self.model.rel_freq.data[idx] +  (torch.randn(num_mutate, device=device) * 2 - 1) * self.mutation_strength
+                self.model.psi.data[idx] = self.model.psi.data[idx] + (torch.randn(num_mutate, 3, device=device) * 2 - 1) * self.mutation_strength
+                self.model.gamma.data[idx] = self.model.gamma.data[idx] + (torch.randn(num_mutate, device=device) * 2 - 1) * self.mutation_strength
+                self.model.amplitude.data[idx] = self.model.amplitude.data[idx] + (torch.randn(num_mutate, 3, device=device) * 2 - 1) * self.mutation_strength
+
+    def update_temperature(self, iteration, max_iterations):
+        """Update temperature for simulated annealing"""
+        self.current_temp = max(
+            self.min_temp,
+            self.initial_temp * (1 - iteration / max_iterations)
+        )
+
+    def weighted_loss(self, output, target, weights=None):
+        """Calculate weighted MSE loss with gradient preservation"""
+        if weights is None:
+            weights = torch.ones_like(target[0])
+        
+        # Ensure tensors have gradients
+        if not output.requires_grad:
+            output.requires_grad_(True)
+            
+        # Calculate MSE with weights
+        diff = (output - target) ** 2
+        weighted_diff = diff * weights[None, :, :]
+        loss = weighted_diff.mean()
+        
+        return loss
+    
+   def constraint_loss(self, model):
+        # Vectorized pairwise constraints
+        with torch.no_grad():
+            rel_sigma = model.rel_sigma
+            rel_freq = model.rel_freq
+            gamma = model.gamma
+
+        pairwise_constraints = torch.stack([
+            (rel_sigma - rel_freq / 64).unsqueeze(0),
+            (rel_freq / 2 - rel_sigma).unsqueeze(0),
+            (rel_sigma - rel_freq).unsqueeze(0),
+            (4 * rel_sigma - gamma).unsqueeze(0)
+        ], dim=2)  # Stack along the last dimension
+
+        # Calculate the squared constraints using ReLU
+        con_sqr = torch.relu(pairwise_constraints) ** 2
+
+        # Sum across the last dimension (k)
+        con_losses = torch.mean(con_sqr, dim=2)
+
+        # Sum across the mini-batch (n)
+        con_loss_per_fit = torch.mean(con_losses, dim=1)
+        con_loss = con_loss_per_fit.mean() / 100  # Use PyTorch's mean
+        return con_loss
         # Convert target image to tensor and normalize
         target_image_tensor = target_image.clone().detach().to(self.target.device)  # No unsqueeze
         
@@ -337,81 +378,6 @@ class ImageFitter:
         print(f"Optimization for model {model_index} completed. Loss: {loss.item():.6f}")
         return loss.item()
 
-    def init_parameters(self, init):
-        """Initialize parameters from a saved model"""
-        if init:
-            self.load_model(init)
-            print("Initialized parameters from", init)
-
-    def mutate_parameters(self):
-        """Randomly mutate some Gabor functions to explore new solutions"""
-        if np.random.random() < self.mutation_prob:
-            with torch.no_grad():
-                # Randomly select 5% of Gabors to mutate
-                num_gabors = self.model.amplitude.shape[0]
-                num_mutate = max(1, int(0.01 * num_gabors))
-                idx = np.random.choice(num_gabors, num_mutate, replace=False)
-                
-                device = self.model.u.device  # Get the current device
-                
-                # Reset their parameters randomly, ensuring correct device
-                self.model.u.data[idx] = self.model.u.data[idx] + (torch.rand(num_mutate, device=device) * 2 - 1) * self.mutation_strength
-                self.model.v.data[idx] = self.model.v.data[idx] + (torch.rand(num_mutate, device=device) * 2 - 1) * self.mutation_strength
-                self.model.theta.data[idx] = self.model.theta.data[idx] + (torch.rand(num_mutate, device=device)* 2 - 1) * self.mutation_strength
-                self.model.rel_sigma.data[idx] = self.model.rel_sigma.data[idx] + (torch.randn(num_mutate, device=device) * 2 - 1) * self.mutation_strength
-                self.model.rel_freq.data[idx] = self.model.rel_freq.data[idx] +  (torch.randn(num_mutate, device=device) * 2 - 1) * self.mutation_strength
-                self.model.psi.data[idx] = self.model.psi.data[idx] + (torch.randn(num_mutate, 3, device=device) * 2 - 1) * self.mutation_strength
-                self.model.gamma.data[idx] = self.model.gamma.data[idx] + (torch.randn(num_mutate, device=device) * 2 - 1) * self.mutation_strength
-                self.model.amplitude.data[idx] = self.model.amplitude.data[idx] + (torch.randn(num_mutate, 3, device=device) * 2 - 1) * self.mutation_strength
-
-    def update_temperature(self, iteration, max_iterations):
-        """Update temperature for simulated annealing"""
-        self.current_temp = max(
-            self.min_temp,
-            self.initial_temp * (1 - iteration / max_iterations)
-        )
-
-    def weighted_loss(self, output, target, weights=None):
-        """Calculate weighted MSE loss with gradient preservation"""
-        if weights is None:
-            weights = torch.ones_like(target[0])
-        
-        # Ensure tensors have gradients
-        if not output.requires_grad:
-            output.requires_grad_(True)
-            
-        # Calculate MSE with weights
-        diff = (output - target) ** 2
-        weighted_diff = diff * weights[None, :, :]
-        loss = weighted_diff.mean()
-        
-        return loss
-    
-    def constraint_loss(self, model):
-        # Vectorized pairwise constraints
-        with torch.no_grad():
-            rel_sigma = model.rel_sigma
-            rel_freq = model.rel_freq
-            gamma = model.gamma
-
-        pairwise_constraints = torch.stack([
-            (rel_sigma - rel_freq / 32).unsqueeze(0),
-            (rel_freq / 2 - rel_sigma).unsqueeze(0),
-            (rel_sigma - rel_freq).unsqueeze(0),
-            (8 * rel_sigma - gamma).unsqueeze(0)
-        ], dim=2)  # Stack along the last dimension
-
-        # Calculate the squared constraints using ReLU
-        con_sqr = torch.relu(pairwise_constraints) ** 2
-
-        # Sum across the last dimension (k)
-        con_losses = torch.mean(con_sqr, dim=2)
-
-        # Sum across the mini-batch (n)
-        con_loss_per_fit = torch.mean(con_losses, dim=1)
-        con_loss = con_loss_per_fit.mean() / 100  # Use PyTorch's mean
-        return con_loss
-
     def train_step(self, iteration, max_iterations):
         # Update temperature
         self.update_temperature(iteration, max_iterations)
@@ -446,7 +412,7 @@ class ImageFitter:
         return loss.item()
 
     def get_current_image(self, use_best=True):
-        """Get current image with parameter state logging"""
+        """Get current image"""
         with torch.no_grad():
             # Print key parameter stats           
             if use_best and self.best_state is not None:
@@ -461,33 +427,21 @@ class ImageFitter:
             # Denormalize the output
             output = output * 0.5 + 0.5
             return output.clamp(0, 1).cpu().numpy()
-
-    def save_parameters_to_text(self, filepath):
-        """Save model parameters in a human-readable format"""
-        with torch.no_grad():
-            params = {
-                'u': self.model.u.cpu().tolist(),
-                'v': self.model.v.cpu().tolist(),
-                'theta': self.model.theta.cpu().tolist(),
-                'rel_sigma': self.model.rel_sigma.cpu().tolist(),
-                'rel_freq': self.model.rel_freq.cpu().tolist(),
-                'psi': self.model.psi.cpu().tolist(),
-                'gamma': self.model.gamma.cpu().tolist(),
-                'amplitude': self.model.amplitude.cpu().tolist()
-            }
-            
-            with open(filepath, 'w') as f:
-                f.write("Gabor Function Parameters:\n\n")
-                for i in range(len(params['u'])):
-                    f.write(f"Gabor {i}:\n")
-                    f.write(f"  Position (u, v): ({params['u'][i]:.4f}, {params['v'][i]:.4f})\n")
-                    f.write(f"  Orientation (θ): {params['theta'][i]:.4f}\n")
-                    f.write(f"  Size (σ): {params['rel_sigma'][i]:.4f}\n")
-                    f.write(f"  Wavelength (λ): {1.0 / params['rel_freq'][i]:.4f}\n")
-                    f.write(f"  Phase (ψ): {[f'{a:.4f}' for a in params['psi'][i]]}\n")
-                    f.write(f"  Aspect ratio (γ): {params['gamma'][i]:.4f}\n")
-                    f.write(f"  Amplitude (RGB): {[f'{a:.4f}' for a in params['amplitude'][i]]}\n")
-                    f.write("\n")
+        
+    def resize_image(self,image,target_size):
+        if isinstance(target_size, int):
+            # If single number, maintain aspect ratio
+            w, h = image.size
+            aspect_ratio = w / h
+            if w > h:
+                new_w = target_size
+                new_h = int(target_size / aspect_ratio)
+            else:
+                new_h = target_size
+                new_w = int(target_size * aspect_ratio)
+            target_size = (new_w, new_h)
+        image = image.resize(target_size, Image.Resampling.LANCZOS)
+        return image
 
     def get_phase_specific_weights(self):
         """Calculate phase-specific importance weights"""
@@ -513,7 +467,7 @@ class ImageFitter:
         
         # Normalize weights
         weights = weights / weights.mean()
-        
+        weights = weights*self.weights
         return weights
 
     def switch_to_local_phase(self):
@@ -637,45 +591,25 @@ def main():
     )
     # Set the phase split from arguments
     fitter.phase_split = args.phase_split
+    #save initial image
     if args.init:
         fitter.save_image(os.path.join(args.output_dir, 'initial_result.png'))
+
     # Training loop
     print(f"Training on {args.device}...")
     quat = int(args.num_gabors/4)
     accum_filters = 0
     with tqdm(total=args.iterations) as pbar:
         progress = 0
-        if not args.init:
-            print("Building up model")
-            for i in range(args.num_gabors):
-                if (i > 0):
-                    fitter.add_gabor()  # Add a new Gabor filter
-                loss = fitter.single_optimize(i,args.single_iterations,fitter.target)  # Optimize the newly added filter
-                fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
-                progress+=1
-                if i % 64 == 0:
-                    print("Full Optimization")
-                    for i in range(args.iterations):
-                        loss = fitter.train_step(i, args.iterations)    
-                        if i % 10 == 0:
-                            temp = fitter.current_temp
-                            pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
-                            pbar.update(10)
-                        if i % 50 == 0 or i == args.iterations - 1:
-                                fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
-                                progress+=1
-        else:
-            print("Optimizing full model")
-            for i in range(args.iterations):
-                loss = fitter.train_step(i, args.iterations)
-                if i % 10 == 0:
-                    temp = fitter.current_temp
-                    pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
-                    pbar.update(10)
-            
-                # Save intermediate results
-                if i % 50 == 0 or i == args.iterations - 1:
-                    fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
+        print("Full Optimization")
+        for i in range(args.iterations):
+            loss = fitter.train_step(i, args.iterations)    
+            if i % 10 == 0:
+                temp = fitter.current_temp
+                pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                pbar.update(10)
+            if i % 50 == 0 or i == args.iterations - 1:
+                    fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
                     progress+=1
         
     # Save final result
@@ -684,8 +618,6 @@ def main():
         fitter.save_image(os.path.join(args.output_dir, 'final_result.png'))
         fitter.save_model(os.path.join(args.output_dir, 'saved_model.pth'))
         fitter.save_weights(os.path.join(args.output_dir, 'saved_weights.txt'))
-        fitter.save_parameters_to_text(os.path.join(args.output_dir, 'parameters.txt'))
-
 if __name__ == '__main__':
     main()
 
