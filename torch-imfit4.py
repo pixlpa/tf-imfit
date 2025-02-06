@@ -26,11 +26,11 @@ GABOR_MAX ={
     'u': 1,
     'v': 1,
     'theta': 2,
-    'rel_sigma': 5,
+    'rel_sigma': 2,
     'rel_freq': 5,
-    'gamma': 1,
+    'gamma': 2,
     'psi': 3,
-    'amplitude': 1
+    'amplitude': 0.2
 }
 
 class GaborLayer(nn.Module):
