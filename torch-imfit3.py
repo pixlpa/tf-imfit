@@ -250,11 +250,9 @@ class ImageFitter:
             'psi': self.model.psi[model_index].detach().clone().requires_grad_(),
             'gamma': self.model.gamma[model_index].detach().clone().requires_grad_(),
             'amplitude': self.model.amplitude[model_index].detach().clone().requires_grad_()
-        }
-        
+        }    
         # Create a list of parameters to optimize
         params_to_optimize = [specific_model_params[param] for param in specific_model_params]
-
         # Initialize optimizer for specific parameters
         optimizer = optim.AdamW(
             params_to_optimize,
@@ -262,7 +260,7 @@ class ImageFitter:
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
-        loss_per_fit = float('inf')
+        loss_per_fit = 0
 
         for iteration in range(iterations):
             # Zero gradients
@@ -275,7 +273,7 @@ class ImageFitter:
 
             # Vectorized pairwise constraints
             pairwise_constraints = torch.stack([
-                (rel_sigma - rel_freq / 32).unsqueeze(0),
+                (rel_sigma - rel_freq / 8).unsqueeze(0),
                 (rel_freq / 2 - rel_sigma).unsqueeze(0),
                 (rel_sigma - rel_freq).unsqueeze(0),
                 (8 * rel_sigma - gamma).unsqueeze(0)
