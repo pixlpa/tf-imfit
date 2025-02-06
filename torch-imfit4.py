@@ -28,7 +28,7 @@ GABOR_MAX ={
     'theta': 2,
     'rel_sigma': 2,
     'rel_freq': 5,
-    'gamma': 2,
+    'gamma': 1,
     'psi': 3,
     'amplitude': 0.2
 }
@@ -563,6 +563,14 @@ def main():
                        help='Learning rate for local phase')
     parser.add_argument('--mutation-strength', type=float, default=0.01,
                        help='Mutation strength')
+    parser.add_argument('--sigma-max', type=float, default=2,
+                       help='Maximum sigma')
+    parser.add_argument('--gamma-max', type=float, default=2,
+                       help='Maximum gamma')
+    parser.add_argument('--rel-freq-max', type=float, default=2,
+                       help='Maximum rel freq')
+    parser.add_argument('--rel-freq-min', type=float, default=0.01,
+                       help='Minimum rel freq')
     args = parser.parse_args()
 
     # Create output directory if it doesn't exist
@@ -576,6 +584,10 @@ def main():
         target_size = (args.width, args.height)
     init_gabors = args.num_gabors
 
+    GABOR_MAX['rel_sigma'] = args.sigma_max
+    GABOR_MAX['gamma'] = args.gamma_max
+    GABOR_MAX['rel_freq'] = args.rel_freq_max
+    GABOR_MIN['rel_freq'] = args.rel_freq_min
     # Initialize fitter with target size and learning rates
     fitter = ImageFitter(
         args.image, 
