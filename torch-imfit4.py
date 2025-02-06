@@ -103,10 +103,8 @@ class GaborLayer(nn.Module):
         sinusoid = torch.cos(freq[:,None,None,None] * x_rot[:, None, :, :] + 
                            phase[:, :, None, None] * np.pi)
         
-        amplitude = self.amplitude
-        
         # Combine components safely
-        gabors = amplitude[:, :, None, None] * gaussian[:, None, :, :] * sinusoid
+        gabors = self.amplitude[:, :, None, None] * gaussian[:, None, :, :] * sinusoid
         result = torch.sum(gabors, dim=0)  # This should be [num_gabors, height, width]
         
         # Ensure result is 4D before batch normalization
