@@ -291,7 +291,7 @@ class ImageFitter:
         
         return loss
     
-   def constraint_loss(self, model):
+    def constraint_loss(self, model):
         # Vectorized pairwise constraints
         with torch.no_grad():
             rel_sigma = model.rel_sigma
