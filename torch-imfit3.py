@@ -297,7 +297,7 @@ class ImageFitter:
             self.model.gamma[model_index] = specific_model_params['gamma']
             self.model.amplitude[model_index] = specific_model_params['amplitude']
 
-        print(f"Optimization for model {model_index} completed. Loss: {loss_per_fit:.6f}")
+        print(f"Optimization for model {model_index} completed. Loss: {loss.item():.6f}")
         return loss_per_fit
 
     def init_parameters(self, init):
