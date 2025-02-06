@@ -141,6 +141,9 @@ class ImageFitter:
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
         
+        self.global_lr = global_lr
+        self.local_lr = local_lr
+
         self.target = transform(image).to(device)
         h, w = self.target.shape[-2:]
         if target_size is not None:
@@ -234,6 +237,19 @@ class ImageFitter:
         self.model.gamma = nn.Parameter(torch.cat((self.model.gamma, new_gabor.gamma)))
         self.model.psi = nn.Parameter(torch.cat((self.model.psi, new_gabor.psi)))
         self.model.amplitude = nn.Parameter(torch.cat((self.model.amplitude, new_gabor.amplitude)))
+        self.global_optimizer = optim.AdamW(
+            self.model.parameters(),
+            lr=self.global_lr,
+            weight_decay=1e-5,
+            betas=(0.9, 0.999)
+        )
+        self.local_optimizer = optim.AdamW(
+            self.model.parameters(),
+            lr=self.local_lr,
+            weight_decay=1e-5,
+            betas=(0.9, 0.999)
+        )
+        self.optimizer = self.global_optimizer
 
     def single_optimize(self, model_index, iterations, target_image):
         # Convert target image to tensor and normalize
