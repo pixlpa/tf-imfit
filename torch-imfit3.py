@@ -184,7 +184,7 @@ class ImageFitter:
             verbose=True,
             min_lr=1e-5
         )
-
+        self.global_lr = global_lr
         self.scheduler = self.global_scheduler  # Start with global scheduler
         
         # Use a combination of MSE and L1 loss
@@ -203,8 +203,15 @@ class ImageFitter:
         # Add mutation probability
         self.mutation_prob = 0.005
         self.mutation_strength = mutation_strength
-        # Add phase tracking
-        self.optimization_phase = 'global'  # 'global' or 'local'
+
+    def update_optimizer(self):
+        """Update the optimizer to reflect the current model parameters."""
+        self.global_optimizer = optim.AdamW(
+            self.model.parameters(),
+            lr=self.global_lr,
+            weight_decay=1e-4,
+            betas=(0.9, 0.999)
+        )
     
     def add_gabor(self):
         """Add a new Gabor filter to the model."""
@@ -217,7 +224,8 @@ class ImageFitter:
         self.model.gamma = nn.Parameter(torch.cat((self.model.gamma, new_gabor.gamma)))
         self.model.psi = nn.Parameter(torch.cat((self.model.psi, new_gabor.psi)))
         self.model.amplitude = nn.Parameter(torch.cat((self.model.amplitude, new_gabor.amplitude)))
-
+        self.update_optimizer()
+        
     def single_optimize(self, model_index, iterations, target_image):
         # Convert target image to tensor and normalize
         target_image_tensor = target_image.clone().detach().to(self.target.device)  # No unsqueeze
@@ -357,6 +365,13 @@ class ImageFitter:
         con_loss_per_fit = torch.mean(con_losses, dim=1)
         con_loss = con_loss_per_fit.mean() / 1000  # Use PyTorch's mean
         return con_loss
+    
+    def global_optimize(self, iterations):
+        self.mutate_parameters()
+        self.optimizer.zero_grad()
+        for i in range(iterations):
+            loss = self.train_step(i, iterations)
+            
 
     def train_step(self, iteration, max_iterations):
         # Update temperature
@@ -378,8 +393,7 @@ class ImageFitter:
         
         # Backward pass and optimize
         loss.backward()
-        self.optimizer.step()
-        
+        self.optimizer.step()        
         # Update learning rate
         self.scheduler.step(loss)
         
@@ -516,11 +530,15 @@ def main():
     elif args.width is not None and args.height is not None:
         target_size = (args.width, args.height)
 
+    num_gabors = 1
+    if args.init:
+        num_gabors = args.num_gabors
+
     # Initialize fitter with target size and learning rates
     fitter = ImageFitter(
         args.image, 
         args.weight, 
-        args.num_gabors, 
+        num_gabors, 
         target_size, 
         args.device, 
         args.init,
