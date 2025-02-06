@@ -142,7 +142,7 @@ class ImageFitter:
         if target_size is not None:
             w,h = target_size
        #load weights if provided
-       if weight_path:
+        if weight_path:
             weight_img = Image.open(weight_path).convert('L')  # Convert to grayscale
             weight_img = weight_img.resize((w, h), Image.Resampling.LANCZOS)
             self.weights = transforms.ToTensor()(weight_img).to(device)
