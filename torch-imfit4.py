@@ -15,9 +15,9 @@ GABOR_MIN ={
     'u': 0,
     'v': 0,
     'theta': 0,
-    'rel_sigma': 0.002,
-    'rel_freq': 1e-5,
-    'gamma': 0.1,
+    'rel_sigma': 0.05,
+    'rel_freq': 0.03,
+    'gamma': 0.03,
     'psi': -3,
     'amplitude': 0.00
 }
