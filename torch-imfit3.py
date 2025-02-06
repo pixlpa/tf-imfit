@@ -52,7 +52,7 @@ class GaborLayer(nn.Module):
         theta = self.theta.clamp(0, 1)*2*np.pi
         
         # Ensure positive sigma with safe scaling
-        sigma = (0.5 + 0.5 * torch.tanh(self.rel_sigma.clamp(1e-5, 5)))
+        sigma = (0.01 + 0.5 * torch.tanh(self.rel_sigma.clamp(1e-5, 5)))
         
         # Safe aspect ratio
         gamma = 0.001 + self.gamma.clamp(1e-5, 1)
