@@ -173,13 +173,6 @@ class ImageFitter:
             betas=(0.9, 0.999)
         )
         
-        self.local_optimizer = optim.AdamW(
-            self.model.parameters(),
-            lr=local_lr,
-            weight_decay=1e-5,
-            betas=(0.9, 0.999)
-        )
-        
         self.optimizer = self.global_optimizer  # Start with global optimizer
         
         # Initialize schedulers for both phases
@@ -191,16 +184,7 @@ class ImageFitter:
             verbose=True,
             min_lr=1e-5
         )
-        
-        self.local_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.local_optimizer,
-            mode='min',
-            factor=0.5,
-            patience=30,
-            verbose=True,
-            min_lr=1e-6
-        )
-        
+
         self.scheduler = self.global_scheduler  # Start with global scheduler
         
         # Use a combination of MSE and L1 loss
@@ -217,11 +201,10 @@ class ImageFitter:
         self.current_temp = self.initial_temp
         
         # Add mutation probability
-        self.mutation_prob = 0.01
+        self.mutation_prob = 0.005
         self.mutation_strength = mutation_strength
         # Add phase tracking
         self.optimization_phase = 'global'  # 'global' or 'local'
-        self.phase_split = 0.5  # default value, will be updated from args
     
     def add_gabor(self):
         """Add a new Gabor filter to the model."""
@@ -380,10 +363,6 @@ class ImageFitter:
         self.update_temperature(iteration, max_iterations)
         self.mutate_parameters()
         
-        # Switch to local phase at the specified split point
-        if iteration == int(max_iterations * self.phase_split):
-            self.switch_to_local_phase()
-        
         # Zero gradients
         self.optimizer.zero_grad()
         
@@ -394,10 +373,8 @@ class ImageFitter:
             temperature=self.current_temp,
             dropout_active=(iteration < max_iterations * 0.8)
         )
-        
         # Calculate loss
-        weights = self.get_phase_specific_weights()
-        loss = self.weighted_loss(output, self.target, weights) + self.constraint_loss(self.model)
+        loss = self.weighted_loss(output, self.target, self.weights) # + self.constraint_loss(self.model)
         
         # Backward pass and optimize
         loss.backward()
@@ -451,47 +428,6 @@ class ImageFitter:
                     f.write(f"  Aspect ratio (γ): {params['gamma'][i]:.4f}\n")
                     f.write(f"  Amplitude (RGB): {[f'{a:.4f}' for a in params['amplitude'][i]]}\n")
                     f.write("\n")
-
-    def get_phase_specific_weights(self):
-        """Calculate phase-specific importance weights"""
-        H, W = self.target.shape[-2:]
-        
-        # Create base weights
-        weights = torch.ones((H, W), device=self.target.device)
-        
-        # Add gaussian-weighted center focus
-        y, x = torch.meshgrid(
-            torch.linspace(-1, 1, H, device=self.target.device),
-            torch.linspace(-1, 1, W, device=self.target.device)
-        )
-        r = torch.sqrt(x*x + y*y)
-        gaussian_weight = torch.exp(-r * 2)
-        
-        if self.optimization_phase == 'global':
-            # Global phase: focus more on center
-            weights = weights * (0.5 + 0.5 * gaussian_weight)
-        else:
-            # Local phase: more uniform weights with slight center bias
-            weights = weights * (0.8 + 0.2 * gaussian_weight)
-        
-        # Normalize weights
-        weights = weights / weights.mean()
-        
-        return weights
-
-    def switch_to_local_phase(self):
-        """Switch optimization from global to local phase"""
-        self.optimization_phase = 'local'
-        self.optimizer = self.local_optimizer
-        self.scheduler = self.local_scheduler
-        
-        # Reduce dropout for fine-tuning
-        self.model.dropout.p = 0.0001
-        
-        # Update mutation settings
-        self.mutation_prob = 0.0001
-        
-        print("Switching to local optimization phase...")
 
     def save_model(self, path):
         """Save the model state with parameter info"""
