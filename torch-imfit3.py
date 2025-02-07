@@ -12,12 +12,12 @@ import scipy.signal
 from torchvision.transforms.functional import gaussian_blur
 
 GABOR_MIN ={
-    'u': -1,
-    'v': -1,
+    'u': 0,
+    'v': 0,
     'theta': 0,
-    'rel_sigma': 0.001,
-    'rel_freq': 0.001,
-    'gamma': 0.001,
+    'rel_sigma': 0.05,
+    'rel_freq': 0.03,
+    'gamma': 0.03,
     'psi': -3,
     'amplitude': 0.00
 }
@@ -26,11 +26,11 @@ GABOR_MAX ={
     'u': 1,
     'v': 1,
     'theta': 2,
-    'rel_sigma': 5,
+    'rel_sigma': 0.7,
     'rel_freq': 5,
-    'gamma': 1,
+    'gamma': 0.15,
     'psi': 3,
-    'amplitude': 1
+    'amplitude': 0.2
 }
 
 class GaborLayer(nn.Module):
@@ -39,14 +39,14 @@ class GaborLayer(nn.Module):
         self.base_scale = base_scale
         
         # Initialize parameters with conservative ranges
-        self.u = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-0.8, 0.8]
-        self.v = nn.Parameter(torch.rand(num_gabors) * 2 - 1)  # [-0.8, 0.8]
-        self.theta = nn.Parameter(torch.rand(num_gabors) * 2)  # [0, 0.8π]
-        self.rel_sigma = nn.Parameter(torch.randn(num_gabors) * 0.8)  # smaller variance
-        self.rel_freq = nn.Parameter(torch.randn(num_gabors) * 1)   # smaller variance
-        self.gamma = nn.Parameter(torch.zeros(num_gabors)*2)  # starts at 0.5 after sigmoid
-        self.psi = nn.Parameter(torch.rand(num_gabors, 3))  # [-π, π]
-        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3) * 0.25)  # smaller initial amplitudes
+        self.u = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['u'], GABOR_MAX['u']))  # [-0.8, 0.8]
+        self.v = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['v'], GABOR_MAX['v']))  # [-0.8, 0.8]
+        self.theta = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['theta'], GABOR_MAX['theta']))  # [0, 0.8π]
+        self.rel_sigma = nn.Parameter(torch.randn(num_gabors).normal_(GABOR_MIN['rel_sigma'], GABOR_MAX['rel_sigma']))  # smaller variance
+        self.rel_freq = nn.Parameter(torch.randn(num_gabors).normal_(GABOR_MIN['rel_freq'], GABOR_MAX['rel_freq']))   # smaller variance
+        self.gamma = nn.Parameter(torch.zeros(num_gabors).normal_(GABOR_MIN['gamma'], GABOR_MAX['gamma']))  # starts at 0.5 after sigmoid
+        self.psi = nn.Parameter(torch.rand(num_gabors, 3).normal_(GABOR_MIN['psi'], GABOR_MAX['psi']))  # [-π, π]
+        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3).normal_(GABOR_MIN['amplitude'], GABOR_MAX['amplitude']))  # smaller initial amplitudes
         
         self.dropout = nn.Dropout(p=0.01)
 
