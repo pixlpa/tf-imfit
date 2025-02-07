@@ -19,7 +19,7 @@ GABOR_MIN ={
     'rel_freq': 0.03,
     'gamma': 0.03,
     'psi': -3,
-    'amplitude': 0.00
+    'amplitude': 0.01
 }
 
 GABOR_MAX ={
@@ -30,7 +30,7 @@ GABOR_MAX ={
     'rel_freq': 5,
     'gamma': 0.15,
     'psi': 3,
-    'amplitude': 0.2
+    'amplitude': 0.5
 }
 
 class GaborLayer(nn.Module):
