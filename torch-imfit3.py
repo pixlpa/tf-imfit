@@ -38,15 +38,18 @@ class GaborLayer(nn.Module):
         super().__init__()
         self.base_scale = base_scale
         
+        # Initialize BatchNorm2d with the correct number of channels
+        #self.batch_norm = nn.BatchNorm2d(num_gabors)  # This should match the number of output channels
+        
         # Initialize parameters with conservative ranges
-        self.u = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['u'], GABOR_MAX['u']))  # [-0.8, 0.8]
-        self.v = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['v'], GABOR_MAX['v']))  # [-0.8, 0.8]
-        self.theta = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['theta'], GABOR_MAX['theta']))  # [0, 0.8π]
-        self.rel_sigma = nn.Parameter(torch.randn(num_gabors).normal_(GABOR_MIN['rel_sigma'], GABOR_MAX['rel_sigma']))  # smaller variance
-        self.rel_freq = nn.Parameter(torch.randn(num_gabors).normal_(GABOR_MIN['rel_freq'], GABOR_MAX['rel_freq']))   # smaller variance
-        self.gamma = nn.Parameter(torch.zeros(num_gabors).normal_(GABOR_MIN['gamma'], GABOR_MAX['gamma']))  # starts at 0.5 after sigmoid
-        self.psi = nn.Parameter(torch.rand(num_gabors, 3).normal_(GABOR_MIN['psi'], GABOR_MAX['psi']))  # [-π, π]
-        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3).normal_(GABOR_MIN['amplitude'], GABOR_MAX['amplitude']))  # smaller initial amplitudes
+        self.u = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['u'], GABOR_MAX['u']))  
+        self.v = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['v'], GABOR_MAX['v']))  
+        self.theta = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['theta'], GABOR_MAX['theta']))  
+        self.rel_sigma = nn.Parameter(torch.randn(num_gabors).normal_(GABOR_MIN['rel_sigma'], GABOR_MAX['rel_sigma']))  
+        self.rel_freq = nn.Parameter(torch.randn(num_gabors).normal_(GABOR_MIN['rel_freq'], GABOR_MAX['rel_freq']))   
+        self.gamma = nn.Parameter(torch.zeros(num_gabors).normal_(GABOR_MIN['gamma'], GABOR_MAX['gamma']))  
+        self.psi = nn.Parameter(torch.rand(num_gabors, 3).normal_(GABOR_MIN['psi'], GABOR_MAX['psi']))  
+        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3).normal_(GABOR_MIN['amplitude'], GABOR_MAX['amplitude']))  
         
         self.dropout = nn.Dropout(p=0.01)
 
@@ -71,58 +74,46 @@ class GaborLayer(nn.Module):
         # Safe parameter transformations with gradient preservation
         u = self.u.clamp(-1, 1)
         v = self.v.clamp(-1, 1)
-        theta = self.theta.clamp(0, 1)*2*np.pi
+        theta = self.theta.clamp(0, 2)*2*np.pi
         
         # Ensure positive sigma with safe scaling
         sigma = (0.01 + 0.5 * torch.tanh(self.rel_sigma.clamp(1e-5, 5)))
         
         # Safe aspect ratio
         gamma = 0.001 + self.gamma.clamp(1e-5, 1)
-        
-        # Add small noise during training (with gradient preservation)
-        if self.training:
-            noise = torch.randn_like(u, device=u.device) * 0.0001 * temperature
-            u = torch.clamp(u + noise, -1, 1)
-            noise = torch.randn_like(u, device=v.device) * 0.0001 * temperature
-            v = torch.clamp(v + noise, -1, 1)
-            noise = torch.randn_like(theta, device=theta.device) * 0.0001 * temperature
-            theta = torch.clamp(theta + noise, 0, 2*np.pi)
+        cr = torch.cos(theta[:,None,None])
+        sr = torch.sin(theta[:,None,None])
         
         # Compute rotated coordinates
-        x_rot = (grid_x[None,:,:] - u[:,None,None]) * torch.cos(theta[:,None,None]) + \
-                (grid_y[None,:,:] - v[:,None,None]) * torch.sin(theta[:,None,None])
-        y_rot = -(grid_x[None,:,:] - u[:,None,None]) * torch.sin(theta[:,None,None]) + \
-                (grid_y[None,:,:] - v[:,None,None]) * torch.cos(theta[:,None,None])
+        x_rot = (grid_x[None,:,:] - u[:,None,None]) * cr + \
+                (grid_y[None,:,:] - v[:,None,None]) * sr
+        y_rot = -(grid_x[None,:,:] - u[:,None,None]) * sr + \
+                (grid_y[None,:,:] - v[:,None,None]) * cr
 
         # Safe gaussian computation
-        gaussian = torch.exp(torch.clamp(
-            -(x_rot**2 + (gamma[:,None,None] * y_rot)**2) / (2 * sigma[:,None,None]**2),
-            min=-80, max=80
-        ))
 
-        gauss = torch.exp(torch.clamp(
+        gaussian = torch.exp(torch.clamp(
             -(x_rot**2)/(2*(sigma[:,None,None]**2)) - (y_rot**2)/(2*(gamma[:,None,None]**2)),
             min=-80, max=80
         ))
         
         # Safe sinusoid computation with frequency scaling
-        freq = np.float32(2*np.pi) / torch.exp(self.rel_freq*2.5)
+        freq = np.float32(2*np.pi) / torch.exp(self.rel_freq)
         phase = self.psi*2*np.pi
         sinusoid = torch.cos(freq[:,None,None,None] * x_rot[:, None, :, :] + 
                            phase[:, :, None, None] * np.pi)
         
-        # Safe amplitude scaling
-        amplitude = 0.2 * torch.tanh(self.amplitude.clamp(0, 2))
-        
         # Combine components safely
-        gabors = amplitude[:,:,None,None] * gaussian[:, None, :, :] * sinusoid
-        if dropout_active and self.training:
-            gabors = self.dropout(gabors)
+        gabors = self.amplitude[:, :, None, None] * gaussian[:, None, :, :] * sinusoid
+        result = torch.sum(gabors, dim=0)  # This should be [num_gabors, height, width]
         
-        result = torch.sum(gabors, dim=0)
-        result = torch.clamp(result, -1, 1)  # Clamp to normalized range
+        # Ensure result is 4D before batch normalization
+        #result = result.unsqueeze(0)  # Add batch dimension, now [1, num_gabors, height, width]
         
-        return result
+        # Apply batch normalization
+        #result = self.batch_norm(result)  # Apply batch normalization
+        result = torch.clamp(result, -1, 1)  # Clamp to normalized range       
+        return result  # Remove batch dimension for output
 
     def enforce_parameter_ranges(self):
         """Enforce valid parameter ranges"""
