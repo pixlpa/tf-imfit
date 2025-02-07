@@ -641,11 +641,11 @@ def main():
             for i in range(args.num_gabors):
                 if (i > 0):
                     fitter.add_gabor()  # Add a new Gabor filter
-                loss = fitter.single_optimize(i,args.single_iterations,fitter.target)  # Optimize the newly added filter
-                fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
+                    print(f"Added Gabor {i}")
+                #fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
                 progress+=1
-                if i % 64 == 0:
-                    print("Full Optimization")
+                if i % 4 == 0:
+                    print("Intermediate Optimization")
                     for i in range(args.iterations):
                         loss = fitter.train_step(i, args.iterations)    
                         if i % 10 == 0:
