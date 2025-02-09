@@ -264,7 +264,7 @@ class ImageFitter:
         )
         self.optimizer = self.global_optimizer
 
-    def single_optimize(self, model_index, iterations, target_image):
+    def single_optimize(self, model_index, iterations, target_image, lr=0.03):
         # Convert target image to tensor and normalize
         target_image_tensor = target_image.clone().detach().to(self.target.device)  # No unsqueeze
         
@@ -285,7 +285,7 @@ class ImageFitter:
         # Initialize optimizer for specific parameters
         optimizer = optim.AdamW(
             params_to_optimize,
-            lr=0.03,
+            lr=lr,
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
@@ -570,7 +570,7 @@ def main():
                        help='Number of Gabor functions to fit')
     parser.add_argument('--iterations', type=int, default=1000,
                        help='Number of training iterations')
-    parser.add_argument('--single-iterations', type=int, default=100,
+    parser.add_argument('--single-iterations', type=int, default=20,
                        help='Number of training iterations')
     parser.add_argument('--init', type=str, default=None,
                        help='load initial parameters from file')
@@ -594,6 +594,8 @@ def main():
                        help='Learning rate for global phase')
     parser.add_argument('--local-lr', type=float, default=0.01,
                        help='Learning rate for local phase')
+    parser.add_argument('--single-lr', type=float, default=0.1,
+                       help='Learning rate for single gabor optimization')
     parser.add_argument('--mutation-strength', type=float, default=0.01,
                        help='Mutation strength')
     args = parser.parse_args()
@@ -641,7 +643,8 @@ def main():
             for i in range(args.num_gabors):
                 if (i > 0):
                     fitter.add_gabor()  # Add a new Gabor filter
-                    print(f"Added Gabor {i}")
+                    loss = fitter.single_optimize(i, args.single_iterations, fitter.target, args.local_lr)
+                    print(f"Added Gabor {i} with loss {loss:.6f}")
                 #fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
                 progress+=1
                 if i % 4 == 0:
