@@ -289,7 +289,7 @@ class ImageFitter:
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
-        loss = weighted_diff.mean()
+        check_loss = 0
         for iteration in range(iterations):
             # Zero gradients
             optimizer.zero_grad()
@@ -313,6 +313,7 @@ class ImageFitter:
              # Backward pass and optimize
             loss.backward()
             optimizer.step()
+            check_loss = loss.item()
 
         # Update the model parameters with the optimized values
         with torch.no_grad():
@@ -325,8 +326,8 @@ class ImageFitter:
             self.model.gamma[model_index] = specific_model_params['gamma']
             self.model.amplitude[model_index] = specific_model_params['amplitude']
 
-        print(f"Optimization for model {model_index} completed. Loss: {loss.item():.6f}")
-        return loss.item()
+        print(f"Optimization for model {model_index} completed. Loss: {check_loss:.6f}")
+        return check_loss
 
     def init_parameters(self, init):
         """Initialize parameters from a saved model"""
@@ -400,7 +401,7 @@ class ImageFitter:
 
         # Sum across the mini-batch (n)
         con_loss_per_fit = torch.mean(con_losses, dim=1)
-        con_loss = con_loss_per_fit.mean() / 100  # Use PyTorch's mean
+        con_loss = con_loss_per_fit.mean() / 10  # Use PyTorch's mean
         return con_loss
 
     def train_step(self, iteration, max_iterations):
