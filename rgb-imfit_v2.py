@@ -266,6 +266,8 @@ def setup_inputs(opts):
     GABOR_RANGE[GABOR_PARAM_L, 0] = 2.5*px
     GABOR_RANGE[GABOR_PARAM_T, 0] = px
     GABOR_RANGE[GABOR_PARAM_S, 0] = px
+
+    tf.compat.v1.disable_eager_execution()
     
     target_tensor = tf.compat.v1.placeholder(tf.float32,
                                    shape=input_image.shape,
@@ -887,8 +889,6 @@ def main():
     # this can help catch performance killers caused by adding to the
     # tensorflow graph in a loop (which ends up costing O(n^2) over
     # the entire loop).
-
-    tf.compat.v1.disable_eager_execution();
 
     ginit = tf.compat.v1.global_variables_initializer()
 
