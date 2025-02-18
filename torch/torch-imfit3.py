@@ -401,7 +401,7 @@ class ImageFitter:
 
         # Sum across the mini-batch (n)
         con_loss_per_fit = torch.mean(con_losses, dim=1)
-        con_loss = con_loss_per_fit.mean() / 10  # Use PyTorch's mean
+        con_loss = con_loss_per_fit.mean() / 50  # Use PyTorch's mean
         return con_loss
 
     def train_step(self, iteration, max_iterations):
