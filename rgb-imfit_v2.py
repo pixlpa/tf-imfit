@@ -888,6 +888,8 @@ def main():
     # tensorflow graph in a loop (which ends up costing O(n^2) over
     # the entire loop).
 
+    tf.compat.v1.disable_eager_execution();
+
     ginit = tf.compat.v1.global_variables_initializer()
 
     tf.compat.v1.get_default_graph().finalize()
