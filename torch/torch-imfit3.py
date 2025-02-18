@@ -289,7 +289,7 @@ class ImageFitter:
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
-
+        loss = weighted_diff.mean()
         for iteration in range(iterations):
             # Zero gradients
             optimizer.zero_grad()
