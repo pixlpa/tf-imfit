@@ -77,10 +77,10 @@ class GaborLayer(nn.Module):
         theta = self.theta.clamp(0, 2)*2*np.pi
         
         # Ensure positive sigma with safe scaling
-        sigma = (0.01 + 0.5 * torch.tanh(self.rel_sigma.clamp(1e-5, 5)))
+        sigma = self.rel_sigma.clamp(1e-5, 5)
         
         # Safe aspect ratio
-        gamma = 0.001 + self.gamma.clamp(1e-5, 1)
+        gamma = self.gamma.clamp(1e-5, 1)
         cr = torch.cos(theta[:,None,None])
         sr = torch.sin(theta[:,None,None])
         
@@ -101,7 +101,7 @@ class GaborLayer(nn.Module):
         freq = np.float32(2*np.pi) / torch.exp(self.rel_freq)
         phase = self.psi*2*np.pi
         sinusoid = torch.cos(freq[:,None,None,None] * x_rot[:, None, :, :] + 
-                           phase[:, :, None, None] * np.pi)
+                           phase[:, :, None, None])
         
         # Combine components safely
         gabors = self.amplitude[:, :, None, None] * gaussian[:, None, :, :] * sinusoid
@@ -510,7 +510,7 @@ class ImageFitter:
                     'amplitude1': self.model.amplitude[:,1].cpu().tolist(),
                     'amplitude2': self.model.amplitude[:,2].cpu().tolist()
                 }
-            par = np.array([params['u'], params['v'], params['theta'], params['rel_sigma'], params['rel_freq'], params['psi0'], params['psi1'], params['psi2'], params['gamma'], params['amplitude0'], params['amplitude1'], params['amplitude2']])
+            par = np.array([params['u'], params['v'], params['theta'], params['rel_sigma'], params['gamma'], params['rel_freq'], params['psi0'], params['psi1'], params['psi2'], params['amplitude0'], params['amplitude1'], params['amplitude2']])
             flat = par.transpose()
             np.savetxt(path, flat,fmt='%f', delimiter=',')
 
