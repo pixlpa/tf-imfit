@@ -80,7 +80,7 @@ class GaborLayer(nn.Module):
         sigma = self.rel_sigma.clamp(1e-5, 5)
         
         # Safe aspect ratio
-        gamma = self.gamma.clamp(1e-5, 1)
+        gamma = self.gamma.clamp(1e-5, 5)
         cr = torch.cos(theta[:,None,None])
         sr = torch.sin(theta[:,None,None])
         
