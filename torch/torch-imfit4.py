@@ -74,7 +74,7 @@ class GaborLayer(nn.Module):
         # Safe parameter transformations with gradient preservation
         u = self.u.clamp(-1, 1)
         v = self.v.clamp(-1, 1)
-        theta = self.theta.clamp(0, 2)*2*np.pi
+        theta = self.theta.clamp(-2, 2)*2*np.pi
         
         # Ensure positive sigma with safe scaling
         sigma = self.rel_sigma.clamp(1e-5, 5)
@@ -319,8 +319,9 @@ class ImageFitter:
         con_loss_per_fit = torch.mean(con_losses, dim=1)
         con_loss = con_loss_per_fit.mean() / 100  # Use PyTorch's mean
         return con_loss
+    def single_optimize(self,model_index,iterations)
         # Convert target image to tensor and normalize
-        target_image_tensor = target_image.clone().detach().to(self.target.device)  # No unsqueeze
+        target_image_tensor = self.target.clone().detach().to(self.target.device)  # No unsqueeze
         
         #Removed normalization
         # Extract the specific model parameters to optimize
@@ -614,6 +615,8 @@ def main():
     with tqdm(total=args.iterations) as pbar:
         progress = 0
         print("Full Optimization")
+        for m in range(args.num_gabors)
+            fitter.single_optimize(m,10,target_image)
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)    
             if i % 10 == 0:

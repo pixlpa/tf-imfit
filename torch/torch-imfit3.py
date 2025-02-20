@@ -74,7 +74,7 @@ class GaborLayer(nn.Module):
         # Safe parameter transformations with gradient preservation
         u = self.u.clamp(-1, 1)
         v = self.v.clamp(-1, 1)
-        theta = self.theta.clamp(0, 2)*2*np.pi
+        theta = self.theta.clamp(-2, 2)*2*np.pi
         
         # Ensure positive sigma with safe scaling
         sigma = self.rel_sigma.clamp(1e-5, 5)
@@ -106,12 +106,6 @@ class GaborLayer(nn.Module):
         # Combine components safely
         gabors = self.amplitude[:, :, None, None] * gaussian[:, None, :, :] * sinusoid
         result = torch.sum(gabors, dim=0)  # This should be [num_gabors, height, width]
-        
-        # Ensure result is 4D before batch normalization
-        #result = result.unsqueeze(0)  # Add batch dimension, now [1, num_gabors, height, width]
-        
-        # Apply batch normalization
-        #result = self.batch_norm(result)  # Apply batch normalization
         result = torch.clamp(result, -1, 1)  # Clamp to normalized range       
         return result  # Remove batch dimension for output
 
