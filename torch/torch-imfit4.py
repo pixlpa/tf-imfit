@@ -70,6 +70,8 @@ class GaborLayer(nn.Module):
         H, W = grid_x.shape
         image_size = max(H, W)
         base_size = float(image_size)/ float(self.base_scale)
+
+        self.enforce_parameter_ranges()
         
         # Safe parameter transformations with gradient preservation
         u = self.u.clamp(-1, 1)
@@ -120,12 +122,12 @@ class GaborLayer(nn.Module):
         with torch.no_grad():
             self.u.clamp_(-1, 1)
             self.v.clamp_(-1, 1)
-            self.theta.clamp_(0, 1)
+            self.theta.clamp_(-2, 2)
             self.rel_sigma.clamp_(1e-5,5)
-            self.rel_freq.clamp_(1e-5,5)
+            # self.rel_freq.clamp_(1e-5,5)
             self.psi.clamp_(-1, 1)
             self.gamma.clamp_(1e-5,5)
-            self.amplitude.clamp_(0,2)
+            self.amplitude.clamp_(0,1)
 
 class ImageFitter:
     def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 
