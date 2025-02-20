@@ -319,7 +319,7 @@ class ImageFitter:
         con_loss_per_fit = torch.mean(con_losses, dim=1)
         con_loss = con_loss_per_fit.mean() / 100  # Use PyTorch's mean
         return con_loss
-    def single_optimize(self,model_index,iterations)
+    def single_optimize(self,model_index,iterations):
         # Convert target image to tensor and normalize
         target_image_tensor = self.target.clone().detach().to(self.target.device)  # No unsqueeze
         
