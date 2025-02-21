@@ -619,7 +619,7 @@ def main():
                 progress+=1
                 if i % 32 == 0 and i > 0:
                     print("Intermediate Optimization")
-                    for i in range(args.iterations/4):
+                    for i in range(int(args.iterations/4)):
                         loss = fitter.train_step(i, args.iterations)    
                         if i % 10 == 0:
                             temp = fitter.current_temp
