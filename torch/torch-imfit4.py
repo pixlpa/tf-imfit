@@ -617,8 +617,6 @@ def main():
     with tqdm(total=args.iterations) as pbar:
         progress = 0
         print("Full Optimization")
-        for m in range(args.num_gabors):
-            fitter.single_optimize(m,10,target_image)
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)    
             if i % 10 == 0:
