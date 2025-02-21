@@ -262,10 +262,8 @@ class ImageFitter:
         )
         for iteration in range(iterations):
             # Zero gradients
-            optimizer.zero_grad()
-            if loss_diff < 0.0001 : 
-                new_gabor.mutate(0.001)
-            # Forward pass for the specific model
+            optimizer.zero_grad() 
+            # Forward pass of both the existing model and additional gabor
             output = self.model(self.grid_x, self.grid_y) + new_gabor(self.grid_x, self.grid_y)
             weighted_diff = (output - target_image_tensor) ** 2 * self.weights
             loss = weighted_diff.mean()
