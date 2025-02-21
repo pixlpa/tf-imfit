@@ -606,7 +606,7 @@ def main():
         print("Full Optimization")
         for a in range(200):
             loss = fitter.train_step(a, 200)
-            if i % 10 == 0:
+            if a % 10 == 0:
                 temp = fitter.current_temp
                 pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
                 pbar.update(10)
