@@ -228,14 +228,14 @@ class ImageFitter:
         self.optimization_phase = 'global'  # 'global' or 'local'
         self.phase_split = 0.5  # default value, will be updated from args
     
-    def add_gabor(self, iterations, target_image):
+    def add_gabor(self, count, iterations, target_image, lr = 0.05):
         """Add a new Gabor filter to the model."""
         target_image_tensor = target_image.clone().detach().to(self.target.device)
         new_gabor = GaborLayer(num_gabors=1, base_scale=self.model.base_scale).to(self.model.u.device)
         check_loss = 0.0
         optimizer = optim.AdamW(
             new_gabor.parameters(),
-            lr=self.global_lr,
+            lr=lr,
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
@@ -252,6 +252,7 @@ class ImageFitter:
             loss.backward()
             optimizer.step()
             check_loss = loss.item()
+            print(f"Local optimization of model {i}: loss {check_loss:.6f}")
         self.model.u = nn.Parameter(torch.cat((self.model.u, new_gabor.u)))
         self.model.v = nn.Parameter(torch.cat((self.model.v, new_gabor.v)))
         self.model.theta = nn.Parameter(torch.cat((self.model.theta, new_gabor.theta)))
@@ -654,7 +655,7 @@ def main():
             print("Building up model")
             for i in range(args.num_gabors):
                 if (i > 0):
-                    loss = fitter.add_gabor(args.single_iterations,fitter.target)  # Add a new Gabor filter
+                    loss = fitter.add_gabor(i, args.single_iterations,fitter.target)  # Add a new Gabor filter
                     print(f"Added Gabor {i} with loss {loss:.6f}")
                 #fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
                 progress+=1
