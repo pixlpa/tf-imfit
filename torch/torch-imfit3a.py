@@ -252,7 +252,7 @@ class ImageFitter:
             loss.backward()
             optimizer.step()
             check_loss = loss.item()
-            print(f"Local optimization of model {i}: loss {check_loss:.6f}")
+            print(f"Local optimization of model {count}: loss {check_loss:.6f}")
         self.model.u = nn.Parameter(torch.cat((self.model.u, new_gabor.u)))
         self.model.v = nn.Parameter(torch.cat((self.model.v, new_gabor.v)))
         self.model.theta = nn.Parameter(torch.cat((self.model.theta, new_gabor.theta)))
