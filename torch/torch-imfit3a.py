@@ -615,9 +615,9 @@ def main():
                 if (i > 0):
                     loss = fitter.add_gabor(i, args.single_iterations,fitter.target)  # Add a new Gabor filter
                     print(f"Added Gabor {i} with loss {loss:.6f}")
-                #fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
+                    fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))
                 progress+=1
-                if i % 32 == 0:
+                if i % 32 == 0 and i < 0:
                     print("Intermediate Optimization")
                     for i in range(args.iterations):
                         loss = fitter.train_step(i, args.iterations)    
