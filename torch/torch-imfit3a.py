@@ -201,14 +201,7 @@ class ImageFitter:
         self.optimizer = self.global_optimizer  # Start with global optimizer
         
         # Initialize schedulers for both phases
-        self.global_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.global_optimizer,
-            mode='min',
-            factor=0.5,
-            patience=50,
-            verbose=True,
-            min_lr=1e-5
-        )
+        self.global_scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.9)
         
         self.scheduler = self.global_scheduler  # Start with global scheduler
         
