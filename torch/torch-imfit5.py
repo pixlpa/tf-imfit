@@ -357,18 +357,6 @@ class ImageFitter:
              # Backward pass and optimize
             loss.backward()
             optimizer.step()
-
-        # Update the model parameters with the optimized values
-        with torch.no_grad():
-            self.model.u[model_index] = specific_model_params['u']
-            self.model.v[model_index] = specific_model_params['v']
-            self.model.theta[model_index] = specific_model_params['theta']
-            self.model.rel_sigma[model_index] = specific_model_params['rel_sigma']
-            self.model.rel_freq[model_index] = specific_model_params['rel_freq']
-            self.model.psi[model_index] = specific_model_params['psi']
-            self.model.gamma[model_index] = specific_model_params['gamma']
-            self.model.amplitude[model_index] = specific_model_params['amplitude']
-
         print(f"Optimization for model {model_index} completed. Loss: {loss.item():.6f}")
         return loss.item()
 
