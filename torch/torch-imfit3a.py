@@ -367,8 +367,7 @@ class ImageFitter:
         )
         
         # Calculate loss
-        weights = self.get_phase_specific_weights()
-        loss = self.weighted_loss(output, self.target, weights) + self.constraint_loss(self.model)
+        loss = self.weighted_loss(output, self.target, self.weights) + self.constraint_loss(self.model)
         
         # Backward pass and optimize
         loss.backward()
