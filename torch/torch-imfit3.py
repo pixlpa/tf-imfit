@@ -70,17 +70,15 @@ class GaborLayer(nn.Module):
         H, W = grid_x.shape
         image_size = max(H, W)
         base_size = float(image_size)/ float(self.base_scale)
+
+        self.enforce_parameter_ranges()
         
         # Safe parameter transformations with gradient preservation
-        u = self.u.clamp(-1, 1)
-        v = self.v.clamp(-1, 1)
-        theta = self.theta.clamp(-2, 2)*2*np.pi
-        
-        # Ensure positive sigma with safe scaling
-        sigma = self.rel_sigma.clamp(1e-5, 5)
-        
-        # Safe aspect ratio
-        gamma = self.gamma.clamp(1e-5, 5)
+        u = self.u
+        v = self.v
+        theta = self.theta*2*np.pi
+        sigma = self.rel_sigma
+        gamma = self.gamma
         cr = torch.cos(theta[:,None,None])
         sr = torch.sin(theta[:,None,None])
         
@@ -89,13 +87,10 @@ class GaborLayer(nn.Module):
                 (grid_y[None,:,:] - v[:,None,None]) * sr
         y_rot = -(grid_x[None,:,:] - u[:,None,None]) * sr + \
                 (grid_y[None,:,:] - v[:,None,None]) * cr
-
-        # Safe gaussian computation
-
-        gaussian = torch.exp(torch.clamp(
-            -(x_rot**2)/(2*(sigma[:,None,None]**2)) - (y_rot**2)/(2*(gamma[:,None,None]**2)),
-            min=-80, max=80
-        ))
+        
+        gaussian = torch.exp(
+            -(x_rot**2)/(2*(sigma[:,None,None]**2)) - (y_rot**2)/(2*(gamma[:,None,None]**2))
+        )
         
         # Safe sinusoid computation with frequency scaling
         freq = np.float32(2*np.pi) / torch.exp(self.rel_freq)
@@ -106,20 +101,20 @@ class GaborLayer(nn.Module):
         # Combine components safely
         gabors = self.amplitude[:, :, None, None] * gaussian[:, None, :, :] * sinusoid
         result = torch.sum(gabors, dim=0)  # This should be [num_gabors, height, width]
-        result = torch.clamp(result, -1, 1)  # Clamp to normalized range       
-        return result  # Remove batch dimension for output
 
+        result = torch.clamp(result, -1, 1)  # Clamp to normalized range       
+        return result
     def enforce_parameter_ranges(self):
         """Enforce valid parameter ranges"""
         with torch.no_grad():
             self.u.clamp_(-1, 1)
             self.v.clamp_(-1, 1)
-            self.theta.clamp_(0, 1)
+            self.theta.clamp_(-2, 2)
             self.rel_sigma.clamp_(1e-5,5)
-            self.rel_freq.clamp_(1e-5,5)
+            self.rel_freq.clamp_(1e-5,20)
             self.psi.clamp_(-1, 1)
             self.gamma.clamp_(1e-5,5)
-            self.amplitude.clamp_(0,2)
+            self.amplitude.clamp_(0,1)
 
 class ImageFitter:
     def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 

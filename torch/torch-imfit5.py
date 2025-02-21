@@ -610,6 +610,8 @@ def main():
                 temp = fitter.current_temp
                 pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
                 pbar.update(10)
+            if i % 20 == 0:
+                fitter.single_optimize(np.random.randint(0, args.num_gabors-1),50);
             if i % 50 == 0 or i == args.iterations - 1:
                     fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
                     progress+=1
