@@ -115,6 +115,26 @@ class GaborLayer(nn.Module):
             self.psi.clamp_(-1, 1)
             self.gamma.clamp_(1e-5,5)
             self.amplitude.clamp_(0,1)
+    def mutate(self,strength):
+        """Randomly mutate some Gabor functions to explore new solutions"""
+        with torch.no_grad():
+            # Randomly select 5% of Gabors to mutate
+            num_gabors = self.amplitude.shape[0]
+            num_mutate = max(1, int(0.01 * num_gabors))
+            idx = np.random.choice(num_gabors, num_mutate, replace=False)
+            
+            device = self.model.u.device  # Get the current device
+            
+            # Reset their parameters randomly, ensuring correct device
+            self.u.data[idx] = self.u.data[idx] + (torch.rand(num_mutate, device=device) * 2 - 1) * strength
+            self.v.data[idx] = self.v.data[idx] + (torch.rand(num_mutate, device=device) * 2 - 1) * strength
+            self.theta.data[idx] = self.theta.data[idx] + (torch.rand(num_mutate, device=device)* 2 - 1) * strength
+            self.rel_sigma.data[idx] = self.rel_sigma.data[idx] + (torch.randn(num_mutate, device=device) * 2 - 1) * strength
+            self.rel_freq.data[idx] = self.rel_freq.data[idx] +  (torch.randn(num_mutate, device=device) * 2 - 1) * strength
+            self.psi.data[idx] = self.psi.data[idx] + (torch.randn(num_mutate, 3, device=device) * 2 - 1) * strength
+            self.gamma.data[idx] = self.gamma.data[idx] + (torch.randn(num_mutate, device=device) * 2 - 1) * strength
+            self.amplitude.data[idx] = self.amplitude.data[idx] + (torch.randn(num_mutate, 3, device=device) * 2 - 1) * strength
+
 
 class ImageFitter:
     def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 
@@ -233,6 +253,7 @@ class ImageFitter:
         target_image_tensor = target_image.clone().detach().to(self.target.device)
         new_gabor = GaborLayer(num_gabors=1, base_scale=self.model.base_scale).to(self.model.u.device)
         check_loss = 0.0
+        loss_diff = 0.0
         optimizer = optim.AdamW(
             new_gabor.parameters(),
             lr=lr,
@@ -242,7 +263,8 @@ class ImageFitter:
         for iteration in range(iterations):
             # Zero gradients
             optimizer.zero_grad()
-
+            if loss_diff < 0.0001 : 
+                new_gabor.mutate(0.01)
             # Forward pass for the specific model
             output = self.model(self.grid_x, self.grid_y) + new_gabor(self.grid_x, self.grid_y)
             weighted_diff = (output - target_image_tensor) ** 2 * self.weights
@@ -251,8 +273,9 @@ class ImageFitter:
              # Backward pass and optimize
             loss.backward()
             optimizer.step()
+            loss_diff = abs(loss.item()-check_loss)
             check_loss = loss.item()
-            print(f"Local optimization of model {count}: loss {check_loss:.6f}")
+            print(f"Local optimization of model {count}: loss {check_loss:.6f} diff {loss_diff:.6f}")
         self.model.u = nn.Parameter(torch.cat((self.model.u, new_gabor.u)))
         self.model.v = nn.Parameter(torch.cat((self.model.v, new_gabor.v)))
         self.model.theta = nn.Parameter(torch.cat((self.model.theta, new_gabor.theta)))
