@@ -604,14 +604,20 @@ def main():
     with tqdm(total=args.iterations) as pbar:
         progress = 0
         print("Full Optimization")
+        for a in range(200):
+            loss = fitter.train_step(a, 200)
+             if i % 10 == 0:
+                temp = fitter.current_temp
+                pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                pbar.update(10)
+        for b in range(100):
+            fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)    
             if i % 10 == 0:
                 temp = fitter.current_temp
                 pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
                 pbar.update(10)
-            if i % 20 == 0:
-                fitter.single_optimize(np.random.randint(0, args.num_gabors-1),50);
             if i % 50 == 0 or i == args.iterations - 1:
                     fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
                     progress+=1
