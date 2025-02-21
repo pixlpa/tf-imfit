@@ -15,6 +15,6 @@ time python tf-imfit/torch/torch-imfit5.py $SOURCEIMG \
     --size 256 --num-gabors 256 --phase-split 0.6 --global-lr 0.02 \
     --local-lr 0.005 --mutation-strength 0.0002 --init results/lores/saved_model.pth \
     --init-size 128
-    
-mv results/final/saved-weights.txt results/$NAME.txt
+
+mv results/final/saved_weights.txt results/$NAME.txt
 cp results/$NAME.txt /content/drive/My\ Drive/HM/results/
