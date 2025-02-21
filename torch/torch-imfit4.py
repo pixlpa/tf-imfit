@@ -74,15 +74,15 @@ class GaborLayer(nn.Module):
         self.enforce_parameter_ranges()
         
         # Safe parameter transformations with gradient preservation
-        u = self.u.clamp(-1, 1)
-        v = self.v.clamp(-1, 1)
-        theta = self.theta.clamp(-2, 2)*2*np.pi
+        u = self.u
+        v = self.v
+        theta = self.theta*2*np.pi
         
         # Ensure positive sigma with safe scaling
-        sigma = self.rel_sigma.clamp(1e-5, 5)
+        sigma = self.rel_sigma
         
         # Safe aspect ratio
-        gamma = self.gamma.clamp(1e-5, 5)
+        gamma = self.gamma
         cr = torch.cos(theta[:,None,None])
         sr = torch.sin(theta[:,None,None])
         
@@ -124,7 +124,7 @@ class GaborLayer(nn.Module):
             self.v.clamp_(-1, 1)
             self.theta.clamp_(-2, 2)
             self.rel_sigma.clamp_(1e-5,5)
-            # self.rel_freq.clamp_(1e-5,5)
+            self.rel_freq.clamp_(1e-5,20)
             self.psi.clamp_(-1, 1)
             self.gamma.clamp_(1e-5,5)
             self.amplitude.clamp_(0,1)
