@@ -693,7 +693,7 @@ def main():
                         if i % 100 == 0 or i == args.iterations - 1:
                                 fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
                                 progress+=1
-            for i in range(args.iteration):
+            for i in range(args.iterations):
                 loss = fitter.train_step(i, args.iterations)    
                 if i % 10 == 0:
                     temp = fitter.current_temp
