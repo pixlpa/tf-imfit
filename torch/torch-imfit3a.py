@@ -248,7 +248,7 @@ class ImageFitter:
         self.optimization_phase = 'global'  # 'global' or 'local'
         self.phase_split = 0.5  # default value, will be updated from args
     
-    def add_gabor(self, count, iterations, target_image, lr = 0.01):
+    def add_gabor(self, count, iterations, target_image, lr = 0.005):
         """Add a new Gabor filter to the model."""
         target_image_tensor = target_image.clone().detach().to(self.target.device)
         new_gabor = GaborLayer(num_gabors=1, base_scale=self.model.base_scale).to(self.model.u.device)
@@ -264,7 +264,7 @@ class ImageFitter:
             # Zero gradients
             optimizer.zero_grad()
             if loss_diff < 0.0001 : 
-                new_gabor.mutate(0.01)
+                new_gabor.mutate(0.001)
             # Forward pass for the specific model
             output = self.model(self.grid_x, self.grid_y) + new_gabor(self.grid_x, self.grid_y)
             weighted_diff = (output - target_image_tensor) ** 2 * self.weights
@@ -275,7 +275,7 @@ class ImageFitter:
             optimizer.step()
             loss_diff = abs(loss.item()-check_loss)
             check_loss = loss.item()
-            print(f"Local optimization of model {count}: loss {check_loss:.6f} diff {loss_diff:.6f}")
+            # print(f"Local optimization of model {count}: loss {check_loss:.6f} diff {loss_diff:.6f}")
         self.model.u = nn.Parameter(torch.cat((self.model.u, new_gabor.u)))
         self.model.v = nn.Parameter(torch.cat((self.model.v, new_gabor.v)))
         self.model.theta = nn.Parameter(torch.cat((self.model.theta, new_gabor.theta)))
