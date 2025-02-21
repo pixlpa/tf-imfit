@@ -1,0 +1,23 @@
+SOURCEIMG=$1
+NAME=$(basename $SOURCEIMG .png)
+
+echo $SOURCEIMG $NAME $NAME.txt
+
+rm -f results/lores/*.png && \
+time python tf-imfit/torch/torch-imfit5.py $SOURCEIMG \
+    --iterations 1000 --single-iterations 5 --output-dir results/lores/ \
+    --size 128 --num-gabors 256 --phase-split 0.6 --global-lr 0.02 \
+    --local-lr 0.005 --mutation-strength 0.0002
+
+rm -f results/final/*.png && \
+time python tf-imfit/torch/torch-imfit5.py $SOURCEIMG \
+    --iterations 2000 --single-iterations 5 --output-dir results/final/ \
+    --size 512 --num-gabors 256 --phase-split 0.6 --global-lr 0.02 \
+    --local-lr 0.005 --mutation-strength 0.0002 --init results/lores/saved_model.pth \
+    --init-size 256
+
+python tf-imfit/makeparams-rgb.py results/weights_final.txt results/$NAME.txt
+python tf-imfit/makeparams-rgb-alt.py results/weights_final.txt results/$NAME-alt.txt
+
+mv results/final/saved-weights.txt results/$NAME.txt
+cp results/$NAME.txt /content/drive/My\ Drive/HM/results/
