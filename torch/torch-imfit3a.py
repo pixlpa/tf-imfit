@@ -248,7 +248,7 @@ class ImageFitter:
         self.optimization_phase = 'global'  # 'global' or 'local'
         self.phase_split = 0.5  # default value, will be updated from args
     
-    def add_gabor(self, count, iterations, target_image, lr = 0.1):
+    def add_gabor(self, count, iterations, target_image, lr = 0.01):
         """Add a new Gabor filter to the model."""
         target_image_tensor = target_image.clone().detach().to(self.target.device)
         new_gabor = GaborLayer(num_gabors=1, base_scale=self.model.base_scale).to(self.model.u.device)
@@ -264,7 +264,7 @@ class ImageFitter:
             # Zero gradients
             optimizer.zero_grad()
             if loss_diff < 0.0001 : 
-                new_gabor.mutate(0.5)
+                new_gabor.mutate(0.01)
             # Forward pass for the specific model
             output = self.model(self.grid_x, self.grid_y) + new_gabor(self.grid_x, self.grid_y)
             weighted_diff = (output - target_image_tensor) ** 2 * self.weights
