@@ -123,7 +123,7 @@ class GaborLayer(nn.Module):
             num_mutate = max(1, int(0.01 * num_gabors))
             idx = np.random.choice(num_gabors, num_mutate, replace=False)
             
-            device = self.model.u.device  # Get the current device
+            device = self.u.device  # Get the current device
             
             # Reset their parameters randomly, ensuring correct device
             self.u.data[idx] = self.u.data[idx] + (torch.rand(num_mutate, device=device) * 2 - 1) * strength
