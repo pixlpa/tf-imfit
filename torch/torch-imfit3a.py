@@ -619,13 +619,13 @@ def main():
                 progress+=1
                 if i % 32 == 0 and i > 0:
                     print("Intermediate Optimization")
-                    for i in range(args.iterations):
+                    for i in range(args.iterations/4):
                         loss = fitter.train_step(i, args.iterations)    
                         if i % 10 == 0:
                             temp = fitter.current_temp
                             pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
                             pbar.update(10)
-                        if i % 100 == 0 or i == args.iterations - 1:
+                        if i % 20 == 0 or i == args.iterations - 1:
                                 fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
                                 progress+=1
             for i in range(args.iterations):
