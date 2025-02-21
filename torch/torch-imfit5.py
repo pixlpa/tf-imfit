@@ -352,7 +352,7 @@ class ImageFitter:
             # Forward pass for the specific model
             output = self.model(self.grid_x, self.grid_y)
             weighted_diff = (output - target_image_tensor) ** 2 * self.weights
-            loss = weighted_diff.mean()
+            loss = weighted_diff.mean() + self.constraint_loss(self.model)
 
              # Backward pass and optimize
             loss.backward()
