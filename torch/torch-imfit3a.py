@@ -335,7 +335,7 @@ class ImageFitter:
         
         return loss
     
-    def lap_loss(output, target):
+    def lap_loss(self, output, target):
         laplacian = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
         laplacian.weight.data = torch.tensor([[[[0, 1, 0], [1, -4, 1], [0, 1, 0]]],
                                             [[[0, 1, 0], [1, -4, 1], [0, 1, 0]]],
