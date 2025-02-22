@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import transforms
+from torchvision import models
 from PIL import Image
 import numpy as np
 import argparse
@@ -331,6 +332,12 @@ class ImageFitter:
         
         return loss
     
+    def perceptual_loss(self, output, target):
+        vgg = models.vgg16(pretrained=True).features.eval().to(device)
+        output_features = vgg(output)
+        target_features = vgg(target)
+        return nn.functional.mse_loss(output_features, target_features)
+        
     def constraint_loss(self, model):
         # Vectorized pairwise constraints
         with torch.no_grad():
@@ -374,7 +381,7 @@ class ImageFitter:
         
         # Calculate loss
         # loss = self.weighted_loss(output, self.target, self.weights) + self.constraint_loss(self.model)
-        loss = self.unweighted_loss(output, self.target) + self.constraint_loss(self.model)
+        loss = self.unweighted_loss(output, self.target) + self.perceptual_loss(output,self.target) + self.constraint_loss(self.model)
         # Backward pass and optimize
         loss.backward()
         self.optimizer.step()
