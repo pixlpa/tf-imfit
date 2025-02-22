@@ -328,7 +328,7 @@ class ImageFitter:
         # Calculate MSE with weights
         mse  = self.mse_criterion(output,target)
         l1 = self.l1_criterion(output,target)
-        loss = mse + 0.5 * l1
+        loss = mse * 0.75 + 0.25 * l1
         
         return loss
     
