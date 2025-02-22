@@ -318,6 +318,19 @@ class ImageFitter:
         
         return loss
     
+    def unweighted_loss(self, output, target):
+        """Calculate weighted MSE loss with gradient preservation"""
+        # Ensure tensors have gradients
+        if not output.requires_grad:
+            output.requires_grad_(True)
+            
+        # Calculate MSE with weights
+        mse  = self.mse_criterion(output,target)
+        l1 = self.l1_criterion(output,target)
+        loss = mse + 0.5 * l1
+        
+        return loss
+    
     def constraint_loss(self, model):
         # Vectorized pairwise constraints
         with torch.no_grad():
@@ -360,8 +373,8 @@ class ImageFitter:
         )
         
         # Calculate loss
-        loss = self.weighted_loss(output, self.target, self.weights) + self.constraint_loss(self.model)
-        
+        # loss = self.weighted_loss(output, self.target, self.weights) + self.constraint_loss(self.model)
+        loss = self.unweighted_loss(output, self.target) + self.constraint_loss(self.model)
         # Backward pass and optimize
         loss.backward()
         self.optimizer.step()
