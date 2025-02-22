@@ -244,7 +244,10 @@ class ImageFitter:
             # Forward pass of both the existing model and additional gabor
             output = self.model(self.grid_x, self.grid_y) + new_gabor(self.grid_x, self.grid_y)
             weighted_diff = (output - target_image_tensor) ** 2 * self.weights
-            loss = weighted_diff.mean()
+
+            laplace = lap_loss(output, self.target)
+            unweighted = self.unweighted_loss(output, self.target)
+            loss = weighted_diff.mean()*0.5 + laplace*0.25 + unweighted*0.25
 
              # Backward pass and optimize
             loss.backward()
@@ -332,11 +335,16 @@ class ImageFitter:
         
         return loss
     
-    def perceptual_loss(self, output, target):
-        vgg = models.vgg11(pretrained=True).features.eval().to(self.target.device)
-        output_features = vgg(output)
-        target_features = vgg(target)
-        return nn.functional.mse_loss(output_features, target_features)
+    def lap_loss(output, target):
+        laplacian = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
+        laplacian.weight.data = torch.tensor([[[[0, 1, 0], [1, -4, 1], [0, 1, 0]]],
+                                            [[[0, 1, 0], [1, -4, 1], [0, 1, 0]]],
+                                            [[[0, 1, 0], [1, -4, 1], [0, 1, 0]]]]).float()
+        laplacian.weight.requires_grad = False
+
+        output_lap = laplacian(output)
+        target_lap = laplacian(target)
+        return nn.functional.mse_loss(output_lap, target_lap)
         
     def constraint_loss(self, model):
         # Vectorized pairwise constraints
@@ -381,9 +389,10 @@ class ImageFitter:
         
         # Calculate loss
         weighted = self.weighted_loss(output, self.target, self.weights)*0.5
-        unweighted = self.unweighted_loss(output, self.target) *0.5
+        unweighted = self.unweighted_loss(output, self.target)*0.25
+        laplace = self.lap_loss(output,self.target) * 0.25
 
-        loss =  weighted + unweighted # + self.constraint_loss(self.model)
+        loss =  weighted + unweighted + laplace # + self.constraint_loss(self.model)
         # loss = self.unweighted_loss(output, self.target) + self.perceptual_loss(output,self.target) + self.constraint_loss(self.model)
         # Backward pass and optimize
         loss.backward()
