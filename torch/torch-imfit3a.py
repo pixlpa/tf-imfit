@@ -333,7 +333,7 @@ class ImageFitter:
         return loss
     
     def perceptual_loss(self, output, target):
-        vgg = models.vgg16(pretrained=True).features.eval().to(self.target.device)
+        vgg = models.vgg11(pretrained=True).features.eval().to(self.target.device)
         output_features = vgg(output)
         target_features = vgg(target)
         return nn.functional.mse_loss(output_features, target_features)
