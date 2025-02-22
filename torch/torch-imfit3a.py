@@ -411,8 +411,8 @@ class ImageFitter:
         
         # Calculate loss
         weighted = self.weighted_loss(output, self.target, self.weights)*0
-        unweighted = self.unweighted_loss(output, self.target)*0.5
-        laplace = self.lap_loss(output,self.target) * 0.5
+        unweighted = self.unweighted_loss(output, self.target)*0.75
+        laplace = self.lap_loss(output,self.target) * 0.25
 
         loss =  weighted + unweighted + laplace # + self.constraint_loss(self.model)
         # loss = self.unweighted_loss(output, self.target) + self.perceptual_loss(output,self.target) + self.constraint_loss(self.model)
