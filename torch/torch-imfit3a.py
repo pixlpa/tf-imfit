@@ -336,8 +336,8 @@ class ImageFitter:
         return loss
     
     def lap_loss(self, output, target):
-        print("Output shape:", output.shape)
-        print("Target shape:", target.shape)
+       #  print("Output shape:", output.shape)
+       # print("Target shape:", target.shape)
         outp = output.unsqueeze(0)
         targ = target.unsqueeze(0)
         laplacian = nn.Conv2d(
