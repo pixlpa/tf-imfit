@@ -359,8 +359,7 @@ class ImageFitter:
             [[0, 1, 0],
              [1, -4, 1],
              [0, 1, 0]]
-        ]]).float()  # Shape will be [1, 3, 3, 3]
-        print("weight shape:", laplacian.weight.data.shape)
+        ]]).float().to(target.device)  # Shape will be [1, 3, 3, 3]
 
         # Assign the weights and set requires_grad to False
         laplacian.weight.requires_grad = False
