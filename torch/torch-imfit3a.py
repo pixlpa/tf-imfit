@@ -336,10 +336,18 @@ class ImageFitter:
         return loss
     
     def lap_loss(self, output, target):
-        laplacian = nn.Conv2d(3, 3, kernel_size=3, padding=1, bias=False)
-        laplacian.weight.data = torch.tensor([[[[0, 1, 0], [1, -4, 1], [0, 1, 0]]],
-                                            [[[0, 1, 0], [1, -4, 1], [0, 1, 0]]],
-                                            [[[0, 1, 0], [1, -4, 1], [0, 1, 0]]]]).float()
+        laplacian = nn.Conv2d(
+            in_channels=3,  # 3 channels for RGB images
+            out_channels=3,  # Output will also have 3 channels
+            kernel_size=3,
+            padding=1,
+            bias=False
+        )
+        laplacian.weight.data = torch.tensor([
+            [[[0, 1, 0], [1, -4, 1], [0, 1, 0]]],  # Filter for channel 1
+            [[[0, 1, 0], [1, -4, 1], [0, 1, 0]]],  # Filter for channel 2
+            [[[0, 1, 0], [1, -4, 1], [0, 1, 0]]]   # Filter for channel 3
+        ]).float()
         laplacian.weight.requires_grad = False
 
         output_lap = laplacian(output)
