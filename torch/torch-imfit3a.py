@@ -380,8 +380,8 @@ class ImageFitter:
         )
         
         # Calculate loss
-        # loss = self.weighted_loss(output, self.target, self.weights) + self.constraint_loss(self.model)
-        loss = self.unweighted_loss(output, self.target) + self.perceptual_loss(output,self.target) + self.constraint_loss(self.model)
+        loss = self.weighted_loss(output, self.target, self.weights)*0.5+ self.unweighted_loss*0.5 + self.constraint_loss(self.model)
+        # loss = self.unweighted_loss(output, self.target) + self.perceptual_loss(output,self.target) + self.constraint_loss(self.model)
         # Backward pass and optimize
         loss.backward()
         self.optimizer.step()
