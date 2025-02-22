@@ -345,14 +345,17 @@ class ImageFitter:
         )
         
         # Initialize the weights for the Laplacian filter
-        laplacian_weights = torch.tensor([
-            [[[0, 1, 0], [1, -4, 1], [0, 1, 0]]],  # Kernel for channel 1
-            [[[0, 1, 0], [1, -4, 1], [0, 1, 0]]],  # Kernel for channel 2
-            [[[0, 1, 0], [1, -4, 1], [0, 1, 0]]]   # Kernel for channel 3
-        ]).float()
+        laplacian.weight.data =torch.tensor([[[[0, 1, 0],
+                                             [1, -4, 1],
+                                             [0, 1, 0]]],
+                                            [[[0, 1, 0],
+                                             [1, -4, 1],
+                                             [0, 1, 0]]],
+                                            [[[0, 1, 0],
+                                             [1, -4, 1],
+                                             [0, 1, 0]]]]).float()
 
         # Assign the weights and set requires_grad to False
-        laplacian.weight.data = laplacian_weights
         laplacian.weight.requires_grad = False
 
         output_lap = laplacian(output)
