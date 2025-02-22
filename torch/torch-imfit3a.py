@@ -338,7 +338,8 @@ class ImageFitter:
     def lap_loss(self, output, target):
         print("Output shape:", output.shape)
         print("Target shape:", target.shape)
-        
+        outp = output.unsqueeze(0)
+        targ = target.unsqueeze(0)
         laplacian = nn.Conv2d(
             in_channels=3,  # 3 channels for RGB images
             out_channels=3,  # Output will also have 3 channels
@@ -361,8 +362,8 @@ class ImageFitter:
         # Assign the weights and set requires_grad to False
         laplacian.weight.requires_grad = False
 
-        output_lap = laplacian(output)
-        target_lap = laplacian(target)
+        output_lap = laplacian(outp)
+        target_lap = laplacian(targ)
         return nn.functional.mse_loss(output_lap, target_lap)
         
     def constraint_loss(self, model):
