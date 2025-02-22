@@ -349,15 +349,18 @@ class ImageFitter:
         )
         
         # Initialize the weights for the Laplacian filter
-        laplacian.weight.data =torch.tensor([[[[0, 1, 0],
-                                             [1, -4, 1],
-                                             [0, 1, 0]]],
-                                            [[[0, 1, 0],
-                                             [1, -4, 1],
-                                             [0, 1, 0]]],
-                                            [[[0, 1, 0],
-                                             [1, -4, 1],
-                                             [0, 1, 0]]]]).float()
+        laplacian.weight.data =torch.tensor([[
+            [[0, 1, 0],
+             [1, -4, 1],
+             [0, 1, 0]],
+            [[0, 1, 0],
+             [1, -4, 1],
+             [0, 1, 0]],
+            [[0, 1, 0],
+             [1, -4, 1],
+             [0, 1, 0]]
+        ]]).float()  # Shape will be [1, 3, 3, 3]
+        print("weight shape:", laplacian.weight.data.shape)
 
         # Assign the weights and set requires_grad to False
         laplacian.weight.requires_grad = False
