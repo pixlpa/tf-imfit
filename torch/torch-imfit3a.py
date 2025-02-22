@@ -245,7 +245,7 @@ class ImageFitter:
             output = self.model(self.grid_x, self.grid_y) + new_gabor(self.grid_x, self.grid_y)
             weighted_diff = (output - target_image_tensor) ** 2 * self.weights
 
-            laplace = lap_loss(output, self.target)
+            laplace = self.lap_loss(output, self.target)
             unweighted = self.unweighted_loss(output, self.target)
             loss = weighted_diff.mean()*0.5 + laplace*0.25 + unweighted*0.25
 
