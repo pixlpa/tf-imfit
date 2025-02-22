@@ -336,6 +336,9 @@ class ImageFitter:
         return loss
     
     def lap_loss(self, output, target):
+        print("Output shape:", output.shape)
+        print("Target shape:", target.shape)
+        
         laplacian = nn.Conv2d(
             in_channels=3,  # 3 channels for RGB images
             out_channels=3,  # Output will also have 3 channels
