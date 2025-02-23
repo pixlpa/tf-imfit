@@ -659,8 +659,8 @@ def main():
     with tqdm(total=args.iterations) as pbar:
         progress = 0
         print("Full Optimization")
-        for b in range(20):
-            fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
+       #  for b in range(20):
+       #     fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
         fitter.init_optimizer(args.global_lr)
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)    
