@@ -338,10 +338,8 @@ class ImageFitter:
         return loss
     
     def sobel_filter(self, image):
-        def sobel_rgb_3d(image):
         # Ensure image is in the right format (B, C, H, W)
         image = image.unsqueeze(0)
-        
         # Define 3D Sobel kernels
         sobel_x = torch.tensor([
             [[[-1, 0, 1],
