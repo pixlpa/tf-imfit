@@ -119,7 +119,7 @@ class GaborLayer(nn.Module):
 class ImageFitter:
     def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 
                  device='cuda' if torch.cuda.is_available() else 'cpu', init=None,
-                 global_lr=0.03, local_lr=0.01, init_size=128, mutation_strength=0.01):  # Add learning rate parameters
+                 global_lr=0.03, local_lr=0.01, init_size=128, mutation_strength=0.01, gamma = 0.85):  # Add learning rate parameters
         image = Image.open(image_path).convert('RGB')
         
         # Resize image if target_size is specified
@@ -145,6 +145,7 @@ class ImageFitter:
         
         self.global_lr = global_lr
         self.local_lr = local_lr
+        self.gamma = gamma
 
         self.target = transform(image).to(device)
         h, w = self.target.shape[-2:]
@@ -181,7 +182,7 @@ class ImageFitter:
         self.optimizer = self.global_optimizer  # Start with global optimizer
         
         # Initialize schedulers for both phases
-        self.global_scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.8)
+        self.global_scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=gamma)
         
         self.scheduler = self.global_scheduler  # Start with global scheduler
         
@@ -279,7 +280,7 @@ class ImageFitter:
             betas=(0.9, 0.999)
         )
         # Initialize schedulers for both phases
-        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.8)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.gamma)
 
     def mutate_parameters(self):
         """Randomly mutate some Gabor functions to explore new solutions"""
@@ -615,14 +616,8 @@ def main():
                        help='Learning rate for local phase')
     parser.add_argument('--mutation-strength', type=float, default=0.01,
                        help='Mutation strength')
-    parser.add_argument('--sigma-max', type=float, default=2,
-                       help='Maximum sigma')
-    parser.add_argument('--gamma-max', type=float, default=2,
-                       help='Maximum gamma')
-    parser.add_argument('--rel-freq-max', type=float, default=2,
-                       help='Maximum rel freq')
-    parser.add_argument('--rel-freq-min', type=float, default=0.01,
-                       help='Minimum rel freq')
+    parser.add_argument('--gamma', type=float, default=0.85,
+                       help='learning rate gamma')
     args = parser.parse_args()
 
     # Create output directory if it doesn't exist
@@ -636,10 +631,6 @@ def main():
         target_size = (args.width, args.height)
     init_gabors = args.num_gabors
 
-    GABOR_MAX['rel_sigma'] = args.sigma_max
-    GABOR_MAX['gamma'] = args.gamma_max
-    GABOR_MAX['rel_freq'] = args.rel_freq_max
-    GABOR_MIN['rel_freq'] = args.rel_freq_min
     # Initialize fitter with target size and learning rates
     fitter = ImageFitter(
         args.image, 
@@ -651,7 +642,8 @@ def main():
         global_lr=args.global_lr,
         local_lr=args.local_lr,
         init_size=args.init_size,
-        mutation_strength=args.mutation_strength
+        mutation_strength=args.mutation_strength,
+        gamma = args.gamma
     )
     # Set the phase split from arguments
     fitter.phase_split = args.phase_split
