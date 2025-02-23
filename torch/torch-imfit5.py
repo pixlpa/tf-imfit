@@ -124,17 +124,33 @@ class ImageFitter:
         
         # Resize image if target_size is specified
         if target_size is not None:
-            image = self.resize_image(image, target_size)
+            if isinstance(target_size, int):
+                # If single number, maintain aspect ratio
+                w, h = image.size
+                aspect_ratio = w / h
+                if w > h:
+                    new_w = target_size
+                    new_h = int(target_size / aspect_ratio)
+                else:
+                    new_h = target_size
+                    new_w = int(target_size * aspect_ratio)
+                target_size = (new_w, new_h)
+            image = image.resize(target_size, Image.Resampling.LANCZOS)
         
         # Enhanced preprocessing pipeline
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
+        
+        self.global_lr = global_lr
+        self.local_lr = local_lr
+
         self.target = transform(image).to(device)
         h, w = self.target.shape[-2:]
-
-       #load weights if provided
+        if target_size is not None:
+            w,h = target_size
+        
         if weight_path:
             weight_img = Image.open(weight_path).convert('L')  # Convert to grayscale
             weight_img = weight_img.resize((w, h), Image.Resampling.LANCZOS)
@@ -149,70 +165,67 @@ class ImageFitter:
         self.grid_x = x.to(device)
         self.grid_y = y.to(device)
         
-        # Initialize model
+        # Initialize model with improved training setup
         self.model = GaborLayer(num_gabors,init_size).to(device)
-    
         # Initialize model parameters if provided
         if init:
             self.init_parameters(init)
-        
         # Initialize optimizers with provided learning rates
         self.global_optimizer = optim.AdamW(
             self.model.parameters(),
             lr=global_lr,
-            weight_decay=1e-4,
-            betas=(0.9, 0.999)
-        )
-        
-        self.local_optimizer = optim.AdamW(
-            self.model.parameters(),
-            lr=local_lr,
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
-      
+        
         self.optimizer = self.global_optimizer  # Start with global optimizer
         
         # Initialize schedulers for both phases
-        self.global_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.global_optimizer,
-            mode='min',
-            factor=0.5,
-            patience=50,
-            verbose=True,
-            min_lr=1e-5
-        )
-        
-        self.local_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.local_optimizer,
-            mode='min',
-            factor=0.5,
-            patience=30,
-            verbose=True,
-            min_lr=1e-6
-        )
+        self.global_scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.8)
         
         self.scheduler = self.global_scheduler  # Start with global scheduler
         
-        # Initialize best loss tracking / needs to be implemented
+        # Use a combination of MSE and L1 loss
+        self.mse_criterion = nn.MSELoss()
+        self.l1_criterion = nn.L1Loss()
+        
+        # Initialize best loss tracking
         self.best_loss = float('inf')
         self.best_state = None
         
         # Add temperature scheduling
         self.initial_temp = 0.1
-        self.min_temp = 0.00000001
+        self.min_temp = 0.001
         self.current_temp = self.initial_temp
         
         # Add mutation probability
-        self.mutation_prob = 0.01
+        self.mutation_prob = 0.001
         self.mutation_strength = mutation_strength
-        # Add phase tracking
-        self.optimization_phase = 'global'  # 'global' or 'local'
-        self.phase_split = 0.5  # default value, will be updated from args
     
-    def add_gabor(self):
+    def add_gabor(self, count, iterations, target_image, lr = 0.003):
         """Add a new Gabor filter to the model."""
+        target_image_tensor = target_image.clone().detach().to(self.target.device)
         new_gabor = GaborLayer(num_gabors=1, base_scale=self.model.base_scale).to(self.model.u.device)
+        check_loss = 0.0
+        loss_diff = 0.0
+        optimizer = optim.AdamW(
+            new_gabor.parameters(),
+            lr=lr,
+            weight_decay=1e-5,
+            betas=(0.9, 0.999)
+        )
+        for iteration in range(iterations):
+            # Zero gradients
+            optimizer.zero_grad() 
+            # Forward pass of both the existing model and additional gabor
+            output = self.model(self.grid_x, self.grid_y) + new_gabor(self.grid_x, self.grid_y)
+            loss = self.loss_function(output,self.target)
+             # Backward pass and optimize
+            loss.backward()
+            optimizer.step()
+            loss_diff = abs(loss.item()-check_loss)
+            check_loss = loss.item()
+            # print(f"Local optimization of model {count}: loss {check_loss:.6f} diff {loss_diff:.6f}")
         self.model.u = nn.Parameter(torch.cat((self.model.u, new_gabor.u)))
         self.model.v = nn.Parameter(torch.cat((self.model.v, new_gabor.v)))
         self.model.theta = nn.Parameter(torch.cat((self.model.theta, new_gabor.theta)))
@@ -227,18 +240,24 @@ class ImageFitter:
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
-        self.local_optimizer = optim.AdamW(
-            self.model.parameters(),
-            lr=self.local_lr,
-            weight_decay=1e-4,
-            betas=(0.9, 0.999)
-        )
         self.optimizer = self.global_optimizer
+        return check_loss
+
     def init_parameters(self, init):
         """Initialize parameters from a saved model"""
         if init:
             self.load_model(init)
             print("Initialized parameters from", init)
+
+    def init_optimizer(self,global_lr):# Initialize optimizers with provided learning rates
+        self.optimizer = optim.AdamW(
+            self.model.parameters(),
+            lr=global_lr,
+            weight_decay=1e-5,
+            betas=(0.9, 0.999)
+        )
+        # Initialize schedulers for both phases
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.8)
 
     def mutate_parameters(self):
         """Randomly mutate some Gabor functions to explore new solutions"""
@@ -284,6 +303,120 @@ class ImageFitter:
         
         return loss
     
+    def unweighted_loss(self, output, target):
+        """Calculate weighted MSE loss with gradient preservation"""
+        # Ensure tensors have gradients
+        if not output.requires_grad:
+            output.requires_grad_(True)
+            
+        # Calculate MSE with weights
+        mse  = self.mse_criterion(output,target)
+        l1 = self.l1_criterion(output,target)
+        loss = mse * 0.5 + 0.5 * l1
+        
+        return loss
+    
+    def sobel_filter(self, image):
+        # Ensure image is in the right format (B, C, H, W)
+        image = image.unsqueeze(0)
+    # Define base Sobel kernels
+        sobel_x = torch.tensor([[-1, 0, 1],
+                            [-2, 0, 2],
+                            [-1, 0, 1]], dtype=torch.float32)
+        
+        sobel_y = torch.tensor([[-1, -2, -1],
+                            [0, 0, 0],
+                            [1, 2, 1]], dtype=torch.float32)
+        
+        # Reshape kernels for 3-channel input
+        # Shape: (out_channels, in_channels/groups, kernel_height, kernel_width)
+        sobel_x = sobel_x.view(1, 1, 3, 3).repeat(3, 1, 1, 1).to(image.device)
+        sobel_y = sobel_y.view(1, 1, 3, 3).repeat(3, 1, 1, 1).to(image.device)
+        
+        # Create convolutional layers
+        grad_x = nn.Conv2d(
+            in_channels=3,
+            out_channels=3,
+            kernel_size=3,
+            padding=1,
+            groups=3,  # Important: use groups=3 for separate filtering of each channel
+            bias=False
+        ).to(image.device)
+        
+        grad_y = nn.Conv2d(
+            in_channels=3,
+            out_channels=3,
+            kernel_size=3,
+            padding=1,
+            groups=3,  # Important: use groups=3 for separate filtering of each channel
+            bias=False
+        ).to(image.device)
+
+        sobel_x.requires_grad = False
+        sobel_y.requires_grad = False
+        
+        grad_x.weight.data = sobel_x
+        grad_y.weight.data = sobel_y
+
+        mag_x = grad_x(image)
+        mag_y = grad_y(image)
+        
+        # Compute gradient magnitude
+        gradient_magnitude = torch.sqrt(mag_x**2 + mag_y**2 + 1e-6)
+        return gradient_magnitude
+    
+    def sobel_loss(self, output, target):
+        outs = self.sobel_filter(output)
+        targ = self.sobel_filter(target)
+        return nn.functional.mse_loss(outs,targ)
+    
+    def lap_loss(self, output, target):
+       #  print("Output shape:", output.shape)
+       # print("Target shape:", target.shape)
+        outp = output.unsqueeze(0)
+        targ = target.unsqueeze(0)
+        laplacian = nn.Conv2d(
+            in_channels=3,  # 3 channels for RGB images
+            out_channels=3,  # Output will also have 3 channels
+            kernel_size=3,
+            padding=1,
+            bias=False
+        )
+        
+        # Initialize the weights for the Laplacian filter
+        laplacian.weight.data =torch.tensor([[
+            [[0, 1, 0],
+             [1, -4, 1],
+             [0, 1, 0]],
+            [[0, 1, 0],
+             [1, -4, 1],
+             [0, 1, 0]],
+            [[0, 1, 0],
+             [1, -4, 1],
+             [0, 1, 0]]
+        ]]).float().to(target.device)  # Shape will be [1, 3, 3, 3]
+
+        # Assign the weights and set requires_grad to False
+        laplacian.weight.requires_grad = False
+
+        output_lap = laplacian(outp)
+        target_lap = laplacian(targ)
+        return nn.functional.mse_loss(output_lap, target_lap)
+    def get_gradients(self, image):
+        h_gradient = image[..., :, 1:] - image[..., :, :-1]
+        v_gradient = image[..., 1:, :] - image[..., :-1, :]
+        return h_gradient, v_gradient
+    
+    def gradient_loss(self, generated_image, target_image):
+        # Compute gradients for both images        
+        gen_h, gen_v = self.get_gradients(generated_image)
+        target_h, target_v = self.get_gradients(target_image)
+        
+        # Compute L1 loss between gradients
+        h_loss = torch.mean(torch.abs(gen_h - target_h))
+        v_loss = torch.mean(torch.abs(gen_v - target_v))
+        return h_loss + v_loss   
+    
     def constraint_loss(self, model):
         # Vectorized pairwise constraints
         with torch.no_grad():
@@ -292,10 +425,10 @@ class ImageFitter:
             gamma = model.gamma
 
         pairwise_constraints = torch.stack([
-            (rel_sigma - rel_freq / 64).unsqueeze(0),
+            (rel_sigma - rel_freq / 32).unsqueeze(0),
             (rel_freq / 2 - rel_sigma).unsqueeze(0),
             (rel_sigma - rel_freq).unsqueeze(0),
-            (4 * rel_sigma - gamma).unsqueeze(0)
+            (8 * rel_sigma - gamma).unsqueeze(0)
         ], dim=2)  # Stack along the last dimension
 
         # Calculate the squared constraints using ReLU
@@ -306,68 +439,22 @@ class ImageFitter:
 
         # Sum across the mini-batch (n)
         con_loss_per_fit = torch.mean(con_losses, dim=1)
-        con_loss = con_loss_per_fit.mean() / 100  # Use PyTorch's mean
+        con_loss = con_loss_per_fit.mean() / 50  # Use PyTorch's mean
         return con_loss
-    def single_optimize(self,model_index,iterations):
-        # Convert target image to tensor and normalize
-        target_image_tensor = self.target.clone().detach().to(self.target.device)  # No unsqueeze
-        
-        #Removed normalization
-        # Extract the specific model parameters to optimize
-        specific_model_params = {
-            'u': self.model.u[model_index].detach().clone().requires_grad_(),
-            'v': self.model.v[model_index].detach().clone().requires_grad_(),
-            'theta': self.model.theta[model_index].detach().clone().requires_grad_(),
-            'rel_sigma': self.model.rel_sigma[model_index].detach().clone().requires_grad_(),
-            'rel_freq': self.model.rel_freq[model_index].detach().clone().requires_grad_(),
-            'psi': self.model.psi[model_index].detach().clone().requires_grad_(),
-            'gamma': self.model.gamma[model_index].detach().clone().requires_grad_(),
-            'amplitude': self.model.amplitude[model_index].detach().clone().requires_grad_()
-        }    
-        # Create a list of parameters to optimize
-        params_to_optimize = [specific_model_params[param] for param in specific_model_params]
-        # Initialize optimizer for specific parameters
-        optimizer = optim.AdamW(
-            params_to_optimize,
-            lr=0.03,
-            weight_decay=1e-5,
-            betas=(0.9, 0.999)
-        )
-
-        for iteration in range(iterations):
-            # Zero gradients
-            optimizer.zero_grad()
-
-            # Temporarily set the model parameters to the optimized values
-            with torch.no_grad():
-                self.model.u[model_index] = specific_model_params['u']
-                self.model.v[model_index] = specific_model_params['v']
-                self.model.theta[model_index] = specific_model_params['theta']
-                self.model.rel_sigma[model_index] = specific_model_params['rel_sigma']
-                self.model.rel_freq[model_index] = specific_model_params['rel_freq']
-                self.model.psi[model_index] = specific_model_params['psi']
-                self.model.gamma[model_index] = specific_model_params['gamma']
-                self.model.amplitude[model_index] = specific_model_params['amplitude']
-
-            # Forward pass for the specific model
-            output = self.model(self.grid_x, self.grid_y)
-            weighted_diff = (output - target_image_tensor) ** 2 * self.weights
-            loss = weighted_diff.mean() + self.constraint_loss(self.model)
-
-             # Backward pass and optimize
-            loss.backward()
-            optimizer.step()
-        print(f"Optimization for model {model_index} completed. Loss: {loss.item():.6f}")
-        return loss.item()
+    
+    def loss_function(self, output, target):
+        weighted = self.weighted_loss(output, target, self.weights)*0.7
+        # unweighted = self.unweighted_loss(output, target)*0.5
+        # laplace = self.lap_loss(output,target) * 0.1
+        gradient = self.gradient_loss(output,target) * 0.2
+        sobel = self.sobel_loss(output,target) * 0.1
+        loss =  weighted + sobel + gradient
+        return loss
 
     def train_step(self, iteration, max_iterations):
         # Update temperature
         self.update_temperature(iteration, max_iterations)
         self.mutate_parameters()
-        
-        # Switch to local phase at the specified split point
-        if iteration == int(max_iterations * self.phase_split):
-            self.switch_to_local_phase()
         
         # Zero gradients
         self.optimizer.zero_grad()
@@ -381,10 +468,7 @@ class ImageFitter:
         )
         
         # Calculate loss
-        weights = self.get_phase_specific_weights()
-        loss = self.weighted_loss(output, self.target, weights) + self.constraint_loss(self.model)
-        
-        # Backward pass and optimize
+        loss =  self.loss_function(output, self.target)
         loss.backward()
         self.optimizer.step()
         
@@ -394,7 +478,7 @@ class ImageFitter:
         return loss.item()
 
     def get_current_image(self, use_best=True):
-        """Get current image"""
+        """Get current image with parameter state logging"""
         with torch.no_grad():
             # Print key parameter stats           
             if use_best and self.best_state is not None:
@@ -409,62 +493,33 @@ class ImageFitter:
             # Denormalize the output
             output = output * 0.5 + 0.5
             return output.clamp(0, 1).cpu().numpy()
-        
-    def resize_image(self,image,target_size):
-        if isinstance(target_size, int):
-            # If single number, maintain aspect ratio
-            w, h = image.size
-            aspect_ratio = w / h
-            if w > h:
-                new_w = target_size
-                new_h = int(target_size / aspect_ratio)
-            else:
-                new_h = target_size
-                new_w = int(target_size * aspect_ratio)
-            target_size = (new_w, new_h)
-        image = image.resize(target_size, Image.Resampling.LANCZOS)
-        return image
 
-    def get_phase_specific_weights(self):
-        """Calculate phase-specific importance weights"""
-        H, W = self.target.shape[-2:]
-        
-        # Create base weights
-        weights = torch.ones((H, W), device=self.target.device)
-        
-        # Add gaussian-weighted center focus
-        y, x = torch.meshgrid(
-            torch.linspace(-1, 1, H, device=self.target.device),
-            torch.linspace(-1, 1, W, device=self.target.device)
-        )
-        r = torch.sqrt(x*x + y*y)
-        gaussian_weight = torch.exp(-r * 2)
-        
-        if self.optimization_phase == 'global':
-            # Global phase: focus more on center
-            weights = weights * (0.5 + 0.5 * gaussian_weight)
-        else:
-            # Local phase: more uniform weights with slight center bias
-            weights = weights * (0.8 + 0.2 * gaussian_weight)
-        
-        # Normalize weights
-        weights = weights / weights.mean()
-        weights = weights*self.weights
-        return weights
-
-    def switch_to_local_phase(self):
-        """Switch optimization from global to local phase"""
-        self.optimization_phase = 'local'
-        self.optimizer = self.local_optimizer
-        self.scheduler = self.local_scheduler
-        
-        # Reduce dropout for fine-tuning
-        self.model.dropout.p = 0.0001
-        
-        # Update mutation settings
-        self.mutation_prob = 0.0001
-        
-        print("Switching to local optimization phase...")
+    def save_parameters_to_text(self, filepath):
+        """Save model parameters in a human-readable format"""
+        with torch.no_grad():
+            params = {
+                'u': self.model.u.cpu().tolist(),
+                'v': self.model.v.cpu().tolist(),
+                'theta': self.model.theta.cpu().tolist(),
+                'rel_sigma': self.model.rel_sigma.cpu().tolist(),
+                'rel_freq': self.model.rel_freq.cpu().tolist(),
+                'psi': self.model.psi.cpu().tolist(),
+                'gamma': self.model.gamma.cpu().tolist(),
+                'amplitude': self.model.amplitude.cpu().tolist()
+            }
+            
+            with open(filepath, 'w') as f:
+                f.write("Gabor Function Parameters:\n\n")
+                for i in range(len(params['u'])):
+                    f.write(f"Gabor {i}:\n")
+                    f.write(f"  Position (u, v): ({params['u'][i]:.4f}, {params['v'][i]:.4f})\n")
+                    f.write(f"  Orientation (θ): {params['theta'][i]:.4f}\n")
+                    f.write(f"  Size (σ): {params['rel_sigma'][i]:.4f}\n")
+                    f.write(f"  Wavelength (λ): {1.0 / params['rel_freq'][i]:.4f}\n")
+                    f.write(f"  Phase (ψ): {[f'{a:.4f}' for a in params['psi'][i]]}\n")
+                    f.write(f"  Aspect ratio (γ): {params['gamma'][i]:.4f}\n")
+                    f.write(f"  Amplitude (RGB): {[f'{a:.4f}' for a in params['amplitude'][i]]}\n")
+                    f.write("\n")
 
     def save_model(self, path):
         """Save the model state with parameter info"""
@@ -504,7 +559,7 @@ class ImageFitter:
         image = np.transpose(image, (1, 2, 0))
         image = np.clip(image * 255, 0, 255).astype(np.uint8)
         Image.fromarray(image).save(path)
-
+        
 def main():
     """Run Gabor image fitting on an input image."""
     # Parse command line arguments
