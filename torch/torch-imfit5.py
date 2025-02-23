@@ -202,7 +202,6 @@ class ImageFitter:
         # Add mutation probability
         self.mutation_prob = 0.001
         self.mutation_strength = mutation_strength
-        self.target_sobel = self.sobel_filter(self.target)
     
     def single_optimize(self,model_index,iterations):
         # Convert target image to tensor and normalize
@@ -388,7 +387,7 @@ class ImageFitter:
     
     def sobel_loss(self, output, target):
         outs = self.sobel_filter(output)
-        targ = self.target_sobel
+        targ = self.sobel_filter(target)
         return nn.functional.mse_loss(outs,targ)
     
     def lap_loss(self, output, target):
