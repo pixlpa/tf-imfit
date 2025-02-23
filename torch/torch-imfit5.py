@@ -202,46 +202,68 @@ class ImageFitter:
         self.mutation_prob = 0.001
         self.mutation_strength = mutation_strength
     
-    def add_gabor(self, count, iterations, target_image, lr = 0.003):
-        """Add a new Gabor filter to the model."""
-        target_image_tensor = target_image.clone().detach().to(self.target.device)
-        new_gabor = GaborLayer(num_gabors=1, base_scale=self.model.base_scale).to(self.model.u.device)
-        check_loss = 0.0
-        loss_diff = 0.0
+    def single_optimize(self,model_index,iterations):
+        # Convert target image to tensor and normalize
+        target_image_tensor = self.target.clone().detach().to(self.target.device)  # No unsqueeze
+        
+        #Removed normalization
+        # Extract the specific model parameters to optimize
+        specific_model_params = {
+            'u': self.model.u[model_index].detach().clone().requires_grad_(),
+            'v': self.model.v[model_index].detach().clone().requires_grad_(),
+            'theta': self.model.theta[model_index].detach().clone().requires_grad_(),
+            'rel_sigma': self.model.rel_sigma[model_index].detach().clone().requires_grad_(),
+            'rel_freq': self.model.rel_freq[model_index].detach().clone().requires_grad_(),
+            'psi': self.model.psi[model_index].detach().clone().requires_grad_(),
+            'gamma': self.model.gamma[model_index].detach().clone().requires_grad_(),
+            'amplitude': self.model.amplitude[model_index].detach().clone().requires_grad_()
+        }    
+        # Create a list of parameters to optimize
+        params_to_optimize = [specific_model_params[param] for param in specific_model_params]
+        # Initialize optimizer for specific parameters
         optimizer = optim.AdamW(
-            new_gabor.parameters(),
-            lr=lr,
+            params_to_optimize,
+            lr=0.03,
             weight_decay=1e-5,
             betas=(0.9, 0.999)
         )
+
         for iteration in range(iterations):
             # Zero gradients
-            optimizer.zero_grad() 
-            # Forward pass of both the existing model and additional gabor
-            output = self.model(self.grid_x, self.grid_y) + new_gabor(self.grid_x, self.grid_y)
+            optimizer.zero_grad()
+
+            # Temporarily set the model parameters to the optimized values
+            with torch.no_grad():
+                self.model.u[model_index] = specific_model_params['u']
+                self.model.v[model_index] = specific_model_params['v']
+                self.model.theta[model_index] = specific_model_params['theta']
+                self.model.rel_sigma[model_index] = specific_model_params['rel_sigma']
+                self.model.rel_freq[model_index] = specific_model_params['rel_freq']
+                self.model.psi[model_index] = specific_model_params['psi']
+                self.model.gamma[model_index] = specific_model_params['gamma']
+                self.model.amplitude[model_index] = specific_model_params['amplitude']
+
+            # Forward pass for the specific model
+            output = self.model(self.grid_x, self.grid_y)
             loss = self.loss_function(output,self.target)
+
              # Backward pass and optimize
             loss.backward()
             optimizer.step()
-            loss_diff = abs(loss.item()-check_loss)
-            check_loss = loss.item()
-            # print(f"Local optimization of model {count}: loss {check_loss:.6f} diff {loss_diff:.6f}")
-        self.model.u = nn.Parameter(torch.cat((self.model.u, new_gabor.u)))
-        self.model.v = nn.Parameter(torch.cat((self.model.v, new_gabor.v)))
-        self.model.theta = nn.Parameter(torch.cat((self.model.theta, new_gabor.theta)))
-        self.model.rel_sigma = nn.Parameter(torch.cat((self.model.rel_sigma, new_gabor.rel_sigma)))
-        self.model.rel_freq = nn.Parameter(torch.cat((self.model.rel_freq, new_gabor.rel_freq)))
-        self.model.gamma = nn.Parameter(torch.cat((self.model.gamma, new_gabor.gamma)))
-        self.model.psi = nn.Parameter(torch.cat((self.model.psi, new_gabor.psi)))
-        self.model.amplitude = nn.Parameter(torch.cat((self.model.amplitude, new_gabor.amplitude)))
-        self.global_optimizer = optim.AdamW(
-            self.model.parameters(),
-            lr=self.global_lr,
-            weight_decay=1e-5,
-            betas=(0.9, 0.999)
-        )
-        self.optimizer = self.global_optimizer
-        return check_loss
+
+        # Update the model parameters with the optimized values
+        with torch.no_grad():
+            self.model.u[model_index] = specific_model_params['u']
+            self.model.v[model_index] = specific_model_params['v']
+            self.model.theta[model_index] = specific_model_params['theta']
+            self.model.rel_sigma[model_index] = specific_model_params['rel_sigma']
+            self.model.rel_freq[model_index] = specific_model_params['rel_freq']
+            self.model.psi[model_index] = specific_model_params['psi']
+            self.model.gamma[model_index] = specific_model_params['gamma']
+            self.model.amplitude[model_index] = specific_model_params['amplitude']
+
+        print(f"Optimization for model {model_index} completed. Loss: {loss.item():.6f}")
+        return loss.item()
 
     def init_parameters(self, init):
         """Initialize parameters from a saved model"""
@@ -559,7 +581,7 @@ class ImageFitter:
         image = np.transpose(image, (1, 2, 0))
         image = np.clip(image * 255, 0, 255).astype(np.uint8)
         Image.fromarray(image).save(path)
-        
+
 def main():
     """Run Gabor image fitting on an input image."""
     # Parse command line arguments
