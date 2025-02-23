@@ -382,7 +382,7 @@ class ImageFitter:
         v_gradient = image[..., 1:, :] - image[..., :-1, :]
         return h_gradient, v_gradient
     
-    def gradient_loss(generated_image, target_image):
+    def gradient_loss(self, generated_image, target_image):
         # Compute gradients for both images        
         gen_h, gen_v = self.get_gradients(generated_image)
         target_h, target_v = self.get_gradients(target_image)
