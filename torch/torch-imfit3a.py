@@ -340,6 +340,7 @@ class ImageFitter:
     def sobel_filter(self, image):
         # Ensure image is in the right format (B, C, H, W)
         image = image.unsqueeze(0)
+        print("image shape:",image.shape)
         # Define 3D Sobel kernels
         sobel_x = torch.tensor([
             [[[-1, 0, 1],
