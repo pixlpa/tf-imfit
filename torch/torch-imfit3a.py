@@ -377,7 +377,21 @@ class ImageFitter:
         output_lap = laplacian(outp)
         target_lap = laplacian(targ)
         return nn.functional.mse_loss(output_lap, target_lap)
+    def get_gradients(image):
+        h_gradient = image[..., :, 1:] - image[..., :, :-1]
+        v_gradient = image[..., 1:, :] - image[..., :-1, :]
+        return h_gradient, v_gradient
+    
+    def gradient_loss(generated_image, target_image):
+        # Compute gradients for both images        
+        gen_h, gen_v = self.get_gradients(generated_image)
+        target_h, target_v = self.get_gradients(target_image)
         
+        # Compute L1 loss between gradients
+        h_loss = torch.mean(torch.abs(gen_h - target_h))
+        v_loss = torch.mean(torch.abs(gen_v - target_v))
+        return h_loss + v_loss   
+    
     def constraint_loss(self, model):
         # Vectorized pairwise constraints
         with torch.no_grad():
@@ -423,8 +437,9 @@ class ImageFitter:
         weighted = self.weighted_loss(output, self.target, self.weights)*0.5
         unweighted = self.unweighted_loss(output, self.target)*0.4
         laplace = self.lap_loss(output,self.target) * 0.1
+        gradient = self.gradient_loss(output,self.target) * 0.5
 
-        loss =  weighted + unweighted + laplace # + self.constraint_loss(self.model)
+        loss =  unweighted + laplace + gradient # + self.constraint_loss(self.model)
         # loss = self.unweighted_loss(output, self.target) + self.perceptual_loss(output,self.target) + self.constraint_loss(self.model)
         # Backward pass and optimize
         loss.backward()
