@@ -278,6 +278,16 @@ class ImageFitter:
             self.load_model(init)
             print("Initialized parameters from", init)
 
+    def init_optimizer(self,global_lr):# Initialize optimizers with provided learning rates
+        self.optimizer = optim.AdamW(
+            self.model.parameters(),
+            lr=global_lr,
+            weight_decay=1e-5,
+            betas=(0.9, 0.999)
+        )
+        # Initialize schedulers for both phases
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.9)
+
     def mutate_parameters(self):
         """Randomly mutate some Gabor functions to explore new solutions"""
         if np.random.random() < self.mutation_prob:
@@ -596,6 +606,7 @@ def main():
                 progress+=1
                 if i % 32 == 0 and i > 0:
                     print("Intermediate Optimization")
+                    fitter.init_optimizer(args.global_lr)
                     for i in range(int(args.iterations/4)):
                         loss = fitter.train_step(i, args.iterations)    
                         if i % 10 == 0:
@@ -605,6 +616,7 @@ def main():
                         if i % 20 == 0 or i == args.iterations - 1:
                                 fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
                                 progress+=1
+            fitter.init_optimizer(args.global_lr)
             for i in range(args.iterations):
                 loss = fitter.train_step(i, args.iterations)    
                 if i % 10 == 0:
