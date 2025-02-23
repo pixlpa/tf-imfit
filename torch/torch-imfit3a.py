@@ -464,12 +464,12 @@ class ImageFitter:
         return con_loss
     
     def loss_function(self, output, target):
-        weighted = self.weighted_loss(output, target, self.weights)*0.8
+        weighted = self.weighted_loss(output, target, self.weights)*0.7
         # unweighted = self.unweighted_loss(output, target)*0.5
         # laplace = self.lap_loss(output,target) * 0.1
-        # gradient = self.gradient_loss(output,target) * 0.3
-        sobel = self.sobel_loss(output,target) * 0.2
-        loss =  weighted + sobel
+        gradient = self.gradient_loss(output,target) * 0.2
+        sobel = self.sobel_loss(output,target) * 0.1
+        loss =  weighted + sobel + gradient
         return loss
 
     def train_step(self, iteration, max_iterations):
