@@ -666,6 +666,7 @@ def main():
     with tqdm(total=args.iterations) as pbar:
         progress = 0
         print("Full Optimization")
+        fitter.init_optimizer(args.global_lr)
         for a in range(200):
             loss = fitter.train_step(a, 200)
             if a % 10 == 0:
@@ -674,6 +675,7 @@ def main():
                 pbar.update(10)
         for b in range(10):
             fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
+        fitter.init_optimizer(args.global_lr)
         for a in range(200):
             loss = fitter.train_step(a, 200)
             if a % 10 == 0:
@@ -682,6 +684,7 @@ def main():
                 pbar.update(10)
         for b in range(10):
             fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
+        fitter.init_optimizer(args.global_lr)
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)    
             if i % 10 == 0:
