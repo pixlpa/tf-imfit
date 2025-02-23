@@ -215,7 +215,7 @@ class ImageFitter:
         self.best_state = None
         
         # Add temperature scheduling
-        self.initial_temp = 1
+        self.initial_temp = 0.01
         self.min_temp = 0.001
         self.current_temp = self.initial_temp
         
@@ -243,13 +243,7 @@ class ImageFitter:
             optimizer.zero_grad() 
             # Forward pass of both the existing model and additional gabor
             output = self.model(self.grid_x, self.grid_y) + new_gabor(self.grid_x, self.grid_y)
-            weighted_diff = (output - target_image_tensor) ** 2 * self.weights
-
-            laplace = self.lap_loss(output, self.target)
-            unweighted = self.unweighted_loss(output, self.target)
-            gradient = self.gradient_loss(output, self.target)
-            # loss = weighted_diff.mean()*0.5 + laplace*0.25 + unweighted*0.25
-            loss = weighted_diff.mean()*0.5 + laplace*0.25 + gradient*0.25
+            loss = self.loss_function(output,self.target)
              # Backward pass and optimize
             loss.backward()
             optimizer.step()
@@ -417,6 +411,15 @@ class ImageFitter:
         con_loss_per_fit = torch.mean(con_losses, dim=1)
         con_loss = con_loss_per_fit.mean() / 50  # Use PyTorch's mean
         return con_loss
+    
+    def loss_function(self, output, target):
+        weighted = self.weighted_loss(output, target, self.weights)*0.6
+        unweighted = self.unweighted_loss(output, target)*0.5
+        laplace = self.lap_loss(output,target) * 0.1
+        gradient = self.gradient_loss(output,target) * 0.3
+
+        loss =  weighted + laplace + gradient
+        return loss
 
     def train_step(self, iteration, max_iterations):
         # Update temperature
@@ -435,14 +438,7 @@ class ImageFitter:
         )
         
         # Calculate loss
-        weighted = self.weighted_loss(output, self.target, self.weights)*0.5
-        unweighted = self.unweighted_loss(output, self.target)*0.5
-        laplace = self.lap_loss(output,self.target) * 0.25
-        gradient = self.gradient_loss(output,self.target) * 0.25
-
-        loss =  weighted + laplace + gradient # + self.constraint_loss(self.model)
-        # loss = self.unweighted_loss(output, self.target) + self.perceptual_loss(output,self.target) + self.constraint_loss(self.model)
-        # Backward pass and optimize
+        loss =  self.loss_function(output, self.target)
         loss.backward()
         self.optimizer.step()
         
