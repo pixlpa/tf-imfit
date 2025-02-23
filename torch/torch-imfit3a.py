@@ -337,6 +337,53 @@ class ImageFitter:
         
         return loss
     
+    def sobel_filter(self, image):
+        def sobel_rgb_3d(image):
+        # Ensure image is in the right format (B, C, H, W)
+        image = image.unsqueeze(0)
+        
+        # Define 3D Sobel kernels
+        sobel_x = torch.tensor([
+            [[[-1, 0, 1],
+            [-2, 0, 2],
+            [-1, 0, 1]]],
+            [[[-1, 0, 1],
+            [-2, 0, 2],
+            [-1, 0, 1]]],
+            [[[-1, 0, 1],
+            [-2, 0, 2],
+            [-1, 0, 1]]]
+        ], dtype=torch.float32)
+        
+        sobel_y = torch.tensor([
+            [[[-1, -2, -1],
+            [0, 0, 0],
+            [1, 2, 1]]],
+            [[[-1, -2, -1],
+            [0, 0, 0],
+            [1, 2, 1]]],
+            [[[-1, -2, -1],
+            [0, 0, 0],
+            [1, 2, 1]]]
+        ], dtype=torch.float32)
+        
+        # Reshape kernels for conv2d (out_channels, in_channels, height, width)
+        sobel_x = sobel_x.view(3, 3, 3, 3).to(image.device)
+        sobel_y = sobel_y.view(3, 3, 3, 3).to(image.device)
+        
+        # Apply convolution
+        grad_x = F.conv2d(image, sobel_x, padding=1)
+        grad_y = F.conv2d(image, sobel_y, padding=1)
+        
+        # Compute gradient magnitude
+        gradient_magnitude = torch.sqrt(grad_x**2 + grad_y**2 + 1e-6)
+        return gradient_magnitude
+    
+    def sobel_loss(self, output, target):
+        outs = self.sobel_filter(output)
+        targ = self.sobel_filter(target)
+        return nn.functional.mse_loss(outs,targ)
+    
     def lap_loss(self, output, target):
        #  print("Output shape:", output.shape)
        # print("Target shape:", target.shape)
@@ -413,9 +460,9 @@ class ImageFitter:
         weighted = self.weighted_loss(output, target, self.weights)*0.6
         unweighted = self.unweighted_loss(output, target)*0.5
         laplace = self.lap_loss(output,target) * 0.1
-        gradient = self.gradient_loss(output,target) * 0.3
-
-        loss =  weighted + laplace + gradient
+        # gradient = self.gradient_loss(output,target) * 0.3
+        sobel = self.sobel_loss(output,target) * 0.3
+        loss =  weighted + laplace + sobel
         return loss
 
     def train_step(self, iteration, max_iterations):
