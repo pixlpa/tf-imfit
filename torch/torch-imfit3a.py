@@ -340,7 +340,6 @@ class ImageFitter:
     def sobel_filter(self, image):
         # Ensure image is in the right format (B, C, H, W)
         image = image.unsqueeze(0)
-        print("image shape:",image.shape)
     # Define base Sobel kernels
         sobel_x = torch.tensor([[-1, 0, 1],
                             [-2, 0, 2],
@@ -373,7 +372,7 @@ class ImageFitter:
             groups=3,  # Important: use groups=3 for separate filtering of each channel
             bias=False
         ).to(image.device)
-        
+
         sobel_x.requires_grad = False
         sobel_y.requires_grad = False
         
