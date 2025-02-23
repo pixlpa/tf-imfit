@@ -332,11 +332,8 @@ class ImageFitter:
             output.requires_grad_(True)
             
         # Calculate MSE with weights
-        mse  = self.mse_criterion(output,target)
-        l1 = self.l1_criterion(output,target)
-        loss = mse * 0.5 + 0.5 * l1
-        
-        return loss
+       # mse  = self.mse_criterion(output,target)
+        return self.l1_criterion(output,target)
     
     def sobel_filter(self, image):
         # Ensure image is in the right format (B, C, H, W)
@@ -466,11 +463,11 @@ class ImageFitter:
     
     def loss_function(self, output, target):
         weighted = self.weighted_loss(output, target, self.weights)*1
-        unweighted = self.unweighted_loss(output, target)*0
-        # laplace = self.lap_loss(output,target) * 0.1
-        gradient = self.gradient_loss(output,target) * 0
-        sobel = self.sobel_loss(output,target) * 0
-        loss =  weighted + unweighted + sobel + gradient
+        unweighted = self.unweighted_loss(output, target)*0.2
+        laplace = self.lap_loss(output,target) * 0.1
+        # gradient = self.gradient_loss(output,target) * 0
+        # sobel = self.sobel_loss(output,target) * 0
+        loss =  weighted + unweighted + laplace
         return loss
 
     def train_step(self, iteration, max_iterations):
