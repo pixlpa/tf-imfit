@@ -386,8 +386,8 @@ class ImageFitter:
         grad_x.weight.data = sobel_x
         grad_y.weight.data = sobel_y
 
-        mag_x = grad.x(image)
-        mag_y = grad.y(image)
+        mag_x = grad_x(image)
+        mag_y = grad_y(image)
         
         # Compute gradient magnitude
         gradient_magnitude = torch.sqrt(mag_x**2 + mag_y**2 + 1e-6)
