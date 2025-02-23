@@ -202,7 +202,7 @@ class ImageFitter:
         self.optimizer = self.global_optimizer  # Start with global optimizer
         
         # Initialize schedulers for both phases
-        self.global_scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.9)
+        self.global_scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.8)
         
         self.scheduler = self.global_scheduler  # Start with global scheduler
         
@@ -286,7 +286,7 @@ class ImageFitter:
             betas=(0.9, 0.999)
         )
         # Initialize schedulers for both phases
-        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.9)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.8)
 
     def mutate_parameters(self):
         """Randomly mutate some Gabor functions to explore new solutions"""
