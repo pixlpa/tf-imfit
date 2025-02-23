@@ -377,7 +377,7 @@ class ImageFitter:
         output_lap = laplacian(outp)
         target_lap = laplacian(targ)
         return nn.functional.mse_loss(output_lap, target_lap)
-    def get_gradients(image):
+    def get_gradients(self, image):
         h_gradient = image[..., :, 1:] - image[..., :, :-1]
         v_gradient = image[..., 1:, :] - image[..., :-1, :]
         return h_gradient, v_gradient
