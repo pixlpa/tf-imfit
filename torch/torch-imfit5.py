@@ -469,7 +469,7 @@ class ImageFitter:
         # laplace = self.lap_loss(output,target) * 0.1
         # gradient = self.gradient_loss(output,target) * 0
         sobel = self.sobel_loss(output,target) * 0.1
-        loss =  weighted + laplace + self.constraint_loss(self.model)
+        loss =  weighted + sobel + self.constraint_loss(self.model)
         return loss
 
     def train_step(self, iteration, max_iterations):
