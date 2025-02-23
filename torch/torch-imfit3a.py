@@ -331,7 +331,7 @@ class ImageFitter:
         # Calculate MSE with weights
         mse  = self.mse_criterion(output,target)
         l1 = self.l1_criterion(output,target)
-        loss = mse * 0.75 + 0.25 * l1
+        loss = mse * 0.5 + 0.5 * l1
         
         return loss
     
@@ -410,9 +410,9 @@ class ImageFitter:
         )
         
         # Calculate loss
-        weighted = self.weighted_loss(output, self.target, self.weights)*0
-        unweighted = self.unweighted_loss(output, self.target)*0.75
-        laplace = self.lap_loss(output,self.target) * 0.25
+        weighted = self.weighted_loss(output, self.target, self.weights)*0.5
+        unweighted = self.unweighted_loss(output, self.target)*0.4
+        laplace = self.lap_loss(output,self.target) * 0.1
 
         loss =  weighted + unweighted + laplace # + self.constraint_loss(self.model)
         # loss = self.unweighted_loss(output, self.target) + self.perceptual_loss(output,self.target) + self.constraint_loss(self.model)
