@@ -249,7 +249,7 @@ class ImageFitter:
             unweighted = self.unweighted_loss(output, self.target)
             gradient = self.gradient_loss(output, self.target)
             # loss = weighted_diff.mean()*0.5 + laplace*0.25 + unweighted*0.25
-            loss = unweighted*0.5 + laplace*0.25 + gradient*0.25
+            loss = weighted_diff.mean()*0.5 + laplace*0.25 + gradient*0.25
              # Backward pass and optimize
             loss.backward()
             optimizer.step()
@@ -440,7 +440,7 @@ class ImageFitter:
         laplace = self.lap_loss(output,self.target) * 0.25
         gradient = self.gradient_loss(output,self.target) * 0.25
 
-        loss =  unweighted + laplace + gradient # + self.constraint_loss(self.model)
+        loss =  weighted + laplace + gradient # + self.constraint_loss(self.model)
         # loss = self.unweighted_loss(output, self.target) + self.perceptual_loss(output,self.target) + self.constraint_loss(self.model)
         # Backward pass and optimize
         loss.backward()
