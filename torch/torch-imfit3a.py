@@ -341,45 +341,39 @@ class ImageFitter:
         # Ensure image is in the right format (B, C, H, W)
         image = image.unsqueeze(0)
         print("image shape:",image.shape)
-        # Define 3D Sobel kernels
-        sobel_x = torch.tensor([
-            [[[-1, 0, 1],
-            [-2, 0, 2],
-            [-1, 0, 1]]],
-            [[[-1, 0, 1],
-            [-2, 0, 2],
-            [-1, 0, 1]]],
-            [[[-1, 0, 1],
-            [-2, 0, 2],
-            [-1, 0, 1]]]
-        ], dtype=torch.float32).to(image.device)
+    # Define base Sobel kernels
+        sobel_x = torch.tensor([[-1, 0, 1],
+                            [-2, 0, 2],
+                            [-1, 0, 1]], dtype=torch.float32)
         
-        sobel_y = torch.tensor([
-            [[[-1, -2, -1],
-            [0, 0, 0],
-            [1, 2, 1]]],
-            [[[-1, -2, -1],
-            [0, 0, 0],
-            [1, 2, 1]]],
-            [[[-1, -2, -1],
-            [0, 0, 0],
-            [1, 2, 1]]]
-        ], dtype=torch.float32).to(image.device)
+        sobel_y = torch.tensor([[-1, -2, -1],
+                            [0, 0, 0],
+                            [1, 2, 1]], dtype=torch.float32)
         
+        # Reshape kernels for 3-channel input
+        # Shape: (out_channels, in_channels/groups, kernel_height, kernel_width)
+        sobel_x = sobel_x.view(1, 1, 3, 3).repeat(3, 1, 1, 1).to(image.device)
+        sobel_y = sobel_y.view(1, 1, 3, 3).repeat(3, 1, 1, 1).to(image.device)
+        
+        # Create convolutional layers
         grad_x = nn.Conv2d(
-            in_channels = 3,
-            out_channels = 3,
-            kernel_size = 3,
-            padding = 1,
-            bias = False
-        )
+            in_channels=3,
+            out_channels=3,
+            kernel_size=3,
+            padding=1,
+            groups=3,  # Important: use groups=3 for separate filtering of each channel
+            bias=False
+        ).to(image.device)
+        
         grad_y = nn.Conv2d(
-            in_channels = 3,
-            out_channels = 3,
-            kernel_size = 3,
-            padding = 1,
-            bias = False
-        )
+            in_channels=3,
+            out_channels=3,
+            kernel_size=3,
+            padding=1,
+            groups=3,  # Important: use groups=3 for separate filtering of each channel
+            bias=False
+        ).to(image.device)
+        
         sobel_x.requires_grad = False
         sobel_y.requires_grad = False
         
