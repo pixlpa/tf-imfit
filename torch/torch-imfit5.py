@@ -666,7 +666,7 @@ def main():
     with tqdm(total=args.iterations) as pbar:
         progress = 0
         print("Full Optimization")
-        for b in range(10):
+        for b in range(60):
             fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
         fitter.init_optimizer(args.global_lr)
         for i in range(args.iterations):
