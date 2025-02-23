@@ -215,16 +215,13 @@ class ImageFitter:
         self.best_state = None
         
         # Add temperature scheduling
-        self.initial_temp = 0.01
+        self.initial_temp = 0.1
         self.min_temp = 0.001
         self.current_temp = self.initial_temp
         
         # Add mutation probability
         self.mutation_prob = 0.001
         self.mutation_strength = mutation_strength
-        # Add phase tracking
-        self.optimization_phase = 'global'  # 'global' or 'local'
-        self.phase_split = 0.5  # default value, will be updated from args
     
     def add_gabor(self, count, iterations, target_image, lr = 0.003):
         """Add a new Gabor filter to the model."""
@@ -281,7 +278,7 @@ class ImageFitter:
             betas=(0.9, 0.999)
         )
         # Initialize schedulers for both phases
-        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.99)
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.8)
 
     def mutate_parameters(self):
         """Randomly mutate some Gabor functions to explore new solutions"""
