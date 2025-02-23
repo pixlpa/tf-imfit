@@ -352,7 +352,7 @@ class ImageFitter:
             [[[-1, 0, 1],
             [-2, 0, 2],
             [-1, 0, 1]]]
-        ], dtype=torch.float32)
+        ], dtype=torch.float32).to(image.device)
         
         sobel_y = torch.tensor([
             [[[-1, -2, -1],
@@ -364,18 +364,33 @@ class ImageFitter:
             [[[-1, -2, -1],
             [0, 0, 0],
             [1, 2, 1]]]
-        ], dtype=torch.float32)
+        ], dtype=torch.float32).to(image.device)
         
-        # Reshape kernels for conv2d (out_channels, in_channels, height, width)
-        sobel_x = sobel_x.view(3, 3, 3, 3).to(image.device)
-        sobel_y = sobel_y.view(3, 3, 3, 3).to(image.device)
+        grad_x = nn.Conv2d(
+            in_channels = 3,
+            out_channels = 3,
+            kernel_size = 3,
+            padding = 1,
+            bias = false
+        )
+        grad_y = nn.Conv2d(
+            in_channels = 3,
+            out_channels = 3,
+            kernel_size = 3,
+            padding = 1,
+            bias = false
+        )
+        sobel_x.requires_grad = False
+        sobel_y.requires_grad = False
         
-        # Apply convolution
-        grad_x = F.conv2d(image, sobel_x, padding=1)
-        grad_y = F.conv2d(image, sobel_y, padding=1)
+        grad_x.weight.data = sobel_x
+        grad_y.weight.data = sobel_y
+
+        mag_x = grad.x(image)
+        mag_y = grad.y(image)
         
         # Compute gradient magnitude
-        gradient_magnitude = torch.sqrt(grad_x**2 + grad_y**2 + 1e-6)
+        gradient_magnitude = torch.sqrt(mag_x**2 + mag_y**2 + 1e-6)
         return gradient_magnitude
     
     def sobel_loss(self, output, target):
