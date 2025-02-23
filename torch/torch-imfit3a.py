@@ -371,14 +371,14 @@ class ImageFitter:
             out_channels = 3,
             kernel_size = 3,
             padding = 1,
-            bias = false
+            bias = False
         )
         grad_y = nn.Conv2d(
             in_channels = 3,
             out_channels = 3,
             kernel_size = 3,
             padding = 1,
-            bias = false
+            bias = False
         )
         sobel_x.requires_grad = False
         sobel_y.requires_grad = False
