@@ -593,8 +593,8 @@ class ImageFitter:
             self.model.theta.data = torch.from_numpy(weights[2]).to(device)
             self.model.rel_sigma.data = torch.from_numpy(weights[3]).to(device)
             self.model.rel_freq.data = torch.from_numpy(weights[5]).to(device)
-            self.model.psi.data = torch.from_numpy([weights[6],weights[7],weights[8]].transpose()).to(device)
-            self.model.amplitude.data = torch.from_numpy([weights[9],weights[10],weights[11]].transpose()).to(device)
+            self.model.psi.data = torch.from_numpy(np.array([weights[6],weights[7],weights[8]]).transpose()).to(device)
+            self.model.amplitude.data = torch.from_numpy([np.array(weights[9],weights[10],weights[11]]).transpose()).to(device)
         print(f"Loaded weights from {path}")
             
     def save_image(self, path):
