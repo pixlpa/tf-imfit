@@ -3,7 +3,6 @@ NAME=$(basename $SOURCEIMG .png)
 
 echo $SOURCEIMG $NAME $NAME.txt
 
-rm -f results/*.png
 rm -f results/lores/*.png
 time python tf-imfit/torch/torch-imfit5.py $SOURCEIMG --weight source_weights/$NAME-wt.png --iterations 4000 --output-dir results/lores/ --size 128 --num-gabors 256 --global-lr 0.009 --mutation-strength 0.0 --gamma 0.9995
 rm -f results/hires/*.png
