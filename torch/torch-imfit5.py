@@ -493,7 +493,7 @@ class ImageFitter:
         self.optimizer.step()
         
         # Update learning rate
-        self.scheduler.step(loss)
+        self.scheduler.step()
         
         return loss.item()
 
