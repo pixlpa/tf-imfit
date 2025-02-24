@@ -119,7 +119,8 @@ class GaborLayer(nn.Module):
 class ImageFitter:
     def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 
                  device='cuda' if torch.cuda.is_available() else 'cpu', init=None,
-                 global_lr=0.03, local_lr=0.01, init_size=128, mutation_strength=0.01, gamma = 0.85):  # Add learning rate parameters
+                 global_lr=0.03, local_lr=0.01, init_size=128, mutation_strength=0.01, gamma = 0.85,
+                 sobel = 0., gradient = 0., l1 = 0.):  # Add learning rate parameters
         image = Image.open(image_path).convert('RGB')
         
         # Resize image if target_size is specified
@@ -146,6 +147,9 @@ class ImageFitter:
         self.global_lr = global_lr
         self.local_lr = local_lr
         self.gamma = gamma
+        self.sobel = sobel
+        self.gradient = gradient
+        self.l1 = l1
 
         self.target = transform(image).to(device)
         h, w = self.target.shape[-2:]
@@ -464,11 +468,17 @@ class ImageFitter:
     
     def loss_function(self, output, target):
         weighted = self.weighted_loss(output, target, self.weights)
-        # unweighted = self.unweighted_loss(output, target)
+        unweighted = 0
+        sobel = 0
+        gradient = 0
+        if self.l1 > 0:
+            unweighted = self.unweighted_loss(output, target) * self.l1
         # laplace = self.lap_loss(output,target) * 0.1
-        gradient = self.gradient_loss(output,target) * 0.1
-        sobel = self.sobel_loss(output,target, self.weights) * 0.1
-        loss =  weighted + self.constraint_loss(self.model)
+        if self.gradient > 0:
+            gradient = self.gradient_loss(output,target) * self.gradient
+        if self.sobel > 0:
+            sobel = self.sobel_loss(output,target, self.weights) * self.sobel
+        loss =  weighted + unweighted + gradient + sobel + self.constraint_loss(self.model)
         return loss
 
     def train_step(self, iteration, max_iterations):
@@ -608,8 +618,10 @@ def main():
                        help='Device to run on (cuda/cpu)')
     parser.add_argument('--output-dir', type=str, default='results',
                        help='Directory for output files')
-    parser.add_argument('--phase-split', type=float, default=0.25,
-                       help='Fraction of iterations to spend in global phase (0-1)')
+    parser.add_argument('--gradient', type=float, default=0.,
+                       help='weight of gradient loss function')
+    parser.add_argument('--l1', type=float, default=0.,
+                       help='weight of L1 loss function')
     parser.add_argument('--global-lr', type=float, default=0.03,
                        help='Learning rate for global phase')
     parser.add_argument('--local-lr', type=float, default=0.01,
@@ -643,7 +655,10 @@ def main():
         local_lr=args.local_lr,
         init_size=args.init_size,
         mutation_strength=args.mutation_strength,
-        gamma = args.gamma
+        gamma = args.gamma,
+        sobel = args.sobel,
+        gradient = args.gradient,
+        l1 = args.l1
     )
     # Set the phase split from arguments
     fitter.phase_split = args.phase_split
