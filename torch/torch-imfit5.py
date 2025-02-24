@@ -586,18 +586,17 @@ class ImageFitter:
     
     def load_weights(self,path):
         weights = np.genfromtxt(path, dtype=float, delimiter=",").transpose()
+        device = self.model.u.device
         with torch.no_grad():
-            self.model.u.data = weights[0]
-            self.model.v.data = weights[1]
-            self.model.theta.data = weights[2]
-            self.model.rel_sigma.data = weights[3]
-            self.model.gamma.data = weights[4]
-            self.model.rel_freq.data = weights[5]
-            self.model.psi.data = [weights[6],weights[7],weights[8]].transpose()
-            self.model.amplitude.data = [weights[9],weights[10],weights[11]].transpose()
+            self.model.u.data = torch.from_numpy(weights[0]).to(device)
+            self.model.v.data = torch.from_numpy(weights[1]).to(device)
+            self.model.theta.data = torch.from_numpy(weights[2]).to(device)
+            self.model.rel_sigma.data = torch.from_numpy(weights[3]).to(device)
+            self.model.rel_freq.data = torch.from_numpy(weights[5]).to(device)
+            self.model.psi.data = torch.from_numpy([weights[6],weights[7],weights[8]].transpose()).to(device)
+            self.model.amplitude.data = torch.from_numpy([weights[9],weights[10],weights[11]].transpose()).to(device)
         print(f"Loaded weights from {path}")
             
-    
     def save_image(self, path):
         """Save the current image to a file"""
         image = self.get_current_image()
