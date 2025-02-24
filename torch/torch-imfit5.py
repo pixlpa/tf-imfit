@@ -200,7 +200,7 @@ class ImageFitter:
         self.current_temp = self.initial_temp
         
         # Add mutation probability
-        self.mutation_prob = 0.001
+        self.mutation_prob = 0.1
         self.mutation_strength = mutation_strength
     
     def single_optimize(self,model_index,iterations):
@@ -284,7 +284,7 @@ class ImageFitter:
 
     def mutate_parameters(self):
         """Randomly mutate some Gabor functions to explore new solutions"""
-        if np.random.random() < self.mutation_prob:
+        if np.random.random() < self.mutation_prob * self.current_temp:
             with torch.no_grad():
                 # Randomly select 5% of Gabors to mutate
                 num_gabors = self.model.amplitude.shape[0]
