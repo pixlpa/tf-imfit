@@ -622,6 +622,8 @@ def main():
                        help='weight of gradient loss function')
     parser.add_argument('--l1', type=float, default=0.,
                        help='weight of L1 loss function')
+    parser.add_argument('--sobel', type=float, default=0.,
+                       help='weight of sobel loss function')
     parser.add_argument('--global-lr', type=float, default=0.03,
                        help='Learning rate for global phase')
     parser.add_argument('--local-lr', type=float, default=0.01,
