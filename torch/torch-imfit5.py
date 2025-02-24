@@ -273,7 +273,8 @@ class ImageFitter:
     def init_parameters(self, init):
         """Initialize parameters from a saved model"""
         if init:
-            self.load_model(init)
+            # self.load_model(init)
+            self.load_weights(init)
             print("Initialized parameters from", init)
 
     def init_optimizer(self,global_lr):# Initialize optimizers with provided learning rates
@@ -582,6 +583,20 @@ class ImageFitter:
         state_dict = torch.load(path)  
         self.model.load_state_dict(state_dict)
         print(f"Loaded model from {path}")
+    
+    def load_weights(self,path):
+        weights = np.genfromtxt(path, dtype=float, delimiter=",").transpose()
+        with torch.no_grad():
+            self.model.u.data = weights[0]
+            self.model.v.data = weights[1]
+            self.model.theta.data = weights[2]
+            self.model.rel_sigma.data = weights[3]
+            self.model.gamma.data = weights[4]
+            self.model.rel_freq.data = weights[5]
+            self.model.psi.data = [weights[6],weights[7],weights[8]].transpose()
+            self.model.amplitude.data = [weights[9],weights[10],weights[11]].transpose()
+        print(f"Loaded weights from {path}")
+            
     
     def save_image(self, path):
         """Save the current image to a file"""
