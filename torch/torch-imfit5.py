@@ -662,8 +662,6 @@ def main():
         gradient = args.gradient,
         l1 = args.l1
     )
-    # Set the phase split from arguments
-    fitter.phase_split = args.phase_split
     #save initial image
     if args.init:
         fitter.save_image(os.path.join(args.output_dir, 'initial_result.png'))
