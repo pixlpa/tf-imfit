@@ -385,9 +385,9 @@ class ImageFitter:
         gradient_magnitude = torch.sqrt(mag_x**2 + mag_y**2 + 1e-6)
         return gradient_magnitude
     
-    def sobel_loss(self, output, target):
-        outs = self.sobel_filter(output)
-        targ = self.sobel_filter(target)
+    def sobel_loss(self, output, target, weights):
+        outs = self.sobel_filter(output) * weights[None, :, :]
+        targ = self.sobel_filter(target) * weights[None, :, :]
         return nn.functional.mse_loss(outs,targ)
     
     def lap_loss(self, output, target):
@@ -467,7 +467,7 @@ class ImageFitter:
         # unweighted = self.unweighted_loss(output, target)
         # laplace = self.lap_loss(output,target) * 0.1
         gradient = self.gradient_loss(output,target) * 0.1
-        sobel = self.sobel_loss(output,target) * 0.1
+        sobel = self.sobel_loss(output,target, self.weights) * 0.1
         loss =  weighted + sobel + gradient + self.constraint_loss(self.model)
         return loss
 
