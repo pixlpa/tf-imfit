@@ -386,8 +386,8 @@ class ImageFitter:
         return gradient_magnitude
     
     def sobel_loss(self, output, target, weights):
-        outs = self.sobel_filter(output) * weights[None, :, :]
-        targ = self.sobel_filter(target) * weights[None, :, :]
+        outs = self.sobel_filter(output)
+        targ = self.sobel_filter(target)
         return nn.functional.mse_loss(outs,targ)
     
     def lap_loss(self, output, target):
