@@ -585,13 +585,14 @@ class ImageFitter:
         print(f"Loaded model from {path}")
     
     def load_weights(self,path):
-        weights = np.genfromtxt(path, dtype=double, delimiter=",").transpose()
+        weights = np.genfromtxt(path, dtype=float, delimiter=",").transpose()
         device = self.model.u.device
         with torch.no_grad():
             self.model.u.data = torch.from_numpy(weights[0]).to(device)
             self.model.v.data = torch.from_numpy(weights[1]).to(device)
             self.model.theta.data = torch.from_numpy(weights[2]).to(device)
             self.model.rel_sigma.data = torch.from_numpy(weights[3]).to(device)
+            self.model.gamma.data = torch.from_numpy(weights[4]).to(device)
             self.model.rel_freq.data = torch.from_numpy(weights[5]).to(device)
             self.model.psi.data = torch.from_numpy(np.array([weights[6],weights[7],weights[8]]).transpose).to(device)
             self.model.amplitude.data = torch.from_numpy(np.array([weights[9],weights[10],weights[11]]).transpose).to(device)
