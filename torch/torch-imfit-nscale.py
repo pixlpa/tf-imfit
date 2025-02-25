@@ -623,7 +623,7 @@ class ImageFitter:
             mode='bilinear', 
             align_corners=False
         ).squeeze(0)
-        print("weights shape", self.weights.shape)
+        
         self.weights = nn.functional.interpolate(
             self.og_weights.unsqueeze(0).unsqueeze(0),
             size=(new_h, new_w),
