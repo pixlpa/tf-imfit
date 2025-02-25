@@ -612,7 +612,6 @@ class ImageFitter:
             new_h = size
             new_w = size
             
-        print(f"Original weights shape: {self.og_weights.shape}")
         self.target = nn.functional.interpolate(
             self.og_target.unsqueeze(0), 
             size=(new_h, new_w), 
@@ -623,14 +622,12 @@ class ImageFitter:
         weights_4d = self.og_weights.unsqueeze(0)
         if len(weights_4d.shape) < 4:
             weights_4d.squeeze(0)
-        print(f"4D weights shape: {weights_4d.shape}")
         self.weights = nn.functional.interpolate(
             weights_4d,
             size=(new_h, new_w),
             mode='bilinear',
             align_corners=False
         ).squeeze(0).squeeze(0)
-        print(f"resized weights shape: {self.weights.shape}")
         
         # Update coordinate grid
         y, x = torch.meshgrid(
