@@ -736,6 +736,7 @@ def main():
                         progress+=1  
        #  for b in range(20):
        #     fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
+        fitter.resize_target(args.size)
         print("Optimizing at full size")
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)    
