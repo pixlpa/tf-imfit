@@ -770,8 +770,8 @@ def main():
                             fitter.optimizer,
                             mode='min',
                             factor=fitter.gamma,
-                            patience=10,
-                            verbose=True
+                            patience=30,
+                            min_lr= 1e-5
                         )
         print("Optimizing at full size")
         for i in range(args.iterations):
