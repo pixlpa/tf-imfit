@@ -724,7 +724,7 @@ def main():
             factor = args.rescales - a
             scaler = args.size/(2 ** factor)
             print(f"Optimizing at size: {scaler: .3f}")
-            fitter.resize_target(scaler.int())
+            fitter.resize_target(int(scaler))
             for i in range(args.iterations):
                 loss = fitter.train_step(i, args.iterations)    
                 if i % 10 == 0:
