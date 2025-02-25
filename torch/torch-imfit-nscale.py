@@ -750,7 +750,7 @@ def main():
             fitter.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                             fitter.optimizer,
                             mode='min',
-                            factor=self.gamma,
+                            factor=fitter.gamma,
                             patience=10,
                             verbose=True
                         )
@@ -769,7 +769,7 @@ def main():
         fitter.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                             fitter.optimizer,
                             mode='min',
-                            factor=self.gamma,
+                            factor=fitter.gamma,
                             patience=10,
                             verbose=True
                         )
