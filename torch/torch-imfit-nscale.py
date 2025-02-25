@@ -746,6 +746,7 @@ def main():
             scaler = args.size/(2 ** factor)
             print(f"Optimizing at size: {scaler: .3f}")
             fitter.resize_target(int(scaler))
+            fitter.optimizer.lr = args.global_lr
             # Initialize scheduler
             fitter.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                             fitter.optimizer,
@@ -766,6 +767,7 @@ def main():
        #  for b in range(20):
        #     fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
         fitter.resize_target(args.size)
+        fitter.optimizer.lr = args.global_lr
         fitter.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                             fitter.optimizer,
                             mode='min',
