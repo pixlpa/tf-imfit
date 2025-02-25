@@ -619,8 +619,9 @@ class ImageFitter:
             align_corners=False
         ).squeeze(0)
 
+        weights_4d = self.og_weights.unsqueeze(0).unsqueeze(0)
         self.weights = nn.functional.interpolate(
-            self.og_weights.unsqueeze(0).unsqueeze(0),
+            weights_4d,
             size=(new_h, new_w),
             mode='bilinear',
             align_corners=False
