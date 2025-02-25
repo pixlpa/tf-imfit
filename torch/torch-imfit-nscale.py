@@ -510,20 +510,14 @@ class ImageFitter:
 
     def get_current_image(self, use_best=True):
         """Get current image with parameter state logging"""
-        with torch.no_grad():
-            # Print key parameter stats           
-            if use_best and self.best_state is not None:
-                # Use the best model state for final output
-                current_state = {k: v.clone() for k, v in self.model.state_dict().items()}
-                self.model.load_state_dict(self.best_state)
-                output = self.model(self.grid_x, self.grid_y)
-                self.model.load_state_dict(current_state)
-            else:
-                output = self.model(self.grid_x, self.grid_y)
-                
-            # Denormalize the output
-            output = output * 0.5 + 0.5
-            return output.clamp(0, 1).cpu().numpy()
+        h, w = self.og_target.shape[-2:]
+        y, x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
+        grid_x = x.to(device)
+        grid_y = y.to(device)
+        output = self.model(grid_x, grid_y)
+        # Denormalize the output
+        output = output * 0.5 + 0.5
+        return output.clamp(0, 1).cpu().numpy()
 
     def save_parameters_to_text(self, filepath):
         """Save model parameters in a human-readable format"""
@@ -623,7 +617,7 @@ class ImageFitter:
             mode='bilinear', 
             align_corners=False
         ).squeeze(0)
-        
+
         self.weights = nn.functional.interpolate(
             self.og_weights.unsqueeze(0).unsqueeze(0),
             size=(new_h, new_w),
