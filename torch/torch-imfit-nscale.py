@@ -514,9 +514,10 @@ class ImageFitter:
         y, x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
         grid_x = x.to(self.target.device)
         grid_y = y.to(self.target.device)
-        output = self.model(grid_x, grid_y)
-        # Denormalize the output
-        output = output * 0.5 + 0.5
+        with torch.no_grad:
+            output = self.model(grid_x, grid_y)
+            # Denormalize the output
+            output = output * 0.5 + 0.5
         return output.clamp(0, 1).cpu().numpy()
 
     def save_parameters_to_text(self, filepath):
