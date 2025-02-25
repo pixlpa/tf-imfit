@@ -614,7 +614,8 @@ class ImageFitter:
             else:
                 new_h, new_w = int(size * h / w), size
         else:
-            new_h, new_w = size
+            new_h = size
+            new_w = size
             
         self.target = F.interpolate(
             self.og_target.unsqueeze(0), 
