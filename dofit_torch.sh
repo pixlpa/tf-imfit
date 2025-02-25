@@ -8,7 +8,7 @@ time python tf-imfit/torch/torch-imfit-nscale.py $SOURCEIMG --weight source_weig
 rm -f results/final/*.png
 time python tf-imfit/torch/torch-imfit5.py $SOURCEIMG --weight source_weights/$NAME-wt.png --iterations 100 --output-dir results/final/ --init results/lores/saved_weights.txt --size 512 --num-gabors 256 --global-lr 0.009 --local-lr 0.001 --mutation-strength 0.0 --gamma 1
 
-ffmpeg -framerate 30 -i results/final/result_%04d.png -c:v libx264 -pix_fmt yuv420p $NAME.mp4
+ffmpeg -framerate 30 -i results/final/result_%04d.png -c:v libx264 -pix_fmt yuv420p results/$NAME.mp4
 mv results/final/saved_weights.txt results/$NAME.txt
 mv results/final/final_result.png results/$NAME.png
 cp results/$NAME.mp4 /content/drive/My\ Drive/HM/results/
