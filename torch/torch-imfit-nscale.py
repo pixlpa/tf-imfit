@@ -715,7 +715,7 @@ def main():
 
     # Training loop
     print(f"Training on {args.device}...")
-    with tqdm(total=args.iterations*(arg.rescales+1)) as pbar:
+    with tqdm(total=args.iterations*(args.rescales+1)) as pbar:
         progress = 0
         print("Beginning optimizations")
         fitter.init_optimizer(args.global_lr)
