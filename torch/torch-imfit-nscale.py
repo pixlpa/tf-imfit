@@ -617,14 +617,14 @@ class ImageFitter:
             new_h = size
             new_w = size
             
-        self.target = F.interpolate(
+        self.target = nn.functional.interpolate(
             self.og_target.unsqueeze(0), 
             size=(new_h, new_w), 
             mode='bilinear', 
             align_corners=False
         ).squeeze(0)
 
-        self.weights = F.interpolate(
+        self.weights = nn.functional.interpolate(
             self.og_weights.unsqueeze(0),
             size=(new_h, new_w),
             mode='bilinear',
