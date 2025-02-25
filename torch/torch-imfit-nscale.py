@@ -625,11 +625,11 @@ class ImageFitter:
         ).squeeze(0)
 
         self.weights = nn.functional.interpolate(
-            self.og_weights.unsqueeze(0),
+            self.og_weights,
             size=(new_h, new_w),
             mode='bilinear',
             align_corners=False
-        ).squeeze(0)
+        )
         
         # Update coordinate grid
         y, x = torch.meshgrid(
