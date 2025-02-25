@@ -703,7 +703,6 @@ def main():
         args.init,
         global_lr=args.global_lr,
         local_lr=args.local_lr,
-        init_size=args.init_size,
         mutation_strength=args.mutation_strength,
         gamma = args.gamma,
         sobel = args.sobel,
