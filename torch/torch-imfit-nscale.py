@@ -621,7 +621,7 @@ class ImageFitter:
         ).squeeze(0)
 
         weights_4d = self.og_weights.unsqueeze(0)
-        if len(weights_4d.shape) < 4
+        if len(weights_4d.shape) < 4:
             weights_4d.squeeze(0)
         print(f"4D weights shape: {weights_4d.shape}")
         self.weights = nn.functional.interpolate(
