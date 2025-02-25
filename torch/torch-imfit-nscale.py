@@ -719,7 +719,7 @@ def main():
         progress = 0
         print("Beginning optimizations")
         fitter.init_optimizer(args.global_lr)
-        for a in (args.rescales):
+        for a in range(args.rescales):
             factor = args.rescales - a
             scaler = args.size/(2 ** factor)
             print(f"Optimizing at size: {scaler: .3f}")
