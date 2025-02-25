@@ -514,10 +514,10 @@ class ImageFitter:
         # Calculate loss
         loss =  self.loss_function(output, self.target)
         loss.backward()
-        self.optimizer.step(loss)
+        self.optimizer.step()
         
         # Update learning rate
-        self.scheduler.step()
+        self.scheduler.step(loss)
         
         return loss.item()
 
