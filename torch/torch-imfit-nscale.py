@@ -293,7 +293,7 @@ class ImageFitter:
         )
         # Initialize scheduler
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-                            optimizer,
+                            self.optimizer,
                             mode='min',
                             factor=self.gamma,
                             patience=10,
