@@ -296,7 +296,7 @@ class ImageFitter:
                             self.optimizer,
                             mode='min',
                             factor=self.gamma,
-                            patience=10,
+                            patience=50,
                             verbose=True
                         )
 
@@ -751,8 +751,8 @@ def main():
                             fitter.optimizer,
                             mode='min',
                             factor=fitter.gamma,
-                            patience=10,
-                            verbose=True
+                            patience=50,
+                            min_lr= 1e-4
                         )
             for i in range(args.iterations):
                 loss = fitter.train_step(i, args.iterations)    
@@ -770,8 +770,8 @@ def main():
                             fitter.optimizer,
                             mode='min',
                             factor=fitter.gamma,
-                            patience=30,
-                            min_lr= 1e-5
+                            patience=50,
+                            min_lr= 1e-4
                         )
         print("Optimizing at full size")
         for i in range(args.iterations):
