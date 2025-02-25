@@ -511,8 +511,18 @@ class ImageFitter:
     def get_current_image(self, use_best=True):
         """Get current image with parameter state logging"""
         h, w = self.og_target.shape[-2:]
+        h1 = h
+        w1 = w
+        # rescale output size to 512 base
+        if h > w:
+            h1 = 512
+            w1 = 512 * (w / h)
+        else:
+            w1 = 512
+            h1 = 512 * (h/w)
+
         with torch.no_grad():
-            y, x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
+            y, x = torch.meshgrid(torch.linspace(-1, 1, h1), torch.linspace(-1, 1, w1))
             grid_x = x.to(self.target.device)
             grid_y = y.to(self.target.device)
             output = self.model(grid_x, grid_y)
