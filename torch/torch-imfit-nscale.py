@@ -746,6 +746,14 @@ def main():
             scaler = args.size/(2 ** factor)
             print(f"Optimizing at size: {scaler: .3f}")
             fitter.resize_target(int(scaler))
+            # Initialize scheduler
+            fitter.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                            fitter.optimizer,
+                            mode='min',
+                            factor=self.gamma,
+                            patience=10,
+                            verbose=True
+                        )
             for i in range(args.iterations):
                 loss = fitter.train_step(i, args.iterations)    
                 if i % 10 == 0:
@@ -758,6 +766,13 @@ def main():
        #  for b in range(20):
        #     fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
         fitter.resize_target(args.size)
+        fitter.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                            fitter.optimizer,
+                            mode='min',
+                            factor=self.gamma,
+                            patience=10,
+                            verbose=True
+                        )
         print("Optimizing at full size")
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations)    
