@@ -511,10 +511,10 @@ class ImageFitter:
     def get_current_image(self, use_best=True):
         """Get current image with parameter state logging"""
         h, w = self.og_target.shape[-2:]
-        y, x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
-        grid_x = x.to(self.target.device)
-        grid_y = y.to(self.target.device)
         with torch.no_grad:
+            y, x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
+            grid_x = x.to(self.target.device)
+            grid_y = y.to(self.target.device)
             output = self.model(grid_x, grid_y)
             # Denormalize the output
             output = output * 0.5 + 0.5
