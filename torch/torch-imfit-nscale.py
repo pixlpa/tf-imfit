@@ -516,10 +516,10 @@ class ImageFitter:
         # rescale output size to 512 base
         if h > w:
             h1 = 512
-            w1 = 512 * (w / h)
+            w1 = int(512 * (w / h))
         else:
             w1 = 512
-            h1 = 512 * (h/w)
+            h1 = int(512 * (h/w))
 
         with torch.no_grad():
             y, x = torch.meshgrid(torch.linspace(-1, 1, h1), torch.linspace(-1, 1, w1))
