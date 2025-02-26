@@ -515,13 +515,15 @@ class ImageFitter:
         loss =  self.loss_function(output, self.target)
         loss.backward()
         self.optimizer.step()
-        
-        # Update learning rate
         self.scheduler.step(loss)
         
+        if loss.item() < self.best_loss:
+            self.best_loss = loss.item()
+            self.best_state = self.model.state_dict()
+
         return loss.item()
 
-    def get_current_image(self, use_best=True):
+    def get_current_image(self, use_best=False):
         """Get current image with parameter state logging"""
         h, w = self.og_target.shape[-2:]
         h1 = h
@@ -538,6 +540,8 @@ class ImageFitter:
             y, x = torch.meshgrid(torch.linspace(-1, 1, h1), torch.linspace(-1, 1, w1))
             grid_x = x.to(self.target.device)
             grid_y = y.to(self.target.device)
+            if use_best:
+                self.model.load_state_dict(self.best_state)
             output = self.model(grid_x, grid_y)
             # Denormalize the output
             output = output * 0.5 + 0.5
@@ -619,6 +623,13 @@ class ImageFitter:
     def save_image(self, path):
         """Save the current image to a file"""
         image = self.get_current_image()
+        image = np.transpose(image, (1, 2, 0))
+        image = np.clip(image * 255, 0, 255).astype(np.uint8)
+        Image.fromarray(image).save(path)
+    
+    def save_final(self, path):
+        """Save the current image to a file"""
+        image = self.get_current_image(use_best=True)
         image = np.transpose(image, (1, 2, 0))
         image = np.clip(image * 255, 0, 255).astype(np.uint8)
         Image.fromarray(image).save(path)
@@ -789,9 +800,10 @@ def main():
     # Save final result
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)
-        fitter.save_image(os.path.join(args.output_dir, 'final_result.png'))
+        fitter.save_final(os.path.join(args.output_dir, 'final_result.png'))
         fitter.save_model(os.path.join(args.output_dir, 'saved_model.pth'))
         fitter.save_weights(os.path.join(args.output_dir, 'saved_weights.txt'))
+        print(f"Saved final result with loss: {fitter.best_loss:.6f}")
 if __name__ == '__main__':
     main()
 
