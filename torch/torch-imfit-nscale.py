@@ -769,8 +769,8 @@ def main():
             for i in range(args.iterations):
                 loss = fitter.train_step(i, args.iterations)    
                 if i % 10 == 0:
-                    temp = fitter.current_temp
-                    pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                    temp = fitter.scheduler.get_last_lr()
+                    pbar.set_postfix(loss=f"{loss:.6f}", lr=f"{temp:.3f}")
                     pbar.update(10)
                 if i % 50 == 0 or i == args.iterations - 1:
                         fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
@@ -790,8 +790,8 @@ def main():
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations, save_best = True)    
             if i % 10 == 0:
-                temp = fitter.current_temp
-                pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
+                temp = fitter.scheduler.get_last_lr()
+                    pbar.set_postfix(loss=f"{loss:.6f}", lr=f"{temp:.3f}")
                 pbar.update(10)
             if i % 50 == 0 or i == args.iterations - 1:
                     fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
