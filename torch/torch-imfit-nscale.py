@@ -495,7 +495,7 @@ class ImageFitter:
         loss =  weighted + unweighted + gradient + sobel + self.constraint_loss(self.model)
         return loss
 
-    def train_step(self, iteration, max_iterations):
+    def train_step(self, iteration, max_iterations, save_best = False):
         # Update temperature
         self.update_temperature(iteration, max_iterations)
         self.mutate_parameters()
@@ -517,7 +517,7 @@ class ImageFitter:
         self.optimizer.step()
         self.scheduler.step(loss)
         
-        if loss.item() < self.best_loss:
+        if loss.item() < self.best_loss and save_best:
             self.best_loss = loss.item()
             self.best_state = self.model.state_dict()
 
@@ -788,7 +788,7 @@ def main():
                         )
         print("Optimizing at full size")
         for i in range(args.iterations):
-            loss = fitter.train_step(i, args.iterations)    
+            loss = fitter.train_step(i, args.iterations, save_best = True)    
             if i % 10 == 0:
                 temp = fitter.current_temp
                 pbar.set_postfix(loss=f"{loss:.6f}", temp=f"{temp:.3f}")
