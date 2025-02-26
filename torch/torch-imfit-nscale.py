@@ -791,7 +791,7 @@ def main():
             loss = fitter.train_step(i, args.iterations, save_best = True)    
             if i % 10 == 0:
                 temp = fitter.scheduler.get_last_lr()
-                    pbar.set_postfix(loss=f"{loss:.6f}", lr=f"{temp:.3f}")
+                pbar.set_postfix(loss=f"{loss:.6f}", lr=f"{temp:.3f}")
                 pbar.update(10)
             if i % 50 == 0 or i == args.iterations - 1:
                     fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
