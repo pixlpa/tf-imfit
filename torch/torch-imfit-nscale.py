@@ -659,6 +659,8 @@ def main():
                        help='load initial parameters from file')
     parser.add_argument('--rescales', type=int, default=2,
                        help='number of scale factors to use')
+    parser.add_argument('--iter-multiple', type=float, default=1.5,
+                       help='number of scale factors to use')
     # Add size arguments
     parser.add_argument('--size', type=int, default=None,
                        help='Target size (maintains aspect ratio)')
@@ -720,20 +722,21 @@ def main():
 
     # Training loop
     print(f"Training on {args.device}...")
-    with tqdm(total=args.iterations*(args.rescales+1)) as pbar:
-        progress = 0
-        print("Beginning optimizations")
-        fitter.init_optimizer(args.global_lr)
-        for a in range(args.rescales):
-            factor = args.rescales - a
-            scaler = args.size/(2 ** factor)
-            print(f"Optimizing at size: {scaler: .1f}")
-            fitter.resize_target(int(scaler))
-            for param_group in fitter.optimizer.param_groups:
-                param_group['lr'] = args.global_lr
-            fitter.scheduler.base_lrs = [args.global_lr]
-            fitter.scheduler.last_epoch = -1
-            for i in range(args.iterations):
+    progress = 0
+    print("Beginning optimizations")
+    fitter.init_optimizer(args.global_lr)
+    for a in range(args.rescales):
+        factor = args.rescales - a
+        scaler = args.size/(2 ** factor)
+        print(f"Optimizing at size: {scaler: .1f}")
+        fitter.resize_target(int(scaler))
+        for param_group in fitter.optimizer.param_groups:
+            param_group['lr'] = args.global_lr
+        fitter.scheduler.base_lrs = [args.global_lr]
+        fitter.scheduler.last_epoch = -1
+        iter_count = int( args.iterations * factor * args.iter_multiple)
+        with tqdm(total=iter_count) as pbar:
+            for i in range(iter_count):
                 loss = fitter.train_step(i, args.iterations)    
                 if i % 5 == 0:
                     temp = fitter.scheduler.get_last_lr()[0]
@@ -742,14 +745,15 @@ def main():
                 if i % 50 == 0 or i == args.iterations - 1:
                         fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
                         progress+=1  
-       #  for b in range(20):
-       #     fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
-        fitter.resize_target(args.size)
-        for param_group in fitter.optimizer.param_groups:
-            param_group['lr'] = args.global_lr
-        fitter.scheduler.base_lrs = [args.global_lr]
-        fitter.scheduler.last_epoch = -1
-        print("Optimizing at full size")
+    #  for b in range(20):
+    #     fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
+    fitter.resize_target(args.size)
+    for param_group in fitter.optimizer.param_groups:
+        param_group['lr'] = args.global_lr
+    fitter.scheduler.base_lrs = [args.global_lr]
+    fitter.scheduler.last_epoch = -1
+    print("Optimizing at full size")
+    with tqdm(total=args.iterations) as pbar:
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations, save_best = True)    
             if i % 5 == 0:
@@ -759,7 +763,7 @@ def main():
             if i % 50 == 0 or i == args.iterations - 1:
                     fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
                     progress+=1
-        
+    
     # Save final result
     if args.output_dir:
         os.makedirs(args.output_dir, exist_ok=True)
