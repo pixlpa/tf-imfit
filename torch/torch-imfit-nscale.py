@@ -108,10 +108,10 @@ class GaborLayer(nn.Module):
             self.u.clamp_(-1, 1)
             self.v.clamp_(-1, 1)
             self.theta.clamp_(-2, 2)
-            self.rel_sigma.clamp_(1e-5,5)
-            self.rel_freq.clamp_(1e-5,20)
+            self.rel_sigma.clamp_(1e-4,2)
+            self.rel_freq.clamp_(1e-7,2)
             self.psi.clamp_(-1, 1)
-            self.gamma.clamp_(1e-5,5)
+            self.gamma.clamp_(1e-4,2)
             self.amplitude.clamp_(0,1)
 
 class ImageFitter:
@@ -476,7 +476,7 @@ class ImageFitter:
 
         # Sum across the mini-batch (n)
         con_loss_per_fit = torch.mean(con_losses, dim=1)
-        con_loss = con_loss_per_fit.mean() / 50  # Use PyTorch's mean
+        con_loss = con_loss_per_fit.mean() / 100  # Use PyTorch's mean
         return con_loss
     
     def loss_function(self, output, target):
