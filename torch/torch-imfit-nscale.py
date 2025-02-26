@@ -160,8 +160,10 @@ class ImageFitter:
             self.weights = transforms.ToTensor()(weight_img).to(device)
             # Normalize weights to average to 1
             self.weights = self.weights / self.weights.mean()
+            print(f"weight shape {self.weights.shape}")
         else:
             self.weights = torch.ones((h, w), device=device)
+            print(f"weight shape {self.weights.shape}")
 
         self.og_target = self.target
         self.og_weights = self.weights
