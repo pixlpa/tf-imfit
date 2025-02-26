@@ -162,8 +162,7 @@ class ImageFitter:
             self.weights = self.weights / self.weights.mean()
             print(f"weight shape {self.weights.shape}")
         else:
-            self.weights = torch.ones((h, w), device=device)
-            print(f"weight shape {self.weights.shape}")
+            self.weights = torch.ones((h, w), device=device).unsqueeze(0)
 
         self.og_target = self.target
         self.og_weights = self.weights
