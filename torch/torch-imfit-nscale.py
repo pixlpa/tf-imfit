@@ -160,7 +160,6 @@ class ImageFitter:
             self.weights = transforms.ToTensor()(weight_img).to(device)
             # Normalize weights to average to 1
             self.weights = self.weights / self.weights.mean()
-            print(f"weight shape {self.weights.shape}")
         else:
             self.weights = torch.ones((h, w), device=device).unsqueeze(0)
 
@@ -192,8 +191,7 @@ class ImageFitter:
             self.optimizer,
             mode='min',
             factor=gamma,
-            patience=20,
-            verbose=True
+            patience=20
         )
         
         self.scheduler = self.global_scheduler  # Start with global scheduler
@@ -548,33 +546,6 @@ class ImageFitter:
             output = output * 0.5 + 0.5
         return output.clamp(0, 1).cpu().numpy()
 
-    def save_parameters_to_text(self, filepath):
-        """Save model parameters in a human-readable format"""
-        with torch.no_grad():
-            params = {
-                'u': self.model.u.cpu().tolist(),
-                'v': self.model.v.cpu().tolist(),
-                'theta': self.model.theta.cpu().tolist(),
-                'rel_sigma': self.model.rel_sigma.cpu().tolist(),
-                'rel_freq': self.model.rel_freq.cpu().tolist(),
-                'psi': self.model.psi.cpu().tolist(),
-                'gamma': self.model.gamma.cpu().tolist(),
-                'amplitude': self.model.amplitude.cpu().tolist()
-            }
-            
-            with open(filepath, 'w') as f:
-                f.write("Gabor Function Parameters:\n\n")
-                for i in range(len(params['u'])):
-                    f.write(f"Gabor {i}:\n")
-                    f.write(f"  Position (u, v): ({params['u'][i]:.4f}, {params['v'][i]:.4f})\n")
-                    f.write(f"  Orientation (θ): {params['theta'][i]:.4f}\n")
-                    f.write(f"  Size (σ): {params['rel_sigma'][i]:.4f}\n")
-                    f.write(f"  Wavelength (λ): {1.0 / params['rel_freq'][i]:.4f}\n")
-                    f.write(f"  Phase (ψ): {[f'{a:.4f}' for a in params['psi'][i]]}\n")
-                    f.write(f"  Aspect ratio (γ): {params['gamma'][i]:.4f}\n")
-                    f.write(f"  Amplitude (RGB): {[f'{a:.4f}' for a in params['amplitude'][i]]}\n")
-                    f.write("\n")
-
     def save_model(self, path):
         """Save the model state with parameter info"""
         state_dict = self.model.state_dict()
@@ -756,7 +727,7 @@ def main():
         for a in range(args.rescales):
             factor = args.rescales - a
             scaler = args.size/(2 ** factor)
-            print(f"Optimizing at size: {scaler: .3f}")
+            print(f"Optimizing at size: {scaler: .1f}")
             fitter.resize_target(int(scaler))
             for param_group in fitter.optimizer.param_groups:
                 param_group['lr'] = args.global_lr
@@ -764,10 +735,10 @@ def main():
             fitter.scheduler.last_epoch = -1
             for i in range(args.iterations):
                 loss = fitter.train_step(i, args.iterations)    
-                if i % 10 == 0:
+                if i % 5 == 0:
                     temp = fitter.scheduler.get_last_lr()[0]
-                    pbar.set_postfix(loss=f"{loss:.6f}", lr=f"{temp:.3f}")
-                    pbar.update(10)
+                    pbar.set_postfix(loss=f"{loss:.6f}", lr=f"{temp:.6f}")
+                    pbar.update(5)
                 if i % 50 == 0 or i == args.iterations - 1:
                         fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
                         progress+=1  
@@ -781,10 +752,10 @@ def main():
         print("Optimizing at full size")
         for i in range(args.iterations):
             loss = fitter.train_step(i, args.iterations, save_best = True)    
-            if i % 10 == 0:
+            if i % 5 == 0:
                 temp = fitter.scheduler.get_last_lr()[0]
-                pbar.set_postfix(loss=f"{loss:.6f}", lr=f"{temp:.3f}")
-                pbar.update(10)
+                pbar.set_postfix(loss=f"{loss:.6f}", lr=f"{temp:.6f}")
+                pbar.update(5)
             if i % 50 == 0 or i == args.iterations - 1:
                     fitter.save_image(os.path.join(args.output_dir, f'result_{progress:04d}.png'))            
                     progress+=1
