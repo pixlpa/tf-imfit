@@ -758,6 +758,8 @@ def main():
             scaler = args.size/(2 ** factor)
             print(f"Optimizing at size: {scaler: .3f}")
             fitter.resize_target(int(scaler))
+            for param_group in fitter.optimizer.param_groups:
+                param_group['lr'] = args.global_lr
             fitter.scheduler.base_lrs = [args.global_lr]
             fitter.scheduler.last_epoch = -1
             for i in range(args.iterations):
@@ -772,6 +774,8 @@ def main():
        #  for b in range(20):
        #     fitter.single_optimize(np.random.randint(0, args.num_gabors-1),args.single_iterations)
         fitter.resize_target(args.size)
+        for param_group in fitter.optimizer.param_groups:
+            param_group['lr'] = args.global_lr
         fitter.scheduler.base_lrs = [args.global_lr]
         fitter.scheduler.last_epoch = -1
         print("Optimizing at full size")
