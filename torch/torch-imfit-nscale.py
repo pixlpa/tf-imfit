@@ -108,10 +108,10 @@ class GaborLayer(nn.Module):
             self.u.clamp_(-1, 1)
             self.v.clamp_(-1, 1)
             self.theta.clamp_(-2, 2)
-            self.rel_sigma.clamp_(1e-4,2)
+            self.rel_sigma.clamp_(1e-4,5)
             self.rel_freq.clamp_(1e-7,2)
             self.psi.clamp_(-1, 1)
-            self.gamma.clamp_(1e-4,2)
+            self.gamma.clamp_(1e-4,1.5)
             self.amplitude.clamp_(0,1)
 
 class ImageFitter:
