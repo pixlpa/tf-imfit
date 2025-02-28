@@ -47,9 +47,7 @@ class GaborLayer(nn.Module):
         self.rel_freq = nn.Parameter(torch.randn(num_gabors).normal_(GABOR_MIN['rel_freq'], GABOR_MAX['rel_freq']))   
         self.gamma = nn.Parameter(torch.zeros(num_gabors).normal_(GABOR_MIN['gamma'], GABOR_MAX['gamma']))  
         self.psi = nn.Parameter(torch.rand(num_gabors, 3).normal_(GABOR_MIN['psi'], GABOR_MAX['psi']))  
-        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3).normal_(GABOR_MIN['amplitude'], GABOR_MAX['amplitude']))  
-        
-        self.dropout = nn.Dropout(p=0.01)
+        self.amplitude = nn.Parameter(torch.randn(num_gabors, 3).normal_(GABOR_MIN['amplitude'], GABOR_MAX['amplitude']))
 
     def load_state_dict(self, state_dict, strict=True):
         with torch.no_grad():
@@ -509,8 +507,7 @@ class ImageFitter:
         # Forward pass
         output = self.model(
             self.grid_x, 
-            self.grid_y, 
-            dropout_active=False
+            self.grid_y
         )
         
         # Calculate loss
