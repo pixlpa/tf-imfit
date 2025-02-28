@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import scipy.signal
 from torchvision.transforms.functional import gaussian_blur
 
+# set the min and max initialization values
 GABOR_MIN ={
     'u': 0,
     'v': 0,
@@ -33,12 +34,10 @@ GABOR_MAX ={
     'amplitude': 0.2
 }
 
+#the Model definition
 class GaborLayer(nn.Module):
     def __init__(self, num_gabors=256):
         super().__init__()
-        
-        # Initialize BatchNorm2d with the correct number of channels
-        #self.batch_norm = nn.BatchNorm2d(num_gabors)  # This should match the number of output channels
         
         # Initialize parameters with conservative ranges
         self.u = nn.Parameter(torch.rand(num_gabors).normal_(GABOR_MIN['u'], GABOR_MAX['u']))  
@@ -65,7 +64,7 @@ class GaborLayer(nn.Module):
         
         return super().load_state_dict(state_dict, strict)
 
-    def forward(self, grid_x, grid_y, temperature=1.0, dropout_active=True):
+    def forward(self, grid_x, grid_y):
         H, W = grid_x.shape
         image_size = max(H, W)
 
@@ -114,11 +113,13 @@ class GaborLayer(nn.Module):
             self.gamma.clamp_(1e-4,1.5)
             self.amplitude.clamp_(0,1)
 
+# The ImageFitter class manages the work of training the model
 class ImageFitter:
     def __init__(self, image_path, weight_path=None, num_gabors=256, target_size=None, 
                  device='cuda' if torch.cuda.is_available() else 'cpu', init=None,
                  global_lr=0.03, local_lr=0.01, init_size=128, mutation_strength=0.01, gamma = 0.85,
                  sobel = 0., gradient = 0., l1 = 0.):  # Add learning rate parameters
+        #load the image
         image = Image.open(image_path).convert('RGB')
         
         # Resize image if target_size is specified
@@ -136,24 +137,24 @@ class ImageFitter:
                 target_size = (new_w, new_h)
             image = image.resize(target_size, Image.Resampling.LANCZOS)
         
-        # Enhanced preprocessing pipeline
+        # preprocessing
         transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
-        
+        # store these arguments as parameters to use elsewhere
         self.global_lr = global_lr
-        self.local_lr = local_lr
         self.gamma = gamma
         self.sobel = sobel
         self.gradient = gradient
         self.l1 = l1
 
+        #convert image to tensor and send to CUDA
         self.target = transform(image).to(device)
         h, w = self.target.shape[-2:]
         if target_size is not None:
             w,h = target_size
-        
+        #prepare the weights tensor
         if weight_path:
             weight_img = Image.open(weight_path).convert('L')  # Convert to grayscale
             weight_img = weight_img.resize((w, h), Image.Resampling.LANCZOS)
@@ -161,18 +162,18 @@ class ImageFitter:
             # Normalize weights to average to 1
             self.weights = self.weights / self.weights.mean()
         else:
-            self.weights = torch.ones((h, w), device=device).unsqueeze(0)
+            self.weights = torch.ones((h, w), device=device).unsqueeze(0) # adding a dimension for resizing later
 
-        self.og_target = self.target
+        self.og_target = self.target #store the largest versions
         self.og_weights = self.weights
         # Create coordinate grid
         y, x = torch.meshgrid(torch.linspace(-1, 1, h), torch.linspace(-1, 1, w))
         self.grid_x = x.to(device)
         self.grid_y = y.to(device)
         
-        # Initialize model with improved training setup
+        # Initialize model
         self.model = GaborLayer(num_gabors).to(device)
-        # Initialize model parameters if provided
+        # Initialize model parameters if file is provided
         if init:
             self.init_parameters(init)
         # Initialize optimizers with provided learning rates
@@ -183,10 +184,9 @@ class ImageFitter:
             betas=(0.9, 0.999)
         )
         
-        self.optimizer = self.global_optimizer  # Start with global optimizer
+        self.optimizer = self.global_optimizer
         
-        # Initialize schedulers for both phases
-        # self.global_scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=gamma)
+        # Initialize scheduler
         self.global_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer,
             mode='min',
@@ -205,6 +205,7 @@ class ImageFitter:
         self.best_state = None
         
         # Add temperature scheduling
+        # this might not do anything anymore
         self.initial_temp = 0.1
         self.min_temp = 0.001
         self.current_temp = self.initial_temp
@@ -213,11 +214,10 @@ class ImageFitter:
         self.mutation_prob = 0.1
         self.mutation_strength = mutation_strength
     
+    # experimental single model optimization prototype. Not used anymore
     def single_optimize(self,model_index,iterations):
         # Convert target image to tensor and normalize
         target_image_tensor = self.target.clone().detach().to(self.target.device)  # No unsqueeze
-        
-        #Removed normalization
         # Extract the specific model parameters to optimize
         specific_model_params = {
             'u': self.model.u[model_index].detach().clone().requires_grad_(),
@@ -283,7 +283,8 @@ class ImageFitter:
             self.load_weights(init)
             print("Initialized parameters from", init)
 
-    def init_optimizer(self,global_lr):# Initialize optimizers with provided learning rates
+    def init_optimizer(self,global_lr):
+        # Initialize optimizers with provided learning rates
         self.optimizer = optim.AdamW(
             self.model.parameters(),
             lr=global_lr,
@@ -344,7 +345,7 @@ class ImageFitter:
         return loss
     
     def unweighted_loss(self, output, target):
-        """Calculate weighted MSE loss with gradient preservation"""
+        """Calculate L1 loss with gradient preservation"""
         # Ensure tensors have gradients
         if not output.requires_grad:
             output.requires_grad_(True)
@@ -354,6 +355,7 @@ class ImageFitter:
         return self.l1_criterion(output,target)
     
     def sobel_filter(self, image):
+        """Perform Sobel filtering to emphasize edges"""
         # Ensure image is in the right format (B, C, H, W)
         image = image.unsqueeze(0).float()
     # Define base Sobel kernels
@@ -408,6 +410,7 @@ class ImageFitter:
         return nn.functional.mse_loss(outs,targ)
     
     def lap_loss(self, output, target):
+        """Laplacian filtered loss, similar to sobel"""
        #  print("Output shape:", output.shape)
        # print("Target shape:", target.shape)
         outp = output.unsqueeze(0)
@@ -495,6 +498,7 @@ class ImageFitter:
         return loss
 
     def train_step(self, iteration, max_iterations, save_best = False):
+        """Main Training function"""
         # Update temperature
         self.update_temperature(iteration, max_iterations)
         self.mutate_parameters()
@@ -516,6 +520,7 @@ class ImageFitter:
         self.optimizer.step()
         self.scheduler.step(loss)
         
+        # Store best result if save_best is active (currently only during last phase)
         if loss.item() < self.best_loss and save_best:
             self.best_loss = loss.item()
             self.best_state = self.model.state_dict()
@@ -523,7 +528,7 @@ class ImageFitter:
         return loss.item()
 
     def get_current_image(self, use_best=False):
-        """Get current image with parameter state logging"""
+        """Get current image at 512 resolution"""
         h, w = self.og_target.shape[-2:]
         h1 = h
         w1 = w
@@ -553,6 +558,7 @@ class ImageFitter:
         print(f"Saved model to {path}")
 
     def save_weights(self, path):
+        """Save as comma separated data in text file"""
         with torch.no_grad():
             params = {
                     'u': self.model.u.cpu().tolist(),
@@ -573,12 +579,13 @@ class ImageFitter:
             np.savetxt(path, flat,fmt='%f', delimiter=',')
 
     def load_model(self, path):
-        """Load the model state with parameter verification"""
+        """Load the model state file (not used)"""
         state_dict = torch.load(path)  
         self.model.load_state_dict(state_dict)
         print(f"Loaded model from {path}")
     
     def load_weights(self,path):
+        """load from a saved text file used by init"""
         weights = np.genfromtxt(path, dtype=float, delimiter=",").transpose()
         device = self.model.u.device
         with torch.no_grad():
@@ -601,7 +608,7 @@ class ImageFitter:
     
     def save_final(self, path):
         """Save the current image to a file"""
-        image = self.get_current_image(use_best=True)
+        image = self.get_current_image(use_best=True) #only difference is to "use_best"
         image = np.transpose(image, (1, 2, 0))
         image = np.clip(image * 255, 0, 255).astype(np.uint8)
         Image.fromarray(image).save(path)
@@ -725,11 +732,13 @@ def main():
     progress = 0
     print("Beginning optimizations")
     fitter.init_optimizer(args.global_lr)
+    #run loop for each scale
     for a in range(args.rescales):
         factor = args.rescales - a
         scaler = args.size/(2 ** factor)
         print(f"Optimizing at size: {scaler: .1f}")
         fitter.resize_target(int(scaler))
+        # re-initialize scheduler for full learning rate
         for param_group in fitter.optimizer.param_groups:
             param_group['lr'] = args.global_lr
         fitter.scheduler.base_lrs = [args.global_lr]
