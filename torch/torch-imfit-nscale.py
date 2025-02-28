@@ -510,8 +510,7 @@ class ImageFitter:
         output = self.model(
             self.grid_x, 
             self.grid_y, 
-            temperature=self.current_temp,
-            dropout_active=(iteration < max_iterations * 0.8)
+            dropout_active=False
         )
         
         # Calculate loss
