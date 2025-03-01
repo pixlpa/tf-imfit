@@ -1,6 +1,6 @@
 rm -f results/torch/*.png
 rm -f results/*.txt
-python tf-imfit/torch/torch-imfit-nscale.py source_images/img0001.png --weight source_weights/img0001-wt.png --iterations 500 --rescales 2 --output-dir results/torch/ --size 512 --num-gabors 256 --global-lr 0.01 --mutation-strength 0.0001 --gamma 0.997
+python tf-imfit/torch/torch-imfit-nscale.py source_images/img0001.png --weight source_weights/img0001-wt.png --iterations 300 --rescales 2 --output-dir results/torch/ --size 512 --num-gabors 512 --global-lr 0.01 --mutation-strength 0.0001 --gamma 0.997
 mv results/torch/saved_weights.txt results/img0001.txt
 mv results/torch/final_result.png results/img0001.png
 
