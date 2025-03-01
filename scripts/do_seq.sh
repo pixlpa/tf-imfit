@@ -14,7 +14,7 @@ do
   echo Training Frame $NAME
   IN=$img
   WT=source_weights/$NAME-wt.png
-  python -u tf-imfit/torch/torch-imfit-nscale.py $IN --weight $WT --iterations 200 --rescales 1 --output-dir results/torch/ --init $PREV --size 512 --num-gabors 256 --global-lr 0.01 --mutation-strength 0.0 --gamma 0.997
+  python -u tf-imfit/torch/torch-imfit-nscale.py $IN --weight $WT --iterations 300 --rescales 2 --output-dir results/torch/ --init $PREV --size 256 --num-gabors 512 --global-lr 0.01 --mutation-strength 0.0 --gamma 0.997
   mv results/torch/saved_weights.txt results/$NAME.txt
   mv results/torch/final_result.png results/images/$NAME.png
   cp results/$NAME.txt /content/drive/My\ Drive/HM/vid-out/
