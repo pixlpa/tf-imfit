@@ -16,12 +16,12 @@ do
   echo Training Frame $NAME
   IN=$img
   WT=source_weights/$NAME-wt.png
-  if (($count%15 == 0)) ; then
+  if (( count % 15 == 0)) ; then
     echo Training Key Frame
-    python -u tf-imfit/torch/torch-imfit-nscale.py $IN --weight $WT --iterations 400 --rescales 2 --output-dir results/torch/ --size 256 --num-gabors 512 --global-lr 0.01 --mutation-strength 0.0 --gamma 0.997
+    python -u tf-imfit/torch/torch-imfit-nscale.py $IN --weight $WT --iterations 300 --rescales 2 --output-dir results/torch/ --size 256 --num-gabors 512 --global-lr 0.01 --mutation-strength 0.0 --gamma 0.997
   else
     echo Training Standard Frame
-    python -u tf-imfit/torch/torch-imfit-nscale.py $IN --weight $WT --iterations 400 --rescales 1 --output-dir results/torch/ --init $PREV --size 256 --num-gabors 512 --global-lr 0.01 --mutation-strength 0.0 --gamma 0.997
+    python -u tf-imfit/torch/torch-imfit-nscale.py $IN --weight $WT --iterations 300 --rescales 1 --output-dir results/torch/ --init $PREV --size 256 --num-gabors 512 --global-lr 0.01 --mutation-strength 0.0 --gamma 0.997
   fi
   ((count++))
   mv results/torch/saved_weights.txt results/$NAME.txt
